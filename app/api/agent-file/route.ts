@@ -9,8 +9,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Missing params" }, { status: 400 });
   }
 
-  // Sanitize — only allow .md files and no path traversal
-  if (!file.endsWith(".md") || file.includes("..") || file.includes("/")) {
+  // Sanitize — only allow .md files and no path traversal (allow nested directories)
+  if (!file.endsWith(".md") || file.includes("..")) {
     return NextResponse.json({ error: "Invalid file" }, { status: 400 });
   }
 
@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
         "Authorization": `Bearer ${gatewayToken}`,
       },
       body: JSON.stringify({
-        command: `cat ${remoteFilePath}`,
+        command: `sh -c 'cat ${remoteFilePath}'`,
       }),
     });
 
