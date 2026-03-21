@@ -7,6 +7,7 @@ interface Props {
   agent: Agent;
   viewMode: "graph" | "workflow";
   onViewModeChange: (m: "graph" | "workflow") => void;
+  darkMode?: boolean;
 }
 
 interface SkillNode {
@@ -136,7 +137,7 @@ function SkillIcon({ skill, cx, cy }: { skill: string; cx: number; cy: number })
   );
 }
 
-export default function AgentGraph({ agent, viewMode, onViewModeChange }: Props) {
+export default function AgentGraph({ agent, viewMode, onViewModeChange, darkMode = true }: Props) {
   const [hoveredSkill, setHoveredSkill] = useState<string | null>(null);
   const [hoveredPos, setHoveredPos] = useState<{ x: number; y: number } | null>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
@@ -151,12 +152,12 @@ export default function AgentGraph({ agent, viewMode, onViewModeChange }: Props)
       isDragging.current = true;
       dragStart.current = { x: e.clientX, y: e.clientY };
       panStart.current = { ...pan };
-      e.preventDefault();
     }
   }, [pan]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if (!isDragging.current) return;
+    e.preventDefault();
     const dx = e.clientX - dragStart.current.x;
     const dy = e.clientY - dragStart.current.y;
     setPan({ x: panStart.current.x + dx, y: panStart.current.y + dy });
@@ -311,7 +312,7 @@ export default function AgentGraph({ agent, viewMode, onViewModeChange }: Props)
   return (
     <div
       id="graph-container"
-      style={{ width: "100%", height: "100%", position: "relative", cursor: isDragging.current ? "grabbing" : "grab" }}
+      style={{ width: "100%", height: "100%", position: "relative", cursor: isDragging.current ? "grabbing" : "grab", background: darkMode ? "#0a0a0a" : "#f5f5f5" }}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
@@ -341,7 +342,7 @@ export default function AgentGraph({ agent, viewMode, onViewModeChange }: Props)
       </div>
 
       <svg width={size.w} height={size.h} style={{ position: "absolute", top: 0, left: 0, userSelect: "none" }}>
-        <rect x={0} y={0} width={size.w} height={size.h} fill="transparent" />
+        <rect x={0} y={0} width={size.w} height={size.h} fill={darkMode ? "#0a0a0a" : "#f5f5f5"} />
 
         <defs>
           <filter id="glow-orange" x="-50%" y="-50%" width="200%" height="200%">

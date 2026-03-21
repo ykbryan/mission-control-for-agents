@@ -14,6 +14,7 @@ export default function Home() {
   const [openFiles, setOpenFiles] = useState<Set<string>>(new Set());
   const [viewMode, setViewMode] = useState<"graph" | "workflow">("graph");
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [darkMode, setDarkMode] = useState(true);
 
   const filteredAgents = agents.filter(
     (a) =>
@@ -48,7 +49,7 @@ export default function Home() {
   }, []);
 
   return (
-    <div className="hex-bg" style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+    <div className={`hex-bg ${!darkMode ? "light-mode" : ""}`} style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
       {/* Top bar */}
       <div style={{
         display: "flex",
@@ -80,6 +81,20 @@ export default function Home() {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <SearchBar value={searchQuery} onChange={setSearchQuery} />
+          <button
+            onClick={() => setDarkMode(!darkMode)}
+            style={{
+              background: "rgba(255,255,255,0.08)",
+              border: "1px solid rgba(255,255,255,0.12)",
+              borderRadius: 8,
+              padding: "6px 10px",
+              cursor: "pointer",
+              fontSize: 16,
+              color: "#f0f0f0",
+            }}
+          >
+            {darkMode ? "☀️" : "🌙"}
+          </button>
           <div style={{ fontSize: 12, color: "#555", display: "flex", gap: 6 }}>
             <span style={{ color: "#888" }}>{agents.length}</span>
             <span>agents</span>
@@ -152,6 +167,7 @@ export default function Home() {
             agent={selectedAgent}
             viewMode={viewMode}
             onViewModeChange={setViewMode}
+            darkMode={darkMode}
           />
         </div>
 
