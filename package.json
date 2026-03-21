@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@tailwindcss/typography": "^0.5.19",
+    "@types/ws": "^8.18.1",
     "@xyflow/react": "^12.10.1",
     "framer-motion": "^12.38.0",
     "js-cookie": "^3.0.5",
@@ -18,7 +19,8 @@
     "react-countup": "^6.5.3",
     "react-dom": "19.2.4",
     "react-markdown": "^10.1.0",
-    "recharts": "^3.8.0"
+    "recharts": "^3.8.0",
+    "ws": "^8.19.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
