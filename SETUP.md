@@ -31,3 +31,16 @@ Navigate to `http://localhost:3000`. You will be automatically redirected to the
 Enter your **Gateway URL** (e.g., `http://127.0.0.1:8000` or `https://api.your-vps.com`) and your **Gateway Token**.
 
 **Security Note:** Your credentials are never hardcoded. Mission Control securely caches your Gateway URL and Bearer token in HTTP-only browser cookies. All dashboard telemetry and file inspector requests act as a secure proxy, executing `fetch()` calls directly to your configured OpenClaw instance.
+
+## ⚠️ Critical: OpenClaw Gateway Network Configuration
+
+If you are deploying Mission Control via Docker (e.g., Coolify, Portainer) or on a remote VPS, the OpenClaw Gateway must be configured to accept connections from outside `localhost`. 
+
+By default, OpenClaw binds to `loopback` (`127.0.0.1`). This will cause Next.js SSR fetches to fail with `ECONNREFUSED` during the build phase and at runtime, as the isolated Docker container cannot reach the host's loopback interface.
+
+**To fix this, update your OpenClaw configuration to bind to `0.0.0.0`:**
+1. Open your OpenClaw config (or run `openclaw config edit`).
+2. Change `gateway.bind` from `"loopback"` to `"auto"` (which safely binds to `0.0.0.0` to cover Tailscale/LAN interfaces).
+3. Restart the gateway service: `openclaw gateway restart`.
+
+*Security Note: If you expose the OpenClaw API to `0.0.0.0`, ensure the host machine is secured behind a VPN like Tailscale or a strict firewall, and that your `gateway.auth` token is strong.*
