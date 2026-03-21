@@ -40,9 +40,14 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, m
         },
       };
     });
-  }, [agents]);
+  }, [agents, selectedAgentId]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
+
+  // Sync nodes when agents filter changes
+  useEffect(() => {
+    setNodes(initialNodes);
+  }, [initialNodes, setNodes]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
   // Sync isSelected state when selectedAgentId changes
