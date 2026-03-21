@@ -1,20 +1,20 @@
 import { cookies } from "next/headers";
 import MissionControlScreen from "@/components/mission-control/MissionControlScreen";
 import { agents as staticAgents } from "@/lib/agents";
-import { fetchAgentsFromGateway } from "@/lib/fetch-agents";
+import { fetchAgentsFromRouter } from "@/lib/fetch-agents";
 
 export default async function Home() {
   const cookieStore = await cookies();
-  const gatewayUrl = cookieStore.get("gatewayUrl")?.value;
-  const gatewayToken = cookieStore.get("gatewayToken")?.value;
+  const routerUrl = cookieStore.get("routerUrl")?.value;
+  const routerToken = cookieStore.get("routerToken")?.value;
 
   let agents = staticAgents;
 
-  if (gatewayUrl && gatewayToken) {
+  if (routerUrl && routerToken) {
     try {
-      agents = await fetchAgentsFromGateway(gatewayUrl, gatewayToken);
+      agents = await fetchAgentsFromRouter(routerUrl, routerToken);
     } catch {
-      // Gateway unreachable — fall back to static agent list
+      // Router unreachable — fall back to static agent list
     }
   }
 
