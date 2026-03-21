@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Agent, skillDescriptions } from "@/lib/agents";
 
@@ -44,6 +44,38 @@ export default function AgentGraph({ agent, viewMode, onViewModeChange }: Props)
   const [hoveredPos, setHoveredPos] = useState<{ x: number; y: number } | null>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
 
+  // Pan state
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const isDragging = useRef(false);
+  const dragStart = useRef({ x: 0, y: 0 });
+  const panStart = useRef({ x: 0, y: 0 });
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    // Only start drag on the SVG background (not on skill nodes)
+    if ((e.target as SVGElement).tagName === "svg" || (e.target as SVGElement).tagName === "rect") {
+      isDragging.current = true;
+      dragStart.current = { x: e.clientX, y: e.clientY };
+      panStart.current = { ...pan };
+      e.preventDefault();
+    }
+  }, [pan]);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!isDragging.current) return;
+    const dx = e.clientX - dragStart.current.x;
+    const dy = e.clientY - dragStart.current.y;
+    setPan({ x: panStart.current.x + dx, y: panStart.current.y + dy });
+  }, []);
+
+  const handleMouseUp = useCallback(() => {
+    isDragging.current = false;
+  }, []);
+
+  // Reset pan when agent changes
+  useEffect(() => {
+    setPan({ x: 0, y: 0 });
+  }, [agent.id]);
+
   useEffect(() => {
     const obs = new ResizeObserver((entries) => {
       for (const e of entries) {
@@ -55,8 +87,8 @@ export default function AgentGraph({ agent, viewMode, onViewModeChange }: Props)
     return () => obs.disconnect();
   }, []);
 
-  const cx = size.w / 2;
-  const cy = size.h / 2;
+  const cx = size.w / 2 + pan.x;
+  const cy = size.h / 2 + pan.y;
   const radius = Math.min(size.w, size.h) * 0.28;
 
   const skillNodes: SkillNode[] = agent.skills.map((skill, i) => {
@@ -188,10 +220,18 @@ export default function AgentGraph({ agent, viewMode, onViewModeChange }: Props)
   }
 
   return (
-    <div id="graph-container" style={{ width: "100%", height: "100%", position: "relative" }}>
+    <div
+      id="graph-container"
+      style={{ width: "100%", height: "100%", position: "relative", cursor: isDragging.current ? "grabbing" : "grab" }}
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
+    >
       {/* Visualize Workflow button */}
       <button
         onClick={() => onViewModeChange("workflow")}
+        onMouseDown={(e) => e.stopPropagation()}
         style={{
           position: "absolute", top: 16, right: 16, zIndex: 5,
           background: "linear-gradient(135deg, #e85d27, #c44a1a)",
@@ -208,7 +248,14 @@ export default function AgentGraph({ agent, viewMode, onViewModeChange }: Props)
         Visualize Workflow →
       </button>
 
-      <svg width={size.w} height={size.h} style={{ position: "absolute", top: 0, left: 0 }}>
+      {/* Pan hint */}
+      <div style={{ position: "absolute", bottom: 12, left: "50%", transform: "translateX(-50%)", fontSize: 11, color: "#444", pointerEvents: "none", zIndex: 5 }}>
+        drag to pan
+      </div>
+
+      <svg width={size.w} height={size.h} style={{ position: "absolute", top: 0, left: 0, userSelect: "none" }}>
+        {/* Invisible drag target for background */}
+        <rect x={0} y={0} width={size.w} height={size.h} fill="transparent" />
         {/* Defs for glow */}
         <defs>
           <filter id="glow-orange">
@@ -330,11 +377,13 @@ export default function AgentGraph({ agent, viewMode, onViewModeChange }: Props)
             key={node.skill}
             style={{ cursor: "pointer" }}
             onMouseEnter={(e) => {
+              e.stopPropagation();
               setHoveredSkill(node.skill);
               const rect = (e.currentTarget.closest("svg") as SVGElement).getBoundingClientRect();
               setHoveredPos({ x: node.x + rect.left, y: node.y + rect.top });
             }}
-            onMouseLeave={() => { setHoveredSkill(null); setHoveredPos(null); }}
+            onMouseLeave={(e) => { e.stopPropagation(); setHoveredSkill(null); setHoveredPos(null); }}
+            onMouseDown={(e) => e.stopPropagation()}
           >
             {/* Glow */}
             <circle
