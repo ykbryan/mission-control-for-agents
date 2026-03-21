@@ -1,7 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { execSync } from "child_process";
-import os from "os";
-import path from "path";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -12,16 +9,48 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Missing params" }, { status: 400 });
   }
 
-  // Allow directories like memory/2026-03-21.md, but prevent traversal
+  // Sanitize — allow nested directories, prevent path traversal
   if (!file.endsWith(".md") || file.includes("..")) {
     return NextResponse.json({ error: "Invalid file" }, { status: 400 });
   }
 
-  const homedir = os.homedir();
-  const remoteFilePath = path.join(homedir, ".openclaw", "agents", agentId, "workspace", file);
+  const gatewayUrl = req.cookies.get("gatewayUrl")?.value;
+  const gatewayToken = req.cookies.get("gatewayToken")?.value;
+
+  if (!gatewayUrl || !gatewayToken) {
+    return NextResponse.json({ error: "Unauthorized: Missing gateway credentials" }, { status: 401 });
+  }
+
+  // Ensure absolute path evaluation to avoid shell '~' expansion failures
+  const remoteFilePath = `/home/dave/.openclaw/agents/${agentId}/workspace/${file}`;
 
   try {
-    const content = execSync(`cat "${remoteFilePath}"`, { encoding: 'utf-8' });
+    const response = await fetch(`${gatewayUrl}/api/v1/exec`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${gatewayToken}`,
+      },
+      body: JSON.stringify({
+        command: `cat ${remoteFilePath}`,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Gateway returned ${response.status}`);
+    }
+
+    const json = await response.json();
+    let content = "";
+    
+    if (json.stdout) {
+      content = json.stdout;
+    } else if (json.output) {
+      content = json.output;
+    } else {
+      content = JSON.stringify(json);
+    }
+
     return NextResponse.json({ content });
   } catch (err: any) {
     console.error("Agent file fetch error:", err);
