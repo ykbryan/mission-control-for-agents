@@ -30,3 +30,18 @@ Spin up the dashboard on your laptop, hit the secure `/login` modal, plug in you
 
 ---
 *(See [SETUP.md](SETUP.md) for full deployment instructions and OpenClaw Gateway configuration).*
+
+### 🛠️ Important: Linux Systemd Network Override
+
+If you are running OpenClaw as a Linux `systemd` background service (via `openclaw service install`), OpenClaw defaults to a secure `loopback` binding (`127.0.0.1`). 
+
+Even if you update `openclaw.json` to `"bind": "auto"` or `"0.0.0.0"`, the `systemd` daemon file may have `--bind loopback` explicitly hardcoded in the `ExecStart` arguments, which overrides the JSON config. 
+
+**To fix this and allow Docker/Coolify containers to reach your host OpenClaw Gateway over a Tailnet:**
+1. Open the service file: `nano ~/.config/systemd/user/openclaw-gateway.service`
+2. Locate the `ExecStart=` line.
+3. If `--bind loopback` or `--bind 127.0.0.1` is present, either remove the flag entirely (to defer to `openclaw.json`) or change it to `--bind 0.0.0.0`.
+4. Reload the daemon: `systemctl --user daemon-reload`
+5. Restart the service: `systemctl --user restart openclaw-gateway`
+
+*Warning: This will reboot the OpenClaw service and briefly disconnect active agents.*
