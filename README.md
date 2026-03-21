@@ -13,8 +13,10 @@ We built this out of necessity. When managing 20+ agents across multiple domains
 ### 🗺️ Scalable Agent Canvas (Powered by React Flow)
 Navigate your swarm spatially. The center stage is an interactive, draggable node map built on Framer Motion physics. Zoom out to see the entire swarm hierarchy, pan to specific agent clusters, and visualize the architecture of your automation.
 
-### 🧠 Contextual Inspector (Live Streaming)
-Clicking any node on the canvas instantly slides in the Contextual Inspector. It securely streams the agent’s specific `MEMORY.md`, `IDENTITY.md`, and real-time terminal activity logs over the network. Zero context switching.
+### 🧠 Agent Profile Drill-Down & Inspector
+Double-click any node on the canvas to trigger an immersive, `framer-motion` animated profile takeover. Inspect their Skills Matrix and live terminal activity logs instantly. 
+
+![Agent Profile Drill-down](media/profile.png)
 
 ### 📊 Token & Cost Analytics (Powered by Recharts)
 Manage your API burn rate. The Analytics Stage features animated count-up metrics and interactive bar charts calculating live "Token Consumption & USD Cost per Agent, per Day." 
