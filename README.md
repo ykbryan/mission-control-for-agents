@@ -45,3 +45,26 @@ Even if you update `openclaw.json` to `"bind": "auto"` or `"0.0.0.0"`, the `syst
 5. Restart the service: `systemctl --user restart openclaw-gateway`
 
 *Warning: This will reboot the OpenClaw service and briefly disconnect active agents.*
+
+## 📚 Lessons Learned & Troubleshooting (Developer Log)
+
+During the development of Mission Control, the Shelldon Swarm encountered several critical architectural and networking hurdles. If you are a developer extending this dashboard or a user deploying it to a remote VPS (like Coolify), please review these lessons learned to avoid the same pitfalls:
+
+### 1. The Gateway Network Bridge (Tailscale Binding)
+By default, the OpenClaw Gateway securely binds to `127.0.0.1` (`loopback`). This means that an isolated Docker container running Mission Control on the same host (or over a Tailnet) cannot reach the OpenClaw API, resulting in `ECONNREFUSED` crashes during Next.js SSR builds.
+
+**The Fix:** You must explicitly tell the OpenClaw server to listen on the Tailscale network interface. 
+- Do **not** use `0.0.0.0` or `auto` unless you are on a fully trusted LAN, as this exposes the Gateway to all interfaces.
+- Instead, use `gateway.bind="tailnet"`. This strictly limits the exposure, completely ignoring traffic from your regular WiFi/LAN or the public internet, while safely allowing your Mission Control Docker container to tunnel in.
+
+*(Note: Ensure your Linux `systemd` daemon file does not contain a hardcoded `--bind loopback` override in the `ExecStart` arguments, as it will silently ignore your `openclaw.json` config).*
+
+### 2. The Next.js SSR Crash Loop
+Next.js aggressively attempts Server-Side Rendering (SSR) or Static Site Generation (SSG) during the `npm run build` phase. If your API routes attempt to hit a live Gateway URL (like a Tailscale IP) during the Docker build sequence, the isolated Docker network will throw `ECONNREFUSED` and hard-crash the build.
+**The Fix:** Inject `export const dynamic = 'force-dynamic';` into `app/layout.tsx` to force runtime rendering and bypass the static build-time fetches.
+
+### 3. The API Hallucination Bug (`/api/v1/exec`)
+When fetching remote agent files (like `USER.md`) or live session transcripts (`.jsonl`), our AI coding agents initially hallucinated the Gateway API endpoint as `POST /api/v1/exec`. **This endpoint does not exist** and will return a raw HTML `404 Not Found` response.
+**The Fix:** Always use the actual OpenClaw API tool invocation endpoint: `POST /tools/invoke`. 
+- **Request Schema:** `{"tool": "exec", "args": {"command": "YOUR_BASH_COMMAND"}}`
+- **Response Parser:** The output is nested. You must extract the bash stdout from `jsonResp.result.output`, not `jsonResp.stdout`.
