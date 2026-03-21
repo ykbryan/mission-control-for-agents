@@ -2,6 +2,7 @@ import { Agent, skillDescriptions } from "@/lib/agents";
 import MarkdownViewer from "@/components/MarkdownViewer";
 import AgentLogStream from "./AgentLogStream";
 import { useEffect, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 
 interface Props {
   agent: Agent;
@@ -48,7 +49,7 @@ export default function InspectorPanel({ agent, activeFile, onSelectFile }: Prop
   const [activeTab, setActiveTab] = useState<"context" | "logs">("context");
 
   return (
-    <aside className="mc-inspector w-[332px] flex flex-col h-full flex-shrink-0" style={{ display: 'flex', flexDirection: 'column', height: '100%', flexShrink: 0 }}>
+    <aside className="mc-inspector w-[332px] flex flex-col h-full flex-shrink-0 relative overflow-hidden" style={{ display: 'flex', flexDirection: 'column', height: '100%', flexShrink: 0 }}>
       {/* Tabs Header */}
       <div className="flex border-b border-[#333] sticky top-0 z-20 bg-[#0a0a0a]">
         <button
@@ -65,7 +66,7 @@ export default function InspectorPanel({ agent, activeFile, onSelectFile }: Prop
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto custom-scrollbar transition-all duration-200 ease-in-out relative">
+      <div className="flex-1 overflow-y-auto custom-scrollbar relative">
         {activeTab === 'context' && (
           <div className="flex flex-col h-full p-4 space-y-6">
             <div className="mc-inspector__hero">
@@ -116,30 +117,13 @@ export default function InspectorPanel({ agent, activeFile, onSelectFile }: Prop
               </div>
             </section>
 
-            {activeFile ? (
-              <section className="mc-inspector__preview">
-                <div className="mc-section-label">Focused preview</div>
-                <div className="mc-preview-shell">
-                  <div className="mc-preview-shell__header">
-                    <strong>{activeFile}</strong>
-                    <button className="mc-preview-shell__close" onClick={() => onSelectFile(null)}>
-                      ×
-                    </button>
-                  </div>
-                  <div className="mc-preview-shell__content">
-                    <FilePreview agentId={agent.id} file={activeFile} />
-                  </div>
-                </div>
-              </section>
-            ) : (
-              <section className="mc-inspector__section mc-inspector__section--overview">
-                <div className="mc-section-label">Overview</div>
-                <div className="mc-overview-card">
-                  <strong>Quiet by default</strong>
-                  <p>Select a file to bring detail forward. The stage remains primary until you ask for depth.</p>
-                </div>
-              </section>
-            )}
+            <section className="mc-inspector__section mc-inspector__section--overview">
+              <div className="mc-section-label">Overview</div>
+              <div className="mc-overview-card">
+                <strong>Quiet by default</strong>
+                <p>Select a file to bring detail forward. The stage remains primary until you ask for depth.</p>
+              </div>
+            </section>
           </div>
         )}
 
@@ -149,6 +133,31 @@ export default function InspectorPanel({ agent, activeFile, onSelectFile }: Prop
           </div>
         )}
       </div>
+
+      <AnimatePresence>
+        {activeFile && activeTab === 'context' && (
+          <motion.div
+            initial={{ y: "100%", opacity: 0.5 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: "100%", opacity: 0.5 }}
+            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+            className="absolute inset-x-0 bottom-0 top-[49px] z-30 bg-[#0a0a0a] flex flex-col border-t border-[#333] shadow-2xl"
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[#333] bg-[#0a0a0a] sticky top-0 z-40">
+              <strong className="text-sm font-medium text-white">{activeFile}</strong>
+              <button 
+                className="text-gray-400 hover:text-white transition-colors flex items-center justify-center w-6 h-6 rounded-md hover:bg-[#333]" 
+                onClick={() => onSelectFile(null)}
+              >
+                ×
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+              <FilePreview agentId={agent.id} file={activeFile} />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </aside>
   );
 }
