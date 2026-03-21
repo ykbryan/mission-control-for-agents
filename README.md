@@ -1,46 +1,86 @@
-# Mission Control for Agents
+# Mission Control for Agents 🧠
 
-A visually stunning dark-theme dashboard for the OpenClaw AI agent network. Visualize all agents, their skills, and operational files in a graph-based interface inspired by mission control aesthetics.
+> A visual dashboard for the OpenClaw AI agent network — see all agents, their skills, and their markdown files in one place.
+
+## Design Inspiration
+
+<table>
+  <tr>
+    <td><img src="public/screenshots/rubric-1.jpg" width="400" alt="RUBRIC Dashboard 1"/></td>
+    <td><img src="public/screenshots/rubric-2.jpg" width="400" alt="RUBRIC Dashboard 2"/></td>
+  </tr>
+  <tr>
+    <td><img src="public/screenshots/rubric-3.jpg" width="400" alt="RUBRIC Dashboard 3"/></td>
+    <td><img src="public/screenshots/rubric-4.jpg" width="400" alt="RUBRIC Dashboard 4"/></td>
+  </tr>
+  <tr>
+    <td><img src="public/screenshots/rubric-5.jpg" width="400" alt="RUBRIC Graph View"/></td>
+    <td><img src="public/screenshots/rubric-6.jpg" width="400" alt="RUBRIC Workflow View"/></td>
+  </tr>
+</table>
+
+---
 
 ## Features
 
-- **Agent Graph View** — SVG graph with the agent as a central glowing orange node, skills as satellite nodes with animated connections
-- **Workflow View** — Linear step-by-step view of how an agent uses its skills
-- **Agent Kit Panel** — Right sidebar showing soul/purpose, skill tags, and expandable markdown files
-- **Search** — Filter agents by name, role, or skills (press `/` to focus)
-- **18 Agents** — Full roster of the OpenClaw agent network
-
-## Local Development
-
-```bash
-npm install
-npm run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000)
-
-## Docker Build
-
-```bash
-docker build -t mission-control .
-docker run -p 3000:3000 mission-control
-```
-
-## Environment Variables
-
-See `.env.example`. No variables required for basic operation.
+- 🤖 **18 AI Agents** — full roster of the Shelldon Swarm
+- 🕸️ **Interactive Graph** — animated node-skill visualization with particle lines
+- 📋 **Live Markdown Reader** — reads actual `.md` files from each agent's workspace
+- 🔍 **Search** — filter agents by name, role, or skill
+- ▶️ **Workflow View** — linear step-by-step view of each agent's skills
+- 🌑 **Dark hex grid UI** — inspired by RUBRIC design system
 
 ## Stack
 
 - **Next.js 15** (App Router, TypeScript)
 - **Tailwind CSS v4**
-- **Framer Motion** (animations)
-- **react-markdown** (markdown rendering)
-- **SVG** (graph visualization)
+- **Framer Motion** — animations
+- **SVG graph** — custom animated particle system
+- **react-markdown** — live MD file rendering
 
-## Deployment (Coolify)
+## Local Development
 
-1. Point Coolify to this repo
-2. Set build pack to **Dockerfile** or **Nixpacks**
-3. Set port to **3000**
-4. Deploy
+```bash
+git clone https://github.com/ykbryan/mission-control-for-agents.git
+cd mission-control-for-agents
+npm install
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000).
+
+## Docker / Coolify Deployment
+
+```bash
+# Build image
+docker build -t mission-control-for-agents .
+
+# Run
+docker run -p 3000:3000 \
+  -v /home/dave/.openclaw/agents:/home/dave/.openclaw/agents:ro \
+  mission-control-for-agents
+```
+
+**Volume mount is required** so the container can read agent markdown files from the host.
+
+### Coolify Setup
+
+1. Deploy as **Docker Image** from `ghcr.io/ykbryan/mission-control-for-agents:latest`
+2. Add volume: `/home/dave/.openclaw/agents` → `/home/dave/.openclaw/agents` (read-only)
+3. Port: `3000`
+
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NODE_ENV` | `production` | Node environment |
+| `NEXT_TELEMETRY_DISABLED` | `1` | Disable Next.js telemetry |
+| `PORT` | `3000` | Server port (injected by Coolify) |
+
+## Architecture
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for Omega's full architecture review.
+
+---
+
+Built with the **Shelldon Swarm** 🦾 — Brainy, Omega, Gorilla, Mother, Norton
