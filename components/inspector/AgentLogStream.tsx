@@ -87,7 +87,9 @@ export default function AgentLogStream({ agentId }: { agentId: string }) {
           <div className="flex flex-col items-center justify-center h-full py-12 text-center">
             <div className="text-2xl mb-2 opacity-40">📭</div>
             <p className="text-gray-500 text-xs">
-              {logs.length === 0 ? "No activity found for this agent." : "No entries match the current filter."}
+              {logs.length === 0
+                ? `No sessions found for agent "${agentId}".`
+                : "No entries match the current filter."}
             </p>
           </div>
         ) : (
