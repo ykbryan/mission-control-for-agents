@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import "./globals.css";
 
+export const dynamic = 'force-dynamic';
+
 export const metadata: Metadata = {
   title: "Mission Control — OpenClaw Agents",
   description: "Mission Control dashboard for OpenClaw AI agents",
