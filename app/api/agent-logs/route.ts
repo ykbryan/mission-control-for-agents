@@ -16,14 +16,17 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const response = await fetch(`${gatewayUrl}/api/v1/exec`, {
+    const response = await fetch(`${gatewayUrl}/tools/invoke`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${gatewayToken}`,
       },
       body: JSON.stringify({
-        command: `sh -c 'latest_session=$(jq -r ".recent[0].sessionId" /home/dave/.openclaw/agents/${agentId}/sessions/sessions.json) && tail -n 10 /home/dave/.openclaw/agents/${agentId}/sessions/$latest_session.jsonl'`,
+        tool: "exec",
+        args: {
+          command: `sh -c 'latest_session=$(jq -r ".recent[0].sessionId" ~/.openclaw/agents/${agentId}/sessions/sessions.json) && tail -n 10 ~/.openclaw/agents/${agentId}/sessions/$latest_session.jsonl'`
+        }
       }),
     });
 
@@ -32,7 +35,10 @@ export async function GET(req: NextRequest) {
     }
 
     const jsonResp = await response.json();
-    let stdoutText = jsonResp.stdout || jsonResp.output || "";
+    let stdoutText = "";
+    if (jsonResp.ok && jsonResp.result && jsonResp.result.output) {
+      stdoutText = jsonResp.result.output;
+    }
 
     const logs = stdoutText
       .split('\n')
