@@ -31,7 +31,13 @@ function FilePreview({ agentId, file }: { agentId: string; file: string }) {
     fetch(`/api/agent-file?agent=${agentId}&file=${file}`)
       .then((response) => response.json())
       .then((data) => {
-        if (!cancelled) setContent(data.content ?? `# ${file}\n\n_No preview available._`);
+        if (!cancelled) {
+          if (data.error) {
+            setContent(`# ${file}\n\n_Error: ${data.error}_`);
+          } else {
+            setContent(data.content ?? `# ${file}\n\n_No preview available._`);
+          }
+        }
       })
       .catch(() => {
         if (!cancelled) setContent(`# ${file}\n\n_Failed to load content._`);
