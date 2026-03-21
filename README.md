@@ -2,22 +2,7 @@
 
 > A visual dashboard for the OpenClaw AI agent network — see all agents, their skills, and their markdown files in one place.
 
-## Design Inspiration
-
-<table>
-  <tr>
-    <td><img src="public/screenshots/rubric-1.jpg" width="400" alt="RUBRIC Dashboard 1"/></td>
-    <td><img src="public/screenshots/rubric-2.jpg" width="400" alt="RUBRIC Dashboard 2"/></td>
-  </tr>
-  <tr>
-    <td><img src="public/screenshots/rubric-3.jpg" width="400" alt="RUBRIC Dashboard 3"/></td>
-    <td><img src="public/screenshots/rubric-4.jpg" width="400" alt="RUBRIC Dashboard 4"/></td>
-  </tr>
-  <tr>
-    <td><img src="public/screenshots/rubric-5.jpg" width="400" alt="RUBRIC Graph View"/></td>
-    <td><img src="public/screenshots/rubric-6.jpg" width="400" alt="RUBRIC Workflow View"/></td>
-  </tr>
-</table>
+![Mission Control Dashboard](public/screenshots/dashboard.jpg)
 
 ---
 
