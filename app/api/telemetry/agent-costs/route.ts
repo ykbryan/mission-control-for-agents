@@ -23,6 +23,7 @@ async function sessionsListHttp(
       Authorization: `Bearer ${gatewayToken}`,
     },
     body: JSON.stringify({ tool: "sessions_list", args: { limit: 500 } }),
+    cache: "no-store",
   });
   const data = await res.json();
   if (!data.ok) throw new Error(data.error?.message ?? "sessions_list failed");

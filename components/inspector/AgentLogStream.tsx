@@ -83,14 +83,23 @@ export default function AgentLogStream({ agentId }: { agentId: string }) {
         </button>
       </div>
       <div ref={containerRef} className="flex-1 overflow-y-auto overscroll-contain p-2 font-mono text-xs custom-scrollbar">
-        {filteredLogs.map(log => (
-          <div key={log.id} className="mb-2">
-            <span className="text-gray-500">[{new Date(log.timestamp).toLocaleTimeString()}]</span>
-            <span className={`ml-2 ${log.type === 'error' ? 'text-red-400' : log.type === 'memory' ? 'text-purple-400' : 'text-green-400'}`}>
-              {log.message}
-            </span>
+        {filteredLogs.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full py-12 text-center">
+            <div className="text-2xl mb-2 opacity-40">📭</div>
+            <p className="text-gray-500 text-xs">
+              {logs.length === 0 ? "No activity found for this agent." : "No entries match the current filter."}
+            </p>
           </div>
-        ))}
+        ) : (
+          filteredLogs.map(log => (
+            <div key={log.id} className="mb-2">
+              <span className="text-gray-500">[{new Date(log.timestamp).toLocaleTimeString()}]</span>
+              <span className={`ml-2 ${log.type === 'error' ? 'text-red-400' : log.type === 'memory' ? 'text-purple-400' : 'text-green-400'}`}>
+                {log.message}
+              </span>
+            </div>
+          ))
+        )}
       </div>
     </div>
   );

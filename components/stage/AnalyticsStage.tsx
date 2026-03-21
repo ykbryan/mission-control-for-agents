@@ -32,8 +32,8 @@ export default function AnalyticsStage() {
       }
     }
     fetchCosts();
-    // Poll every 60s
-    const interval = setInterval(fetchCosts, 60000);
+    // Poll every 30s
+    const interval = setInterval(fetchCosts, 30000);
     return () => clearInterval(interval);
   }, []);
 
