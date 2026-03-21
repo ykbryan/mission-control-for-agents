@@ -141,6 +141,7 @@ export default function AgentGraph({ agent, viewMode, onViewModeChange, darkMode
   const [hoveredSkill, setHoveredSkill] = useState<string | null>(null);
   const [hoveredPos, setHoveredPos] = useState<{ x: number; y: number } | null>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const isDragging = useRef(false);
@@ -198,7 +199,7 @@ export default function AgentGraph({ agent, viewMode, onViewModeChange, darkMode
 
   if (viewMode === "workflow") {
     return (
-      <div id="graph-container" style={{ width: "100%", height: "100%", position: "relative", display: "flex", alignItems: "center", justifyContent: "center", padding: 28 }}>
+      <div ref={containerRef} style={{ width: "100%", height: "100%", position: "relative", display: "flex", alignItems: "center", justifyContent: "center", padding: 28 }}>
         <button
           onClick={() => onViewModeChange("graph")}
           style={{
@@ -311,7 +312,7 @@ export default function AgentGraph({ agent, viewMode, onViewModeChange, darkMode
 
   return (
     <div
-      id="graph-container"
+      ref={containerRef}
       style={{ width: "100%", height: "100%", position: "relative", cursor: isDragging.current ? "grabbing" : "grab", background: darkMode ? "radial-gradient(circle at top, rgba(232,93,39,0.08), transparent 28%), rgba(7,8,11,0.82)" : "linear-gradient(180deg, rgba(255,255,255,0.92), rgba(244,246,248,0.98))", borderRadius: 28 }}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}

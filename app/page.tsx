@@ -60,7 +60,7 @@ export default function Home() {
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <SearchBar value={searchQuery} onChange={setSearchQuery} />
+            <SearchBar value={searchQuery} onChange={setSearchQuery} darkMode={darkMode} />
             <button
               onClick={() => setDarkMode(!darkMode)}
               className="mode-toggle"

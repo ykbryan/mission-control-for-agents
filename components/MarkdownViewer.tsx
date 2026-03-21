@@ -42,11 +42,14 @@ export default function MarkdownViewer({ content }: Props) {
           li: ({ children }) => (
             <li style={{ marginBottom: 3, color: "#999" }}>{children}</li>
           ),
-          code: ({ children, ...props }: React.HTMLAttributes<HTMLElement> & { inline?: boolean }) => (
-            props.inline
-              ? <code style={{ background: "rgba(232,93,39,0.1)", color: "#e85d27", padding: "1px 5px", borderRadius: 4, fontFamily: "monospace", fontSize: 11 }}>{children}</code>
-              : <code style={{ display: "block", background: "rgba(0,0,0,0.4)", padding: "8px 10px", borderRadius: 6, fontFamily: "monospace", fontSize: 11, color: "#ccc", margin: "6px 0", overflowX: "auto" }}>{children}</code>
-          ),
+          code: ({ children, className }) => {
+            const isBlock = Boolean(className);
+            return isBlock ? (
+              <code style={{ display: "block", background: "rgba(0,0,0,0.4)", padding: "8px 10px", borderRadius: 6, fontFamily: "monospace", fontSize: 11, color: "#ccc", margin: "6px 0", overflowX: "auto" }}>{children}</code>
+            ) : (
+              <code style={{ background: "rgba(232,93,39,0.1)", color: "#e85d27", padding: "1px 5px", borderRadius: 4, fontFamily: "monospace", fontSize: 11 }}>{children}</code>
+            );
+          },
           strong: ({ children }) => (
             <strong style={{ color: "#f0f0f0", fontWeight: 600 }}>{children}</strong>
           ),
