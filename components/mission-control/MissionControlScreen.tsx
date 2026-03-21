@@ -6,6 +6,7 @@ import { MissionControlScreenProps } from "@/components/mission-control-types";
 import TopStatusStrip from "@/components/mission-control/TopStatusStrip";
 import NavRail from "@/components/mission-control/NavRail";
 import MissionStage from "@/components/mission-control/MissionStage";
+import SwarmStage from "@/components/stage/SwarmStage";
 import InspectorPanel from "@/components/inspector/InspectorPanel";
 
 export default function MissionControlScreen({ agents }: MissionControlScreenProps) {
@@ -15,6 +16,7 @@ export default function MissionControlScreen({ agents }: MissionControlScreenPro
   const [mode, setMode] = useState<"graph" | "workflow">("graph");
   const [railExpanded, setRailExpanded] = useState(false);
   const [darkMode, setDarkMode] = useState(true);
+  const [activeView, setActiveView] = useState<"mission" | "swarms">("mission");
 
   const filteredAgents = useMemo(() => filterAgents(agents, searchQuery), [agents, searchQuery]);
   const selectedAgent = getSelectedAgent(filteredAgents.length ? filteredAgents : agents, selectedAgentId);
@@ -54,6 +56,8 @@ export default function MissionControlScreen({ agents }: MissionControlScreenPro
             agents={filteredAgents}
             selectedAgentId={selectedAgent.id}
             railExpanded={railExpanded}
+            activeView={activeView}
+            onViewChange={setActiveView}
             onSelect={(agent) => {
               setSelectedAgentId(agent.id);
               setMode("graph");
@@ -61,12 +65,16 @@ export default function MissionControlScreen({ agents }: MissionControlScreenPro
             onToggleExpanded={() => setRailExpanded((value) => !value)}
           />
 
-          <MissionStage
-            agent={selectedAgent}
-            mode={mode}
-            darkMode={darkMode}
-            onModeChange={setMode}
-          />
+          {activeView === "mission" ? (
+            <MissionStage
+              agent={selectedAgent}
+              mode={mode}
+              darkMode={darkMode}
+              onModeChange={setMode}
+            />
+          ) : (
+            <SwarmStage />
+          )}
 
           <InspectorPanel
             agent={selectedAgent}

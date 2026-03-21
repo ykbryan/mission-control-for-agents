@@ -526,3 +526,73 @@ The MVP is solid — the UI looks great, the component decomposition is clean, a
 ---
 
 *Architecture review complete. Ready for Gorilla to implement. 🏛️→🦍*
+
+---
+
+# ARCHITECTURE REVIEW GATE: Agent Logs & Swarms Showcase
+
+## 1. Executive Summary
+This architecture gate defines the implementation path for integrating the **Agent Logs & History** and **Swarms Showcase** features into the newly established "Framed Stage" layout. Based on the Pre-Build Sprint specs, we are introducing a new navigation context (`SwarmStage`) and a tabbed inspector paradigm for granular log analysis, without breaking the locked global frame structure.
+
+## 2. Component Architecture Changes
+
+### Modified Components
+1. **`NavRail` (`components/layout/NavRail.tsx`)**
+   - **Modification:** Add a stateful navigation toggle (e.g., `activeView: 'mission' | 'swarms'`).
+   - **Action:** Introduce a new "Swarms" icon beneath the Agents/Mission icon that drives the global view context.
+
+2. **`MissionStage` (`components/stage/MissionStage.tsx`)**
+   - **Modification:** Transition from a static center canvas to a conditionally rendered view. When `activeView === 'swarms'`, this component must unmount or hide, yielding the center pane to `SwarmStage`.
+
+3. **`InspectorPanel` (`components/inspector/InspectorPanel.tsx`)**
+   - **Modification:** Refactor to support a tabbed interface ("Context" vs. "Activity & Logs").
+   - **Action:** Introduce a `Tabs` sub-component. Ensure the outer panel remains `flex flex-col h-full` and `flex-shrink-0` to prevent layout collapse.
+
+### New Components
+1. **`SwarmStage` (`components/stage/SwarmStage.tsx`)**
+   - **Purpose:** Renders the Swarms Showcase markdown file dynamically.
+   - **Structure:** `max-w-4xl mx-auto`. Requires `react-markdown` and `@tailwindcss/typography` (`prose` classes).
+   - **Scrolling behavior:** Must use `h-full overflow-y-auto custom-scrollbar` to scroll independently from the global frame.
+
+2. **`AgentLogStream` (`components/inspector/AgentLogStream.tsx`)**
+   - **Purpose:** Terminal-style live feed for logs and memory history.
+   - **Structure:** Rendered inside the "Activity & Logs" tab.
+   - **Styling:** `font-mono text-xs`. Must feature auto-scroll behavior.
+   - **Scrolling behavior:** Container must be `flex-1 overflow-y-auto overscroll-contain`.
+
+## 3. Data & State Integration Strategy
+*   **Swarms Showcase Markdown:** Fetch the designated markdown file (e.g., via Next.js `fs.readFileSync` in a server component or a dedicated API route `GET /api/swarms/showcase`) and pass the string to `SwarmStage`.
+*   **Logs Integration:** Ensure the log streaming hook or context feeds directly into `AgentLogStream`. Implement a sticky top-bar filter by `type` (info, error, memory) directly within the log container's component state.
+
+## 4. UI & Layout Constraints (CRITICAL)
+*   **Global Layout:** The body and root layout *must* strictly remain `h-screen w-screen overflow-hidden`.
+*   **Internal Scrolling:** Only the `SwarmStage` and the `AgentLogStream` containers are permitted to use `overflow-y-auto`. Never apply global scrolling.
+*   **Transitions:** Apply `transition-all duration-200 ease-in-out` when swapping between `MissionStage` and `SwarmStage` and when toggling `InspectorPanel` tabs.
+
+## 5. Gorilla Implementation Checklist
+
+- [ ] **Step 1: Layout Routing & State**
+  - Update `NavRail` to include the "Swarms" icon.
+  - Lift or implement view state (`activeView`) to toggle between `<MissionStage />` and `<SwarmStage />`.
+
+- [ ] **Step 2: Build `SwarmStage` Component**
+  - Create `components/stage/SwarmStage.tsx`.
+  - Implement markdown fetching and rendering using `react-markdown` and Prose classes.
+  - Ensure the container uses `h-full overflow-y-auto custom-scrollbar`.
+
+- [ ] **Step 3: Refactor `InspectorPanel`**
+  - Extract existing context data into a "Context" tab.
+  - Implement the sticky tab header with smooth transitions (`duration-200`).
+  - Maintain the parent container as `flex flex-col h-full`.
+
+- [ ] **Step 4: Build `AgentLogStream` Component**
+  - Create `components/inspector/AgentLogStream.tsx`.
+  - Implement terminal-style typography (`font-mono text-xs`).
+  - Add auto-scroll behavior and sticky filter controls for log types.
+  - Ensure the log container applies `flex-1 overflow-y-auto overscroll-contain`.
+
+- [ ] **Step 5: Structural Review**
+  - Verify `overflow-hidden` at the root/body level.
+  - Verify independent internal scrolling works on `SwarmStage` and `AgentLogStream`.
+
+*Architecture Plan Prepared by Omega*
