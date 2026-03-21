@@ -27,6 +27,7 @@ async function sessionsListHttp(
       Authorization: `Bearer ${gatewayToken}`,
     },
     body: JSON.stringify({ tool: "sessions_list", args }),
+    cache: "no-store",
   });
   const data = await res.json();
   if (!data.ok) throw new Error(data.error?.message ?? "sessions_list failed");
@@ -43,7 +44,7 @@ export async function GET(req: NextRequest) {
   if (!gatewayUrl || !gatewayToken) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
-    const parsed = await sessionsListHttp(gatewayUrl, gatewayToken, { limit: 200 });
+    const parsed = await sessionsListHttp(gatewayUrl, gatewayToken, { limit: 500 });
 
     const agentSessions = parsed.sessions
       .filter((s) => {
