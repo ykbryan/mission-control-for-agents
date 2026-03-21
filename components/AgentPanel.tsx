@@ -38,10 +38,6 @@ const FILE_ICONS: Record<string, string> = {
   "ARCHITECTURE.md": "🏗️",
 };
 
-interface FileContentCache {
-  [key: string]: string;
-}
-
 function FileRow({
   agentId,
   file,
@@ -72,7 +68,6 @@ function FileRow({
     }
   }, [isOpen, agentId, file, content]);
 
-  // Reset content when agent changes
   useEffect(() => {
     setContent(null);
   }, [agentId]);
@@ -86,11 +81,11 @@ function FileRow({
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          padding: "9px 12px",
-          background: isOpen ? "rgba(232,93,39,0.08)" : "rgba(255,255,255,0.03)",
-          border: `1px solid ${isOpen ? "rgba(232,93,39,0.25)" : "rgba(255,255,255,0.06)"}`,
-          borderRadius: isOpen ? "8px 8px 0 0" : 8,
-          color: isOpen ? "#f0f0f0" : "#ccc",
+          padding: "10px 12px",
+          background: isOpen ? "rgba(232,93,39,0.1)" : "rgba(255,255,255,0.04)",
+          border: `1px solid ${isOpen ? "rgba(232,93,39,0.2)" : "rgba(255,255,255,0.05)"}`,
+          borderRadius: isOpen ? "14px 14px 0 0" : 14,
+          color: isOpen ? "#f0f0f0" : "#d0d4da",
           cursor: "pointer",
           fontSize: 13,
           textAlign: "left",
@@ -102,23 +97,24 @@ function FileRow({
           <span style={{ fontSize: 14 }}>{FILE_ICONS[file] || "📄"}</span>
           <span style={{ fontFamily: "'SF Mono', 'Fira Code', monospace", fontSize: 12 }}>{file}</span>
         </span>
-        <span style={{ fontSize: 10, color: isOpen ? "#e85d27" : "#555", transition: "color 0.15s" }}>
+        <span style={{ fontSize: 10, color: isOpen ? "#ff8a57" : "#6d7380", transition: "color 0.15s" }}>
           {isOpen ? "▲ hide" : "▼ view"}
         </span>
       </button>
       {isOpen && (
         <div
           style={{
-            borderRadius: "0 0 8px 8px",
-            border: "1px solid rgba(232,93,39,0.15)",
+            borderRadius: "0 0 14px 14px",
+            border: "1px solid rgba(232,93,39,0.14)",
             borderTop: "none",
             overflow: "hidden",
             maxHeight: 400,
             overflowY: "auto",
+            background: "rgba(8,9,12,0.45)",
           }}
         >
           {loading ? (
-            <div style={{ padding: "16px 20px", color: "#666", fontSize: 13 }}>
+            <div style={{ padding: "16px 20px", color: "#7a808c", fontSize: 13 }}>
               Loading {file}…
             </div>
           ) : content !== null ? (
@@ -138,75 +134,86 @@ interface Props {
 
 export default function AgentPanel({ agent, openFiles, onToggleFile }: Props) {
   return (
-    <div
+    <aside
       style={{
-        width: 320,
-        borderLeft: "1px solid rgba(255,255,255,0.06)",
-        background: "rgba(10,10,10,0.7)",
+        width: 340,
+        background: "linear-gradient(180deg, rgba(15,16,20,0.92), rgba(12,13,17,0.78))",
+        border: "1px solid rgba(255,255,255,0.04)",
+        borderRadius: 28,
         display: "flex",
         flexDirection: "column",
         overflowY: "auto",
         flexShrink: 0,
-        // Ensure this panel is scrollable independently
-        height: "100%",
+        minHeight: 0,
+        boxShadow: "0 24px 60px rgba(0,0,0,0.28)",
       }}
     >
-      {/* AGENT KIT header — RUBRIC style */}
       <div
         style={{
-          padding: "12px 16px 10px",
-          borderBottom: "1px solid rgba(255,255,255,0.06)",
-          background: "rgba(17,17,17,0.6)",
+          padding: "18px 18px 14px",
+          borderBottom: "1px solid rgba(255,255,255,0.04)",
+          background: "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01))",
         }}
       >
-        <div style={{ fontSize: 10, color: "#555", letterSpacing: "0.12em", textTransform: "uppercase", fontWeight: 600, marginBottom: 8 }}>
+        <div
+          style={{
+            fontSize: 10,
+            color: "#6b7280",
+            letterSpacing: "0.16em",
+            textTransform: "uppercase",
+            fontWeight: 700,
+            marginBottom: 10,
+          }}
+        >
           Agent Kit
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div
             style={{
-              width: 36,
-              height: 36,
-              borderRadius: 8,
+              width: 42,
+              height: 42,
+              borderRadius: 14,
               background: "rgba(232,93,39,0.15)",
-              border: "1px solid rgba(232,93,39,0.3)",
+              border: "1px solid rgba(232,93,39,0.24)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              fontSize: 20,
+              fontSize: 22,
+              boxShadow: "0 12px 24px rgba(232,93,39,0.14)",
             }}
           >
             {agent.emoji}
           </div>
-          <div style={{ fontWeight: 700, fontSize: 15, color: "#f0f0f0" }}>{agent.name}</div>
+          <div>
+            <div style={{ fontWeight: 720, fontSize: 15, color: "#f0f0f0" }}>{agent.name}</div>
+            <div style={{ marginTop: 2, fontSize: 12, color: "#7f8794" }}>{agent.role}</div>
+          </div>
         </div>
       </div>
 
-      {/* Agent soul / description */}
       <div
         style={{
-          padding: "14px 16px",
-          borderBottom: "1px solid rgba(255,255,255,0.06)",
+          padding: "16px 18px",
+          borderBottom: "1px solid rgba(255,255,255,0.04)",
         }}
       >
-        <div style={{ fontSize: 12, color: "#777", lineHeight: 1.6 }}>{agent.soul}</div>
+        <div style={{ fontSize: 12, color: "#9aa1ab", lineHeight: 1.7 }}>{agent.soul}</div>
       </div>
 
-      {/* Skills */}
-      <div style={{ padding: "14px 16px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+      <div style={{ padding: "16px 18px", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
         <div
           style={{
             fontSize: 10,
-            color: "#555",
-            letterSpacing: "0.1em",
+            color: "#6b7280",
+            letterSpacing: "0.14em",
             textTransform: "uppercase",
-            fontWeight: 600,
-            marginBottom: 8,
+            fontWeight: 700,
+            marginBottom: 10,
           }}
         >
           Skills Included
         </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           {agent.skills.map((skill) => (
             <div
               key={skill}
@@ -214,13 +221,13 @@ export default function AgentPanel({ agent, openFiles, onToggleFile }: Props) {
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 5,
+                gap: 6,
                 background: "rgba(232,93,39,0.08)",
-                border: "1px solid rgba(232,93,39,0.2)",
-                borderRadius: 20,
-                padding: "4px 10px",
+                border: "1px solid rgba(232,93,39,0.16)",
+                borderRadius: 999,
+                padding: "6px 11px",
                 fontSize: 11,
-                color: "#e85d27",
+                color: "#ff8a57",
                 cursor: "default",
               }}
             >
@@ -231,21 +238,20 @@ export default function AgentPanel({ agent, openFiles, onToggleFile }: Props) {
         </div>
       </div>
 
-      {/* Files — reads from real filesystem via API */}
-      <div style={{ padding: "14px 16px", flex: 1 }}>
+      <div style={{ padding: "16px 18px", flex: 1 }}>
         <div
           style={{
             fontSize: 10,
-            color: "#555",
-            letterSpacing: "0.1em",
+            color: "#6b7280",
+            letterSpacing: "0.14em",
             textTransform: "uppercase",
-            fontWeight: 600,
-            marginBottom: 8,
+            fontWeight: 700,
+            marginBottom: 10,
           }}
         >
           Markdown Files ({agent.files.length})
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {agent.files.map((file) => (
             <FileRow
               key={`${agent.id}-${file}`}
@@ -257,6 +263,6 @@ export default function AgentPanel({ agent, openFiles, onToggleFile }: Props) {
           ))}
         </div>
       </div>
-    </div>
+    </aside>
   );
 }

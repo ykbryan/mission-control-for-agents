@@ -184,7 +184,7 @@ export default function AgentGraph({ agent, viewMode, onViewModeChange, darkMode
 
   const cx = size.w / 2 + pan.x;
   const cy = size.h / 2 + pan.y;
-  const radius = Math.min(size.w, size.h) * 0.3;
+  const radius = Math.min(size.w, size.h) * 0.26;
 
   const skillNodes: SkillNode[] = agent.skills.map((skill, i) => {
     const angle = (i / agent.skills.length) * 2 * Math.PI - Math.PI / 2;
@@ -198,30 +198,30 @@ export default function AgentGraph({ agent, viewMode, onViewModeChange, darkMode
 
   if (viewMode === "workflow") {
     return (
-      <div id="graph-container" style={{ width: "100%", height: "100%", position: "relative", display: "flex", alignItems: "center", justifyContent: "center", padding: 40 }}>
+      <div id="graph-container" style={{ width: "100%", height: "100%", position: "relative", display: "flex", alignItems: "center", justifyContent: "center", padding: 28 }}>
         <button
           onClick={() => onViewModeChange("graph")}
           style={{
             position: "absolute", top: 16, right: 16,
-            background: "rgba(232,93,39,0.15)",
-            border: "1px solid rgba(232,93,39,0.4)",
-            color: "#e85d27",
-            padding: "7px 16px",
-            borderRadius: 8,
+            background: "rgba(232,93,39,0.12)",
+            border: "1px solid rgba(232,93,39,0.24)",
+            color: "#ff8a57",
+            padding: "9px 16px",
+            borderRadius: 999,
             cursor: "pointer",
             fontSize: 13,
             fontWeight: 600,
           }}
         >← Graph View</button>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 0, overflowX: "auto", padding: "0 60px", maxWidth: "100%" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 0, overflowX: "auto", padding: "0 32px", maxWidth: "100%" }}>
           <motion.div
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
             style={{
-              background: "rgba(255,255,255,0.05)",
-              border: "1px solid rgba(255,255,255,0.1)",
-              borderRadius: 12,
+              background: "rgba(255,255,255,0.04)",
+              border: "1px solid rgba(255,255,255,0.05)",
+              borderRadius: 18,
               padding: "12px 20px",
               textAlign: "center",
               minWidth: 100,
@@ -237,12 +237,12 @@ export default function AgentGraph({ agent, viewMode, onViewModeChange, darkMode
               <svg width="50" height="20" style={{ flexShrink: 0 }}>
                 <defs>
                   <marker id={`arrow-${i}`} markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-                    <path d="M0,0 L0,6 L6,3 z" fill="rgba(232,93,39,0.5)" />
+                    <path d="M0,0 L0,6 L6,3 z" fill="rgba(232,93,39,0.36)" />
                   </marker>
                 </defs>
                 <line
                   x1="0" y1="10" x2="44" y2="10"
-                  stroke="rgba(232,93,39,0.3)"
+                  stroke="rgba(232,93,39,0.22)"
                   strokeWidth="1.5"
                   strokeDasharray="4,3"
                   markerEnd={`url(#arrow-${i})`}
@@ -253,10 +253,10 @@ export default function AgentGraph({ agent, viewMode, onViewModeChange, darkMode
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.08 }}
                 style={{
-                  background: "rgba(17,17,17,0.9)",
-                  border: "1px solid rgba(232,93,39,0.2)",
-                  borderRadius: 12,
-                  padding: "14px 18px",
+                  background: "linear-gradient(180deg, rgba(20,21,26,0.92), rgba(14,15,19,0.84))",
+                  border: "1px solid rgba(232,93,39,0.14)",
+                  borderRadius: 18,
+                  padding: "16px 18px",
                   textAlign: "center",
                   minWidth: 120,
                   flexShrink: 0,
@@ -293,8 +293,8 @@ export default function AgentGraph({ agent, viewMode, onViewModeChange, darkMode
             transition={{ delay: agent.skills.length * 0.08 }}
             style={{
               background: "rgba(232,93,39,0.1)",
-              border: "1px solid rgba(232,93,39,0.3)",
-              borderRadius: 12,
+              border: "1px solid rgba(232,93,39,0.18)",
+              borderRadius: 18,
               padding: "12px 20px",
               textAlign: "center",
               minWidth: 100,
@@ -312,7 +312,7 @@ export default function AgentGraph({ agent, viewMode, onViewModeChange, darkMode
   return (
     <div
       id="graph-container"
-      style={{ width: "100%", height: "100%", position: "relative", cursor: isDragging.current ? "grabbing" : "grab", background: darkMode ? "#0a0a0a" : "#f5f5f5" }}
+      style={{ width: "100%", height: "100%", position: "relative", cursor: isDragging.current ? "grabbing" : "grab", background: darkMode ? "radial-gradient(circle at top, rgba(232,93,39,0.08), transparent 28%), rgba(7,8,11,0.82)" : "linear-gradient(180deg, rgba(255,255,255,0.92), rgba(244,246,248,0.98))", borderRadius: 28 }}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
