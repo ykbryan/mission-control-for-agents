@@ -13,6 +13,7 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState("");
   const [openFiles, setOpenFiles] = useState<Set<string>>(new Set());
   const [viewMode, setViewMode] = useState<"graph" | "workflow">("graph");
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const filteredAgents = agents.filter(
     (a) =>
@@ -88,12 +89,62 @@ export default function Home() {
 
       {/* Main content */}
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
-        {/* Left sidebar */}
-        <AgentList
-          agents={filteredAgents}
-          selectedAgent={selectedAgent}
-          onSelect={(a) => { setSelectedAgent(a); setViewMode("graph"); }}
-        />
+        {/* Left sidebar — collapsible */}
+        {sidebarOpen ? (
+          <div style={{ position: "relative", flexShrink: 0, display: "flex" }}>
+            <AgentList
+              agents={filteredAgents}
+              selectedAgent={selectedAgent}
+              onSelect={(a) => { setSelectedAgent(a); setViewMode("graph"); }}
+            />
+            <button
+              onClick={() => setSidebarOpen(false)}
+              style={{
+                position: "absolute",
+                top: "50%",
+                right: -12,
+                transform: "translateY(-50%)",
+                width: 20,
+                height: 48,
+                background: "rgba(25,25,25,0.97)",
+                border: "1px solid rgba(255,255,255,0.1)",
+                borderLeft: "none",
+                borderRadius: "0 6px 6px 0",
+                color: "#666",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 11,
+                zIndex: 10,
+                padding: 0,
+              }}
+              title="Collapse sidebar"
+            >{"<"}</button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setSidebarOpen(true)}
+            style={{
+              width: 20,
+              flexShrink: 0,
+              alignSelf: "center",
+              height: 48,
+              background: "rgba(25,25,25,0.97)",
+              border: "1px solid rgba(255,255,255,0.1)",
+              borderLeft: "none",
+              borderRadius: "0 6px 6px 0",
+              color: "#666",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 11,
+              padding: 0,
+            }}
+            title="Expand sidebar"
+          >{">"}</button>
+        )}
 
         {/* Center canvas */}
         <div style={{ flex: 1, position: "relative", overflow: "hidden" }}>

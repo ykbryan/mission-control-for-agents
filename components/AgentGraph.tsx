@@ -16,6 +16,7 @@ interface SkillNode {
   angle: number;
 }
 
+// Kept for workflow view and hover tooltip
 const SKILL_ICONS: Record<string, string> = {
   web_search: "🔍",
   notion: "📝",
@@ -39,19 +40,113 @@ const SKILL_ICONS: Record<string, string> = {
   message: "💬",
 };
 
+function hexPath(cx: number, cy: number, r: number): string {
+  const points = Array.from({ length: 6 }, (_, i) => {
+    const angle = (-90 + i * 60) * (Math.PI / 180);
+    return `${(cx + r * Math.cos(angle)).toFixed(2)},${(cy + r * Math.sin(angle)).toFixed(2)}`;
+  });
+  return `M ${points.join(" L ")} Z`;
+}
+
+function SkillIcon({ skill, cx, cy }: { skill: string; cx: number; cy: number }) {
+  const color = "#d0d0d0";
+  const sp = {
+    stroke: color,
+    strokeWidth: 1.5,
+    fill: "none",
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+  };
+
+  if (skill === "web_search" || skill === "browser") {
+    return (
+      <>
+        <circle cx={cx - 2} cy={cy - 2} r={8} {...sp} />
+        <line x1={cx + 4} y1={cy + 4} x2={cx + 9} y2={cy + 9} {...sp} strokeWidth={2.5} />
+      </>
+    );
+  }
+  if (skill === "notion" || skill === "pdf" || skill === "web_fetch") {
+    return (
+      <>
+        <rect x={cx - 7} y={cy - 9} width={14} height={18} rx={2} {...sp} />
+        <line x1={cx - 4} y1={cy - 4} x2={cx + 4} y2={cy - 4} {...sp} />
+        <line x1={cx - 4} y1={cy} x2={cx + 4} y2={cy} {...sp} />
+        <line x1={cx - 4} y1={cy + 4} x2={cx + 1} y2={cy + 4} {...sp} />
+      </>
+    );
+  }
+  if (["exec", "github", "git", "xcode", "claude-code", "vercel-deploy"].includes(skill)) {
+    return (
+      <>
+        <polyline points={`${cx - 10},${cy - 8} ${cx - 4},${cy} ${cx - 10},${cy + 8}`} {...sp} />
+        <polyline points={`${cx + 10},${cy - 8} ${cx + 4},${cy} ${cx + 10},${cy + 8}`} {...sp} />
+      </>
+    );
+  }
+  if (skill === "gog" || skill === "message") {
+    return (
+      <>
+        <rect x={cx - 10} y={cy - 7} width={20} height={14} rx={2} {...sp} />
+        <polyline points={`${cx - 10},${cy - 7} ${cx},${cy + 2} ${cx + 10},${cy - 7}`} {...sp} />
+      </>
+    );
+  }
+  if (["cron", "calendar", "apple-reminders"].includes(skill)) {
+    return (
+      <>
+        <circle cx={cx} cy={cy} r={9} {...sp} />
+        <line x1={cx} y1={cy - 5} x2={cx} y2={cy} {...sp} />
+        <line x1={cx} y1={cy} x2={cx + 4} y2={cy + 3} {...sp} />
+      </>
+    );
+  }
+  if (["nodes", "healthcheck", "firehose"].includes(skill)) {
+    return (
+      <>
+        <circle cx={cx} cy={cy} r={5} {...sp} />
+        {[0, 60, 120, 180, 240, 300].map((deg, i) => {
+          const rad = (deg - 90) * Math.PI / 180;
+          return (
+            <line
+              key={i}
+              x1={cx + Math.cos(rad) * 6.5} y1={cy + Math.sin(rad) * 6.5}
+              x2={cx + Math.cos(rad) * 10} y2={cy + Math.sin(rad) * 10}
+              {...sp} strokeWidth={2.5}
+            />
+          );
+        })}
+      </>
+    );
+  }
+  if (skill === "image" || skill === "camera") {
+    return (
+      <polygon
+        points={`${cx},${cy - 10} ${cx + 7},${cy} ${cx},${cy + 10} ${cx - 7},${cy}`}
+        {...sp}
+      />
+    );
+  }
+  // Default: circle with center dot
+  return (
+    <>
+      <circle cx={cx} cy={cy} r={9} {...sp} />
+      <circle cx={cx} cy={cy} r={2.5} fill={color} stroke="none" />
+    </>
+  );
+}
+
 export default function AgentGraph({ agent, viewMode, onViewModeChange }: Props) {
   const [hoveredSkill, setHoveredSkill] = useState<string | null>(null);
   const [hoveredPos, setHoveredPos] = useState<{ x: number; y: number } | null>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
 
-  // Pan state
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const isDragging = useRef(false);
   const dragStart = useRef({ x: 0, y: 0 });
   const panStart = useRef({ x: 0, y: 0 });
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    // Only start drag on the SVG background (not on skill nodes)
     if ((e.target as SVGElement).tagName === "svg" || (e.target as SVGElement).tagName === "rect") {
       isDragging.current = true;
       dragStart.current = { x: e.clientX, y: e.clientY };
@@ -71,7 +166,6 @@ export default function AgentGraph({ agent, viewMode, onViewModeChange }: Props)
     isDragging.current = false;
   }, []);
 
-  // Reset pan when agent changes
   useEffect(() => {
     setPan({ x: 0, y: 0 });
   }, [agent.id]);
@@ -89,7 +183,7 @@ export default function AgentGraph({ agent, viewMode, onViewModeChange }: Props)
 
   const cx = size.w / 2 + pan.x;
   const cy = size.h / 2 + pan.y;
-  const radius = Math.min(size.w, size.h) * 0.28;
+  const radius = Math.min(size.w, size.h) * 0.3;
 
   const skillNodes: SkillNode[] = agent.skills.map((skill, i) => {
     const angle = (i / agent.skills.length) * 2 * Math.PI - Math.PI / 2;
@@ -120,7 +214,6 @@ export default function AgentGraph({ agent, viewMode, onViewModeChange }: Props)
         >← Graph View</button>
 
         <div style={{ display: "flex", alignItems: "center", gap: 0, overflowX: "auto", padding: "0 60px", maxWidth: "100%" }}>
-          {/* Input node */}
           <motion.div
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -140,7 +233,6 @@ export default function AgentGraph({ agent, viewMode, onViewModeChange }: Props)
 
           {agent.skills.map((skill, i) => (
             <div key={skill} style={{ display: "flex", alignItems: "center" }}>
-              {/* Arrow */}
               <svg width="50" height="20" style={{ flexShrink: 0 }}>
                 <defs>
                   <marker id={`arrow-${i}`} markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
@@ -155,7 +247,6 @@ export default function AgentGraph({ agent, viewMode, onViewModeChange }: Props)
                   markerEnd={`url(#arrow-${i})`}
                 />
               </svg>
-              {/* Step card */}
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -180,7 +271,6 @@ export default function AgentGraph({ agent, viewMode, onViewModeChange }: Props)
             </div>
           ))}
 
-          {/* Arrow to output */}
           <svg width="50" height="20" style={{ flexShrink: 0 }}>
             <defs>
               <marker id="arrow-out" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
@@ -196,7 +286,6 @@ export default function AgentGraph({ agent, viewMode, onViewModeChange }: Props)
             />
           </svg>
 
-          {/* Output node */}
           <motion.div
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -228,7 +317,6 @@ export default function AgentGraph({ agent, viewMode, onViewModeChange }: Props)
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
     >
-      {/* Visualize Workflow button */}
       <button
         onClick={() => onViewModeChange("workflow")}
         onMouseDown={(e) => e.stopPropagation()}
@@ -248,127 +336,99 @@ export default function AgentGraph({ agent, viewMode, onViewModeChange }: Props)
         Visualize Workflow →
       </button>
 
-      {/* Pan hint */}
       <div style={{ position: "absolute", bottom: 12, left: "50%", transform: "translateX(-50%)", fontSize: 11, color: "#444", pointerEvents: "none", zIndex: 5 }}>
         drag to pan
       </div>
 
       <svg width={size.w} height={size.h} style={{ position: "absolute", top: 0, left: 0, userSelect: "none" }}>
-        {/* Invisible drag target for background */}
         <rect x={0} y={0} width={size.w} height={size.h} fill="transparent" />
-        {/* Defs for glow */}
+
         <defs>
-          <filter id="glow-orange">
+          <filter id="glow-orange" x="-50%" y="-50%" width="200%" height="200%">
             <feGaussianBlur stdDeviation="8" result="blur" />
             <feComposite in="SourceGraphic" in2="blur" operator="over" />
           </filter>
-          <filter id="glow-node">
-            <feGaussianBlur stdDeviation="3" result="blur" />
+          <filter id="glow-node" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="4" result="blur" />
             <feComposite in="SourceGraphic" in2="blur" operator="over" />
           </filter>
-          <radialGradient id="center-grad" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="#e85d27" stopOpacity="1" />
-            <stop offset="100%" stopColor="#c44a1a" stopOpacity="1" />
-          </radialGradient>
         </defs>
 
-        {/* Connecting lines */}
-        {skillNodes.map((node) => (
-          <motion.line
-            key={`line-${node.skill}`}
-            x1={cx}
-            y1={cy}
-            x2={node.x}
-            y2={node.y}
-            stroke={hoveredSkill === node.skill ? "rgba(232,93,39,0.5)" : "rgba(255,255,255,0.12)"}
+        {/* Connection lines — defined with IDs for animateMotion */}
+        {skillNodes.map((node, idx) => (
+          <path
+            key={`line-${idx}`}
+            id={`lp-${idx}`}
+            d={`M ${cx},${cy} L ${node.x},${node.y}`}
+            stroke={hoveredSkill === node.skill ? "rgba(232,93,39,0.45)" : "rgba(255,255,255,0.14)"}
             strokeWidth={hoveredSkill === node.skill ? 1.5 : 1}
-            strokeDasharray="6,4"
-            style={{ transition: "stroke 0.2s" }}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.5 }}
+            fill="none"
+            style={{ transition: "stroke 0.2s, stroke-width 0.2s" }}
           />
         ))}
 
-        {/* Outer pulse ring 1 */}
+        {/* Animated orange particles traveling along connection lines */}
+        {skillNodes.map((_node, idx) =>
+          [0, 0.8, 1.6].map((delay, j) => (
+            <circle key={`p-${idx}-${j}`} r={3} fill="#e85d27" opacity={0.85}>
+              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+              <animateMotion
+                {...({ dur: "2s", repeatCount: "indefinite", begin: `${delay}s` } as any)}
+              >
+                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                <mpath {...({ href: `#lp-${idx}` } as any)} />
+              </animateMotion>
+            </circle>
+          ))
+        )}
+
+        {/* Pulse rings */}
         <motion.circle
-          cx={cx}
-          cy={cy}
-          r={56}
-          fill="none"
-          stroke="rgba(232,93,39,0.2)"
-          strokeWidth={1}
-          animate={{ r: [56, 90], opacity: [0.6, 0] }}
+          cx={cx} cy={cy} r={56}
+          fill="none" stroke="rgba(232,93,39,0.25)" strokeWidth={1}
+          animate={{ r: [56, 95], opacity: [0.6, 0] }}
           transition={{ repeat: Infinity, duration: 2.5, ease: "easeOut" }}
         />
-        {/* Outer pulse ring 2 */}
         <motion.circle
-          cx={cx}
-          cy={cy}
-          r={56}
-          fill="none"
-          stroke="rgba(232,93,39,0.15)"
-          strokeWidth={1}
-          animate={{ r: [56, 90], opacity: [0.5, 0] }}
-          transition={{ repeat: Infinity, duration: 2.5, ease: "easeOut", delay: 1.2 }}
+          cx={cx} cy={cy} r={56}
+          fill="none" stroke="rgba(232,93,39,0.15)" strokeWidth={1}
+          animate={{ r: [56, 95], opacity: [0.5, 0] }}
+          transition={{ repeat: Infinity, duration: 2.5, ease: "easeOut", delay: 1.25 }}
         />
 
-        {/* Center node glow */}
-        <circle
-          cx={cx}
-          cy={cy}
-          r={52}
+        {/* Hex glow */}
+        <path
+          d={hexPath(cx, cy, 52)}
           fill="rgba(232,93,39,0.08)"
           filter="url(#glow-orange)"
         />
 
-        {/* Center node */}
-        <circle
-          cx={cx}
-          cy={cy}
-          r={44}
-          fill="url(#center-grad)"
-        />
-        <circle
-          cx={cx}
-          cy={cy}
-          r={44}
-          fill="none"
-          stroke="rgba(255,255,255,0.2)"
-          strokeWidth={1.5}
+        {/* Hexagonal center node */}
+        <path
+          d={hexPath(cx, cy, 44)}
+          fill="#0d0d0d"
+          stroke="#e85d27"
+          strokeWidth={2}
         />
 
-        {/* Agent emoji */}
-        <text
-          x={cx}
-          y={cy - 4}
-          textAnchor="middle"
-          dominantBaseline="middle"
-          fontSize={28}
-        >
-          {agent.emoji}
-        </text>
+        {/* Robot face */}
+        {/* Left eye */}
+        <circle cx={cx - 11} cy={cy - 7} r={5} fill="#111" stroke="#e85d27" strokeWidth={1.5} />
+        <circle cx={cx - 11} cy={cy - 7} r={2} fill="#e85d27" />
+        {/* Right eye */}
+        <circle cx={cx + 11} cy={cy - 7} r={5} fill="#111" stroke="#e85d27" strokeWidth={1.5} />
+        <circle cx={cx + 11} cy={cy - 7} r={2} fill="#e85d27" />
+        {/* Mouth bar */}
+        <rect x={cx - 11} y={cy + 5} width={22} height={6} rx={2} fill="none" stroke="#e85d27" strokeWidth={1.5} />
+        <line x1={cx - 4} y1={cy + 5} x2={cx - 4} y2={cy + 11} stroke="#e85d27" strokeWidth={1} />
+        <line x1={cx + 4} y1={cy + 5} x2={cx + 4} y2={cy + 11} stroke="#e85d27" strokeWidth={1} />
 
-        {/* Agent name under center */}
-        <text
-          x={cx}
-          y={cy + 62}
-          textAnchor="middle"
-          fill="#f0f0f0"
-          fontSize={14}
-          fontWeight={700}
-          letterSpacing="0.05em"
-        >
-          {agent.name.toUpperCase()}
+        {/* Center label */}
+        <text x={cx} y={cy + 62} textAnchor="middle" fill="#f0f0f0" fontSize={13} fontWeight={700} letterSpacing="0.08em">
+          Agent
         </text>
-        <text
-          x={cx}
-          y={cy + 80}
-          textAnchor="middle"
-          fill="#888"
-          fontSize={11}
-        >
-          {agent.role}
+        <text x={cx} y={cy + 78} textAnchor="middle" fill="#666" fontSize={11}>
+          {agent.name}
         </text>
 
         {/* Skill nodes */}
@@ -385,44 +445,28 @@ export default function AgentGraph({ agent, viewMode, onViewModeChange }: Props)
             onMouseLeave={(e) => { e.stopPropagation(); setHoveredSkill(null); setHoveredPos(null); }}
             onMouseDown={(e) => e.stopPropagation()}
           >
-            {/* Glow */}
-            <circle
-              cx={node.x}
-              cy={node.y}
-              r={28}
-              fill={hoveredSkill === node.skill ? "rgba(232,93,39,0.15)" : "rgba(255,255,255,0.03)"}
-              style={{ transition: "fill 0.2s" }}
-            />
-            {/* Circle */}
+            {hoveredSkill === node.skill && (
+              <circle cx={node.x} cy={node.y} r={42} fill="rgba(232,93,39,0.08)" filter="url(#glow-node)" />
+            )}
             <motion.circle
               cx={node.x}
               cy={node.y}
-              r={24}
-              fill={hoveredSkill === node.skill ? "rgba(30,30,30,1)" : "rgba(20,20,20,0.95)"}
-              stroke={hoveredSkill === node.skill ? "rgba(232,93,39,0.7)" : "rgba(255,255,255,0.12)"}
-              strokeWidth={hoveredSkill === node.skill ? 1.5 : 1}
+              r={34}
+              fill={hoveredSkill === node.skill ? "rgba(28,28,28,1)" : "rgba(18,18,18,0.95)"}
+              stroke={hoveredSkill === node.skill ? "rgba(232,93,39,0.6)" : "rgba(255,255,255,0.1)"}
+              strokeWidth={1.5}
               initial={{ scale: 0, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ delay: 0.1 + idx * 0.05, type: "spring", stiffness: 260, damping: 20 }}
             />
-            {/* Icon */}
+            <SkillIcon skill={node.skill} cx={node.x} cy={node.y} />
             <text
               x={node.x}
-              y={node.y - 1}
+              y={node.y + 48}
               textAnchor="middle"
-              dominantBaseline="middle"
-              fontSize={14}
-              style={{ pointerEvents: "none" }}
-            >
-              {SKILL_ICONS[node.skill] || "🔧"}
-            </text>
-            {/* Skill label */}
-            <text
-              x={node.x}
-              y={node.y + 36}
-              textAnchor="middle"
-              fill={hoveredSkill === node.skill ? "#e85d27" : "#888"}
-              fontSize={10}
+              fill={hoveredSkill === node.skill ? "#e85d27" : "#aaa"}
+              fontSize={11}
+              fontWeight={500}
               style={{ transition: "fill 0.2s", pointerEvents: "none" }}
             >
               {node.skill}

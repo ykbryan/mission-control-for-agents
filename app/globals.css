@@ -74,6 +74,12 @@ html, body {
   }
 }
 
+@keyframes travel {
+  0% { offset-distance: 0%; opacity: 1; }
+  90% { opacity: 1; }
+  100% { offset-distance: 100%; opacity: 0; }
+}
+
 .agent-center-node {
   animation: pulse-glow 2s ease-in-out infinite;
 }
