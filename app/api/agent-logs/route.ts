@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { execSync } from "child_process";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -9,11 +8,33 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Missing agent parameter" }, { status: 400 });
   }
 
-  try {
-    const command = `sh -c 'latest_session=$(jq -r ".recent[0].sessionId" ~/.openclaw/agents/${agentId}/sessions/sessions.json) && tail -n 10 ~/.openclaw/agents/${agentId}/sessions/$latest_session.jsonl'`;
-    const rawOutput = execSync(command, { encoding: 'utf-8' });
+  const gatewayUrl = req.cookies.get("gatewayUrl")?.value;
+  const gatewayToken = req.cookies.get("gatewayToken")?.value;
 
-    const logs = rawOutput
+  if (!gatewayUrl || !gatewayToken) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const response = await fetch(`${gatewayUrl}/api/v1/exec`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${gatewayToken}`,
+      },
+      body: JSON.stringify({
+        command: `sh -c 'latest_session=$(jq -r ".recent[0].sessionId" /home/dave/.openclaw/agents/${agentId}/sessions/sessions.json) && tail -n 10 /home/dave/.openclaw/agents/${agentId}/sessions/$latest_session.jsonl'`,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Gateway returned ${response.status}`);
+    }
+
+    const jsonResp = await response.json();
+    let stdoutText = jsonResp.stdout || jsonResp.output || "";
+
+    const logs = stdoutText
       .split('\n')
       .filter((line: string) => line.trim().length > 0)
       .map((line: string) => {
