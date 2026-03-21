@@ -1,32 +1,33 @@
 import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(req: NextRequest) {
-  const { gatewayUrl, gatewayToken } = await req.json();
+  const { routerUrl, routerToken } = await req.json();
 
-  if (!gatewayUrl || !gatewayToken) {
+  if (!routerUrl || !routerToken) {
     return NextResponse.json({ error: "Missing credentials" }, { status: 400 });
   }
 
   try {
-    const response = await fetch(`${gatewayUrl}/tools/invoke`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${gatewayToken}`,
-      },
-      body: JSON.stringify({
-        tool: "exec",
-        args: { command: "echo ok" },
-      }),
+    const res = await fetch(`${routerUrl}/health`, {
+      signal: AbortSignal.timeout(8_000),
     });
 
-    if (response.status === 401 || response.status === 403) {
+    if (res.status === 401 || res.status === 403) {
       return NextResponse.json({ error: "Invalid token" }, { status: 401 });
     }
 
-    // Any response other than 401/403 means the gateway is reachable and the token was accepted
+    // /health is public — now verify the token actually works on a protected route
+    const authRes = await fetch(`${routerUrl}/agents`, {
+      headers: { Authorization: `Bearer ${routerToken}` },
+      signal: AbortSignal.timeout(8_000),
+    });
+
+    if (!authRes.ok) {
+      return NextResponse.json({ error: "Invalid router token" }, { status: 401 });
+    }
+
     return NextResponse.json({ ok: true });
   } catch {
-    return NextResponse.json({ error: "Could not reach gateway" }, { status: 502 });
+    return NextResponse.json({ error: "Could not reach router" }, { status: 502 });
   }
 }
