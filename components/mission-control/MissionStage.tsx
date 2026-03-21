@@ -11,6 +11,7 @@ interface Props {
   agents: Agent[];
   selectedAgentId: string;
   onSelectAgent: (id: string) => void;
+  onNodeDoubleClick?: (id: string) => void;
   mode: "graph" | "workflow";
   darkMode: boolean;
   onModeChange: (mode: "graph" | "workflow") => void;
@@ -20,7 +21,7 @@ const nodeTypes = {
   agentNode: AgentNode,
 };
 
-export default function MissionStage({ agents, selectedAgentId, onSelectAgent, mode, darkMode, onModeChange }: Props) {
+export default function MissionStage({ agents, selectedAgentId, onSelectAgent, onNodeDoubleClick, mode, darkMode, onModeChange }: Props) {
   // Simple layout logic for MVP: Grid placement
   const initialNodes = useMemo(() => {
     return agents.map((agent, index) => {
@@ -67,9 +68,19 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, m
     [onSelectAgent]
   );
 
+  const handleNodeDoubleClick = useCallback(
+    (_: React.MouseEvent, node: any) => {
+      onSelectAgent(node.id);
+      if (onNodeDoubleClick) {
+        onNodeDoubleClick(node.id);
+      }
+    },
+    [onSelectAgent, onNodeDoubleClick]
+  );
+
   return (
     <section className="mc-stage flex flex-col h-full w-full bg-[#0a0a0a]">
-      <div className="mc-stage__toolbar p-4 flex justify-between items-center bg-[#111] z-10" style={{ borderBottom: "1px solid #333" }}>
+      <div className="mc-stage__toolbar p-4 flex justify-between items-center bg-[#111] z-10 border-b border-[#333]">
         <div>
           <div className="text-xs text-[#e85d27] uppercase font-bold tracking-wider mb-1">Center stage</div>
           <h2 className="text-xl font-semibold text-[#f0f0f0] m-0">Agent Canvas</h2>
@@ -84,6 +95,7 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, m
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onNodeClick={onNodeClick}
+            onNodeDoubleClick={handleNodeDoubleClick}
             nodeTypes={nodeTypes}
             fitView
             className="w-full h-full"
