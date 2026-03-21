@@ -8,7 +8,7 @@ http://100.121.209.118:8000
 ### 1. Create New Resource
 - Go to Projects → New Project or use existing
 - Click **+ New Resource** → **Application**
-- Choose **Public Repository** (or Private with GitHub token)
+- Choose **Public Repository** (GitHub PAT not needed — repo is public)
 
 ### 2. Repository Config
 - **Repository URL:** `https://github.com/ykbryan/mission-control-for-agents`
@@ -18,18 +18,28 @@ http://100.121.209.118:8000
 ### 3. Environment Variables
 ```
 NODE_ENV=production
-PORT=3000
 NEXT_TELEMETRY_DISABLED=1
 ```
+(Do NOT set PORT manually — Coolify injects it)
 
-### 4. Network / Port
-- **Port:** `3000`
-- **Expose via Traefik:** Yes (if you want a domain)
-- Or expose directly on Tailscale IP via port mapping
+### 4. Volume Mount (CRITICAL)
+The app reads agent markdown files from `/home/dave/.openclaw/agents` on the host.
+You must add a volume mount in Coolify:
 
-### 5. Deploy
+- **Host path:** `/home/dave/.openclaw/agents`
+- **Container path:** `/home/dave/.openclaw/agents`
+- **Read only:** Yes
+
+Without this, MD file content will show "file does not exist" errors.
+
+### 5. Network / Port
+- **Port:** `3000` (or let Coolify assign)
+- **Expose via Traefik:** Yes (if you want a domain/subdomain)
+
+### 6. Deploy
 - Click **Deploy**
 - Coolify will build the Docker image and start the container
+- Health check runs automatically every 30s
 
 ## Access
 Once deployed:
