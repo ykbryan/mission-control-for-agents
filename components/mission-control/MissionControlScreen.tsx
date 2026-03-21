@@ -53,7 +53,7 @@ export default function MissionControlScreen({ agents }: MissionControlScreenPro
           onToggleTheme={() => setDarkMode((value) => !value)}
         />
 
-        <div className="mc-frame">
+        <div className="flex flex-row overflow-hidden flex-nowrap w-full h-full gap-[18px] flex-1 min-h-0">
           <NavRail
             agents={filteredAgents}
             selectedAgentId={selectedAgent.id}
@@ -67,6 +67,7 @@ export default function MissionControlScreen({ agents }: MissionControlScreenPro
             onToggleExpanded={() => setRailExpanded((value) => !value)}
           />
 
+          <div className="flex-1 flex flex-col min-w-0">
           {activeView === "mission" ? (
             <MissionStage
               agent={selectedAgent}
@@ -79,6 +80,7 @@ export default function MissionControlScreen({ agents }: MissionControlScreenPro
           ) : (
             <AnalyticsStage />
           )}
+          </div>
 
           {activeView === "mission" && (
             <InspectorPanel

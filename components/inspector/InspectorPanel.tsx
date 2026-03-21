@@ -48,7 +48,7 @@ export default function InspectorPanel({ agent, activeFile, onSelectFile }: Prop
   const [activeTab, setActiveTab] = useState<"context" | "logs">("context");
 
   return (
-    <aside className="mc-inspector flex flex-col h-full flex-shrink-0" style={{ display: 'flex', flexDirection: 'column', height: '100%', flexShrink: 0 }}>
+    <aside className="mc-inspector w-[332px] flex flex-col h-full flex-shrink-0" style={{ display: 'flex', flexDirection: 'column', height: '100%', flexShrink: 0 }}>
       {/* Tabs Header */}
       <div className="flex border-b border-[#333] sticky top-0 z-20 bg-[#0a0a0a]">
         <button
