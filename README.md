@@ -1,71 +1,30 @@
-# Mission Control for Agents 🧠
+# Mission Control for Agents
 
-> A visual dashboard for the OpenClaw AI agent network — see all agents, their skills, and their markdown files in one place.
+> The spatial operating system for your OpenClaw agent swarms.
 
-![Mission Control Dashboard](public/screenshots/dashboard.jpg)
+![Canvas](media/canvas.png)
 
----
+Mission Control is a premium, high-performance Next.js dashboard engineered specifically to visualize, navigate, and manage massive swarms of autonomous [OpenClaw](https://github.com/openclaw/openclaw) agents. 
 
-## Features
+We built this out of necessity. When managing 20+ agents across multiple domains (coding, UX, deployment), a flat vertical list breaks down. You need a spatial map. You need live token telemetry. You need a centralized command center.
 
-- 🤖 **18 AI Agents** — full roster of the Shelldon Swarm
-- 🕸️ **Interactive Graph** — animated node-skill visualization with particle lines
-- 📋 **Live Markdown Reader** — reads actual `.md` files from each agent's workspace
-- 🔍 **Search** — filter agents by name, role, or skill
-- ▶️ **Workflow View** — linear step-by-step view of each agent's skills
-- 🌑 **Dark hex grid UI** — inspired by RUBRIC design system
+## 🌟 Core Features
 
-## Stack
+### 🗺️ Scalable Agent Canvas (Powered by React Flow)
+Navigate your swarm spatially. The center stage is an interactive, draggable node map built on Framer Motion physics. Zoom out to see the entire swarm hierarchy, pan to specific agent clusters, and visualize the architecture of your automation.
 
-- **Next.js 15** (App Router, TypeScript)
-- **Tailwind CSS v4**
-- **Framer Motion** — animations
-- **SVG graph** — custom animated particle system
-- **react-markdown** — live MD file rendering
+### 🧠 Contextual Inspector (Live Streaming)
+Clicking any node on the canvas instantly slides in the Contextual Inspector. It securely streams the agent’s specific `MEMORY.md`, `IDENTITY.md`, and real-time terminal activity logs over the network. Zero context switching.
 
-## Local Development
+### 📊 Token & Cost Analytics (Powered by Recharts)
+Manage your API burn rate. The Analytics Stage features animated count-up metrics and interactive bar charts calculating live "Token Consumption & USD Cost per Agent, per Day." 
 
-```bash
-git clone https://github.com/ykbryan/mission-control-for-agents.git
-cd mission-control-for-agents
-npm install
-npm run dev
-```
+### 🔒 Remote-Ready (HTTP Gateway API)
+Mission Control is completely decoupled from the local filesystem. It natively hooks into the OpenClaw HTTP Gateway. 
 
-Open [http://localhost:3000](http://localhost:3000).
+![Login Screen](media/login.png)
 
-## Docker / Coolify Deployment
-
-```bash
-# Build image
-docker build -t mission-control-for-agents .
-
-# Run
-docker run -p 3000:3000 \
-  -v /home/dave/.openclaw/agents:/home/dave/.openclaw/agents:ro \
-  mission-control-for-agents
-```
-
-**Volume mount is required** so the container can read agent markdown files from the host.
-
-### Coolify Setup
-
-1. Deploy as **Docker Image** from `ghcr.io/ykbryan/mission-control-for-agents:latest`
-2. Add volume: `/home/dave/.openclaw/agents` → `/home/dave/.openclaw/agents` (read-only)
-3. Port: `3000`
-
-## Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `NODE_ENV` | `production` | Node environment |
-| `NEXT_TELEMETRY_DISABLED` | `1` | Disable Next.js telemetry |
-| `PORT` | `3000` | Server port (injected by Coolify) |
-
-## Architecture
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for Omega's full architecture review.
+Spin up the dashboard on your laptop, hit the secure `/login` modal, plug in your `OPENCLAW_GATEWAY_URL` and Bearer token, and manage a swarm running on a remote VPS data center across the globe. No hardcoded `.env` files. Seamless authentication via secure, HTTP-only cookies.
 
 ---
-
-Built with the **Shelldon Swarm** 🦾 — Brainy, Omega, Gorilla, Mother, Norton
+*(See [SETUP.md](SETUP.md) for full deployment instructions and OpenClaw Gateway configuration).*
