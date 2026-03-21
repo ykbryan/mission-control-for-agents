@@ -27,19 +27,28 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized: Missing gateway credentials" }, { status: 401 });
     }
 
-    const response = await fetch(`${gatewayUrl}/api/v1/status?usage=true`, {
-      method: "GET",
+    const response = await fetch(`${gatewayUrl}/api/v1/exec`, {
+      method: "POST",
       headers: {
+        "Content-Type": "application/json",
         "Authorization": `Bearer ${gatewayToken}`,
       },
-      next: { revalidate: 0 },
+      body: JSON.stringify({
+        command: "openclaw status --usage --json"
+      }),
     });
 
     if (!response.ok) {
       throw new Error(`Gateway returned ${response.status}`);
     }
 
-    const data = await response.json();
+    const rawData = await response.json();
+    let data: any = {};
+    try {
+      data = JSON.parse(rawData.stdout || "{}");
+    } catch (e) {
+      data = {};
+    }
 
     const agentCosts = (data.sessions?.byAgent || []).map((agentData: any) => {
       let totalInput = 0;
