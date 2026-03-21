@@ -1,0 +1,79 @@
+@import "tailwindcss";
+
+:root {
+  --orange: #e85d27;
+  --orange-dim: rgba(232, 93, 39, 0.15);
+  --orange-glow: rgba(232, 93, 39, 0.4);
+  --bg: #0a0a0a;
+  --bg-card: #111111;
+  --bg-card2: #161616;
+  --border: rgba(255,255,255,0.08);
+  --text-primary: #f0f0f0;
+  --text-secondary: #888;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+  overflow: hidden;
+}
+
+.hex-bg {
+  background-color: var(--bg);
+  background-image: url('/hex-pattern.svg');
+  background-size: 60px 52px;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.1);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(232, 93, 39, 0.4);
+}
+
+/* Orange glow animation */
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(232, 93, 39, 0.4), 0 0 40px rgba(232, 93, 39, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(232, 93, 39, 0.6), 0 0 60px rgba(232, 93, 39, 0.3);
+  }
+}
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+@keyframes dash-flow {
+  to {
+    stroke-dashoffset: -20;
+  }
+}
+
+.agent-center-node {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
