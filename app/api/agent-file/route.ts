@@ -21,18 +21,18 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized: Missing gateway credentials" }, { status: 401 });
   }
 
-  // Ensure absolute path evaluation to avoid shell '~' expansion failures
-  const remoteFilePath = `/home/dave/.openclaw/agents/${agentId}/workspace/${file}`;
-
   try {
-    const response = await fetch(`${gatewayUrl}/api/v1/exec`, {
+    const response = await fetch(`${gatewayUrl}/tools/invoke`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${gatewayToken}`,
       },
       body: JSON.stringify({
-        command: `cat ${remoteFilePath}`,
+        tool: "exec",
+        args: {
+          command: `sh -c 'cat ~/.openclaw/agents/${agentId}/workspace/${file}'`
+        }
       }),
     });
 
@@ -40,15 +40,13 @@ export async function GET(req: NextRequest) {
       throw new Error(`Gateway returned ${response.status}`);
     }
 
-    const json = await response.json();
+    const jsonResp = await response.json();
     let content = "";
     
-    if (json.stdout) {
-      content = json.stdout;
-    } else if (json.output) {
-      content = json.output;
+    if (jsonResp.ok && jsonResp.result && jsonResp.result.output) {
+      content = jsonResp.result.output;
     } else {
-      content = JSON.stringify(json);
+      content = JSON.stringify(jsonResp);
     }
 
     return NextResponse.json({ content });
