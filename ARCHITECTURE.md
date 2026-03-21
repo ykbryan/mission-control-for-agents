@@ -670,3 +670,73 @@ This architecture gate defines the implementation path for the **Token & Cost An
 - [ ] **Step 6: Structural & CSS Review**
   - Verify `overflow-hidden` is untouched at the root/layout level.
   - Ensure the charts resize correctly when the browser window or `InspectorPanel` resizes.
+
+---
+
+# ARCHITECTURE REVIEW GATE: Scalable Agent Canvas & Navigation
+
+## 1. Executive Summary
+This architecture gate defines the implementation path for the **Scalable Agent Canvas & Navigation** refactor. Based on the pre-build specs (`LOOKER_CANVAS_SPEC.md` and `KAT_CANVAS_UI_SPEC.md`), we are overhauling the core dashboard layout. The `NavRail` will be simplified to a slim, icon-only global navigation bar by stripping out the agent list. The `MissionStage` will be completely replaced by an interactive, draggable canvas using `React Flow`, where agents are represented as nodes. Selecting a node on the canvas will update the global active agent state, subsequently populating the `InspectorPanel`.
+
+## 2. Component Architecture Changes
+
+### Modified Components
+1. **`NavRail` (`components/layout/NavRail.tsx`)**
+   - **Modification:** Strip out the `AgentList` component and any associated agent-filtering logic.
+   - **Action:** Convert into a slim, icon-only global navigation bar (e.g., Mission, Swarms, Analytics).
+
+2. **`InspectorPanel` (`components/inspector/InspectorPanel.tsx`)**
+   - **Modification:** Update data-binding to listen to the global active agent state set by the new canvas.
+   - **Action:** Ensure it gracefully handles empty states when no node is selected on the canvas.
+
+### New / Refactored Components
+1. **`MissionStage` (`components/stage/MissionStage.tsx`)**
+   - **Modification:** Completely refactor to host the `React Flow` canvas.
+   - **Action:** Replace existing static or SVG-based agent graphs with `<ReactFlowProvider>` and `<ReactFlow>`.
+   - **Layout Constraints:** Must strictly occupy the center pane without forcing global scroll. 
+
+2. **`AgentNode` (`components/canvas/AgentNode.tsx`)**
+   - **Purpose:** Custom React Flow node component representing an individual agent.
+   - **Features:** Display agent avatar/icon, name, status, and handle click events to set the active agent state.
+
+3. **`CanvasControls` (`components/canvas/CanvasControls.tsx`)**
+   - **Purpose:** UI overlay for the canvas (zoom in/out, fit view, minimap).
+   - **Dependencies:** Built using `@xyflow/react` built-in control components.
+
+## 3. Data & State Integration Strategy
+*   **Canvas State:** Manage nodes and edges using `useNodesState` and `useEdgesState` from `@xyflow/react`.
+*   **Global Agent Selection:** When an `AgentNode` is clicked, it must update a hoisted state (e.g., via Context or Zustand) that the `InspectorPanel` consumes.
+*   **Node Positioning:** Implement a layout algorithm (or predefined positions) to distribute agent nodes cleanly upon initial load.
+
+## 4. UI & Layout Constraints (CRITICAL)
+*   **Global Layout:** The root `<body>` and main layout container *must* strictly remain `h-screen w-screen overflow-hidden`.
+*   **Canvas Container:** The `MissionStage` must be styled with `w-full h-full` and `flex-1` to ensure the `React Flow` canvas fits perfectly within the center stage without breaking the "Framed Stage" layout.
+*   **Responsiveness:** The canvas must dynamically resize. Ensure `React Flow`'s internal ResizeObserver is functioning correctly within the flex container.
+
+## 5. Gorilla Implementation Checklist
+
+- [ ] **Step 1: Install Dependencies**
+  - Run `npm install @xyflow/react` (or `reactflow`) to add the canvas library.
+
+- [ ] **Step 2: Refactor `NavRail`**
+  - Remove `AgentList` from `components/layout/NavRail.tsx`.
+  - Slim down the rail to an icon-only global navigation bar.
+
+- [ ] **Step 3: Build Canvas Components**
+  - Create `components/canvas/AgentNode.tsx` as a custom node type.
+  - Create `components/canvas/CanvasControls.tsx` for zoom and minimap.
+
+- [ ] **Step 4: Overhaul `MissionStage`**
+  - Refactor `components/stage/MissionStage.tsx` to implement `<ReactFlowProvider>` and `<ReactFlow>`.
+  - Integrate `AgentNode` as a custom node type in the flow instance.
+  - Map agent data to flow nodes and edges.
+
+- [ ] **Step 5: Connect State to `InspectorPanel`**
+  - Implement `onNodeClick` in the canvas to update the selected agent state.
+  - Verify that clicking an agent node successfully populates the `InspectorPanel` with the agent's details.
+
+- [ ] **Step 6: Structural & CSS Review**
+  - Verify `overflow-hidden` is strictly maintained at the root/layout level.
+  - Ensure the `React Flow` canvas container fills the `MissionStage` area completely (`w-full h-full`).
+
+*Architecture Plan Prepared by Omega*

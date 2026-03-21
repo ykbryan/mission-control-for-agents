@@ -1,8 +1,4 @@
-import { NextResponse } from 'next/server';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-
-const execAsync = promisify(exec);
+import { NextRequest, NextResponse } from 'next/server';
 
 // Example pricing per 1M tokens
 const PRICING: Record<string, { input: number; output: number; cacheRead: number }> = {
@@ -22,10 +18,28 @@ function calculateCost(model: string, inputTokens: number = 0, outputTokens: num
          ((cacheRead / 1_000_000) * rates.cacheRead);
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    const { stdout } = await execAsync('openclaw status --usage --json', { maxBuffer: 10 * 1024 * 1024 });
-    const data = JSON.parse(stdout);
+    const gatewayUrl = req.cookies.get("gatewayUrl")?.value;
+    const gatewayToken = req.cookies.get("gatewayToken")?.value;
+
+    if (!gatewayUrl || !gatewayToken) {
+      return NextResponse.json({ error: "Unauthorized: Missing gateway credentials" }, { status: 401 });
+    }
+
+    const response = await fetch(`${gatewayUrl}/api/v1/status?usage=true`, {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${gatewayToken}`,
+      },
+      next: { revalidate: 0 },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Gateway returned ${response.status}`);
+    }
+
+    const data = await response.json();
 
     const agentCosts = (data.sessions?.byAgent || []).map((agentData: any) => {
       let totalInput = 0;

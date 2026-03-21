@@ -1,8 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
-
-const AGENTS_BASE = "/home/dave/.openclaw/agents";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -18,14 +14,48 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Invalid file" }, { status: 400 });
   }
 
-  const filePath = path.join(AGENTS_BASE, agentId, "workspace", file);
+  const gatewayUrl = req.cookies.get("gatewayUrl")?.value;
+  const gatewayToken = req.cookies.get("gatewayToken")?.value;
+
+  if (!gatewayUrl || !gatewayToken) {
+    return NextResponse.json({ error: "Unauthorized: Missing gateway credentials" }, { status: 401 });
+  }
+
+  const remoteFilePath = `~/.openclaw/agents/${agentId}/workspace/${file}`;
 
   try {
-    const content = fs.readFileSync(filePath, "utf-8");
+    const response = await fetch(`${gatewayUrl}/api/v1/exec`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${gatewayToken}`,
+      },
+      body: JSON.stringify({
+        command: `cat ${remoteFilePath}`,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Gateway returned ${response.status}`);
+    }
+
+    const json = await response.json();
+    let content = "";
+    
+    // In exec response format, usually stdout is a field
+    if (json.stdout) {
+      content = json.stdout;
+    } else if (json.output) {
+      content = json.output;
+    } else {
+      content = JSON.stringify(json);
+    }
+
     return NextResponse.json({ content });
-  } catch {
+  } catch (err: any) {
+    console.error("Agent file fetch error:", err);
     return NextResponse.json(
-      { content: `# ${file}\n\n_This file does not exist for ${agentId}._` }
+      { content: `# ${file}\n\n_This file does not exist for ${agentId} or fetch failed._` }
     );
   }
 }
