@@ -7,14 +7,32 @@ import Cookies from "js-cookie";
 export default function LoginPage() {
   const [url, setUrl] = useState("");
   const [token, setToken] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
   const router = useRouter();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (url && token) {
+    setError("");
+    setLoading(true);
+    try {
+      const res = await fetch("/api/auth/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ gatewayUrl: url, gatewayToken: token }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setError(data.error || "Authentication failed");
+        return;
+      }
       Cookies.set("gatewayUrl", url, { expires: 7 });
       Cookies.set("gatewayToken", token, { expires: 7 });
       router.push("/");
+    } catch {
+      setError("Could not reach gateway");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -44,8 +62,9 @@ export default function LoginPage() {
             style={{ width: "100%", padding: "8px", marginTop: "5px" }}
           />
         </div>
-        <button type="submit" style={{ padding: "10px", cursor: "pointer", background: "#333", color: "white", border: "none" }}>
-          Connect
+        {error && <p style={{ color: "red", margin: 0 }}>{error}</p>}
+        <button type="submit" disabled={loading} style={{ padding: "10px", cursor: loading ? "not-allowed" : "pointer", background: "#333", color: "white", border: "none", opacity: loading ? 0.6 : 1 }}>
+          {loading ? "Connecting..." : "Connect"}
         </button>
       </form>
     </div>
