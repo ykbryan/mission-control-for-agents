@@ -9,6 +9,8 @@ import MissionStage from "@/components/mission-control/MissionStage";
 import SwarmStage from "@/components/stage/SwarmStage";
 import InspectorPanel from "@/components/inspector/InspectorPanel";
 
+import AnalyticsStage from "@/components/stage/AnalyticsStage";
+
 export default function MissionControlScreen({ agents }: MissionControlScreenProps) {
   const [selectedAgentId, setSelectedAgentId] = useState(agents[0]?.id ?? "");
   const [searchQuery, setSearchQuery] = useState("");
@@ -16,7 +18,7 @@ export default function MissionControlScreen({ agents }: MissionControlScreenPro
   const [mode, setMode] = useState<"graph" | "workflow">("graph");
   const [railExpanded, setRailExpanded] = useState(false);
   const [darkMode, setDarkMode] = useState(true);
-  const [activeView, setActiveView] = useState<"mission" | "swarms">("mission");
+  const [activeView, setActiveView] = useState<"mission" | "swarms" | "analytics">("mission");
 
   const filteredAgents = useMemo(() => filterAgents(agents, searchQuery), [agents, searchQuery]);
   const selectedAgent = getSelectedAgent(filteredAgents.length ? filteredAgents : agents, selectedAgentId);
@@ -72,15 +74,19 @@ export default function MissionControlScreen({ agents }: MissionControlScreenPro
               darkMode={darkMode}
               onModeChange={setMode}
             />
-          ) : (
+          ) : activeView === "swarms" ? (
             <SwarmStage />
+          ) : (
+            <AnalyticsStage />
           )}
 
-          <InspectorPanel
-            agent={selectedAgent}
-            activeFile={activeFile}
-            onSelectFile={setActiveFile}
-          />
+          {activeView === "mission" && (
+            <InspectorPanel
+              agent={selectedAgent}
+              activeFile={activeFile}
+              onSelectFile={setActiveFile}
+            />
+          )}
         </div>
       </div>
     </div>

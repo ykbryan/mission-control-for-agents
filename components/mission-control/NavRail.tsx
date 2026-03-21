@@ -4,10 +4,10 @@ interface Props {
   agents: Agent[];
   selectedAgentId: string;
   railExpanded: boolean;
-  activeView: "mission" | "swarms";
+  activeView: "mission" | "swarms" | "analytics";
   onSelect: (agent: Agent) => void;
   onToggleExpanded: () => void;
-  onViewChange: (view: "mission" | "swarms") => void;
+  onViewChange: (view: "mission" | "swarms" | "analytics") => void;
 }
 
 export default function NavRail({ agents, selectedAgentId, railExpanded, activeView, onSelect, onToggleExpanded, onViewChange }: Props) {
@@ -45,6 +45,18 @@ export default function NavRail({ agents, selectedAgentId, railExpanded, activeV
           {railExpanded && (
             <span className="mc-rail-item__copy">
               <strong>Swarms</strong>
+            </span>
+          )}
+        </button>
+        <button
+          className={`mc-rail-item ${activeView === "analytics" ? "is-active" : ""}`}
+          onClick={() => onViewChange("analytics")}
+          title="Analytics"
+        >
+          <span className="mc-rail-item__icon">📊</span>
+          {railExpanded && (
+            <span className="mc-rail-item__copy">
+              <strong>Analytics</strong>
             </span>
           )}
         </button>

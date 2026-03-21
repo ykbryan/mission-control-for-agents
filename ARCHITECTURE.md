@@ -596,3 +596,77 @@ This architecture gate defines the implementation path for integrating the **Age
   - Verify independent internal scrolling works on `SwarmStage` and `AgentLogStream`.
 
 *Architecture Plan Prepared by Omega*
+
+---
+
+# ARCHITECTURE REVIEW GATE: Token & Cost Analytics
+
+## 1. Executive Summary
+This architecture gate defines the implementation path for the **Token & Cost Analytics** dashboard. Based on the pre-build specs from Looker and Kat, we are introducing a new telemetry API endpoint and a dedicated `AnalyticsStage` view. This feature will provide real-time token consumption metrics and cost estimations per agent, visualized with interactive charts and animated metrics, while strictly adhering to the locked "Framed Stage" layout.
+
+## 2. API & Data Architecture
+
+### New API Route
+1. **`/api/telemetry/agent-costs` (`app/api/telemetry/agent-costs/route.ts`)**
+   - **Purpose:** Serve token usage and cost estimation data to the frontend.
+   - **Implementation:** Execute a background shell process or child process running `openclaw status --usage`.
+   - **Data Processing:** Parse the CLI output. Aggregate input, output, and cache token usage per agent per day.
+   - **Cost Calculation:** Apply model-specific pricing multipliers to the token counts to generate an estimated daily cost per agent.
+   - **Response Format:** Return structured JSON (e.g., array of objects with `agentId`, `date`, `tokens`, `estimatedCost`) optimized for `recharts`.
+
+## 3. Component Architecture Changes
+
+### Modified Components
+1. **`NavRail` (`components/layout/NavRail.tsx`)**
+   - **Modification:** Add a new "Analytics" (or chart) icon.
+   - **Action:** Expand the `activeView` state to include `'analytics'` (e.g., `'mission' | 'swarms' | 'analytics'`).
+
+2. **Main View Controller (e.g., `app/page.tsx`)**
+   - **Modification:** Add routing/conditional rendering logic to mount `<AnalyticsStage />` when the active view is set to analytics, yielding the center pane and hiding `MissionStage` and `SwarmStage`.
+
+### New Components
+1. **`AnalyticsStage` (`components/stage/AnalyticsStage.tsx`)**
+   - **Purpose:** The primary container for the analytics dashboard.
+   - **Structure:** A responsive grid or flex layout displaying top-level summary cards and detailed charts.
+   - **Scrolling Behavior:** Must strictly use `h-full overflow-y-auto custom-scrollbar` to scroll independently from the global frame.
+
+2. **`AnimatedMetricCard` (`components/analytics/AnimatedMetricCard.tsx`)**
+   - **Purpose:** Display high-level metrics (e.g., Total Cost, Total Tokens) with animated count-up numbers.
+   - **Styling:** Smooth hover states and Framer Motion transitions for value changes.
+
+3. **`AgentCostChart` (`components/analytics/AgentCostChart.tsx`)**
+   - **Purpose:** Interactive bar chart visualizing daily cost and token usage per agent.
+   - **Dependencies:** Built using the `recharts` library.
+   - **Features:** Custom tooltips, responsive container matching the dark hex grid theme, and appropriate color mappings (e.g., using the `#e85d27` orange accent).
+
+## 4. UI & Layout Constraints (CRITICAL)
+*   **Global Layout:** The root `<body>` and main layout container *must* strictly remain `h-screen w-screen overflow-hidden`.
+*   **Internal Scrolling:** Only the new `AnalyticsStage` (and existing stage/panel containers) may use `overflow-y-auto`. Never apply scrolling to the global `globals.css` body.
+*   **Responsive Design:** Chart containers must use `ResponsiveContainer` from `recharts` to fluidly adapt to the `AnalyticsStage` width without breaking flexbox constraints.
+
+## 5. Gorilla Implementation Checklist
+
+- [ ] **Step 1: Install Dependencies**
+  - Run `npm install recharts` to add the charting library.
+
+- [ ] **Step 2: Build the Telemetry API**
+  - Create `app/api/telemetry/agent-costs/route.ts`.
+  - Implement the `openclaw status --usage` command execution and parsing logic.
+  - Add cost calculation logic based on token usage.
+
+- [ ] **Step 3: Update Navigation State**
+  - Modify `NavRail` to include the Analytics toggle icon.
+  - Update the parent state manager to support the new `'analytics'` view.
+
+- [ ] **Step 4: Build Analytics Components**
+  - Create `components/analytics/AnimatedMetricCard.tsx` with count-up animations.
+  - Create `components/analytics/AgentCostChart.tsx` utilizing `recharts` for the bar charts.
+
+- [ ] **Step 5: Build `AnalyticsStage`**
+  - Create `components/stage/AnalyticsStage.tsx` assembling the metric cards and charts.
+  - Fetch data from `/api/telemetry/agent-costs` (using SWR, React Query, or `useEffect`).
+  - **Crucial:** Apply `h-full overflow-y-auto custom-scrollbar` to the outer container.
+
+- [ ] **Step 6: Structural & CSS Review**
+  - Verify `overflow-hidden` is untouched at the root/layout level.
+  - Ensure the charts resize correctly when the browser window or `InspectorPanel` resizes.

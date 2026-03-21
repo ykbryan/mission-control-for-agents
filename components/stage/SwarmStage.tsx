@@ -15,7 +15,7 @@ export default function SwarmStage() {
   }, []);
 
   return (
-    <div className="mc-stage" style={{ flex: 1, backgroundColor: 'var(--mc-bg-stage, #0a0a0a)', color: '#f0f0f0' }}>
+    <div className="mc-stage" style={{ gridColumn: 'span 2', flex: 1, backgroundColor: 'var(--mc-bg-stage, #0a0a0a)', color: '#f0f0f0' }}>
       <div className="h-full overflow-y-auto custom-scrollbar p-8">
         <div className="max-w-4xl mx-auto prose prose-invert">
           <Markdown>{markdown}</Markdown>
