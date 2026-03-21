@@ -27,14 +27,17 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized: Missing gateway credentials" }, { status: 401 });
     }
 
-    const response = await fetch(`${gatewayUrl}/api/v1/exec`, {
+    const response = await fetch(`${gatewayUrl}/tools/invoke`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${gatewayToken}`,
       },
       body: JSON.stringify({
-        command: "openclaw status --usage --json"
+        tool: "exec",
+        args: {
+          command: "openclaw status --usage --json"
+        }
       }),
     });
 
@@ -42,10 +45,12 @@ export async function GET(req: NextRequest) {
       throw new Error(`Gateway returned ${response.status}`);
     }
 
-    const rawData = await response.json();
+    const jsonResp = await response.json();
     let data: any = {};
     try {
-      data = JSON.parse(rawData.stdout || "{}");
+      if (jsonResp.ok && jsonResp.result && jsonResp.result.output) {
+        data = JSON.parse(jsonResp.result.output || "{}");
+      }
     } catch (e) {
       data = {};
     }
