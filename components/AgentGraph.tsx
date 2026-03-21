@@ -1,4 +1,5 @@
 "use client";
+
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Agent, skillDescriptions } from "@/lib/agents";
@@ -14,151 +15,54 @@ interface SkillNode {
   skill: string;
   x: number;
   y: number;
-  angle: number;
 }
 
-// Kept for workflow view and hover tooltip
 const SKILL_ICONS: Record<string, string> = {
-  web_search: "🔍",
-  notion: "📝",
-  pdf: "📄",
-  web_fetch: "🌐",
-  image: "🖼️",
-  gog: "📧",
-  calendar: "📅",
-  "apple-reminders": "🍎",
-  nodes: "⚙️",
-  cron: "⏰",
-  firehose: "🔥",
-  "claude-code": "🤖",
-  exec: "💻",
-  git: "🌿",
-  github: "🐙",
-  xcode: "🔨",
-  browser: "🌍",
-  "vercel-deploy": "▲",
-  healthcheck: "💊",
-  message: "💬",
+  web_search: "⌕",
+  notion: "N",
+  pdf: "P",
+  web_fetch: "W",
+  image: "I",
+  gog: "G",
+  calendar: "C",
+  "apple-reminders": "R",
+  nodes: "◎",
+  cron: "T",
+  firehose: "F",
+  "claude-code": "AI",
+  exec: ">_",
+  git: "G",
+  github: "GH",
+  xcode: "X",
+  browser: "B",
+  "vercel-deploy": "V",
+  healthcheck: "+",
+  message: "M",
 };
-
-function hexPath(cx: number, cy: number, r: number): string {
-  const points = Array.from({ length: 6 }, (_, i) => {
-    const angle = (-90 + i * 60) * (Math.PI / 180);
-    return `${(cx + r * Math.cos(angle)).toFixed(2)},${(cy + r * Math.sin(angle)).toFixed(2)}`;
-  });
-  return `M ${points.join(" L ")} Z`;
-}
-
-function SkillIcon({ skill, cx, cy }: { skill: string; cx: number; cy: number }) {
-  const color = "#d0d0d0";
-  const sp = {
-    stroke: color,
-    strokeWidth: 1.5,
-    fill: "none",
-    strokeLinecap: "round" as const,
-    strokeLinejoin: "round" as const,
-  };
-
-  if (skill === "web_search" || skill === "browser") {
-    return (
-      <>
-        <circle cx={cx - 2} cy={cy - 2} r={8} {...sp} />
-        <line x1={cx + 4} y1={cy + 4} x2={cx + 9} y2={cy + 9} {...sp} strokeWidth={2.5} />
-      </>
-    );
-  }
-  if (skill === "notion" || skill === "pdf" || skill === "web_fetch") {
-    return (
-      <>
-        <rect x={cx - 7} y={cy - 9} width={14} height={18} rx={2} {...sp} />
-        <line x1={cx - 4} y1={cy - 4} x2={cx + 4} y2={cy - 4} {...sp} />
-        <line x1={cx - 4} y1={cy} x2={cx + 4} y2={cy} {...sp} />
-        <line x1={cx - 4} y1={cy + 4} x2={cx + 1} y2={cy + 4} {...sp} />
-      </>
-    );
-  }
-  if (["exec", "github", "git", "xcode", "claude-code", "vercel-deploy"].includes(skill)) {
-    return (
-      <>
-        <polyline points={`${cx - 10},${cy - 8} ${cx - 4},${cy} ${cx - 10},${cy + 8}`} {...sp} />
-        <polyline points={`${cx + 10},${cy - 8} ${cx + 4},${cy} ${cx + 10},${cy + 8}`} {...sp} />
-      </>
-    );
-  }
-  if (skill === "gog" || skill === "message") {
-    return (
-      <>
-        <rect x={cx - 10} y={cy - 7} width={20} height={14} rx={2} {...sp} />
-        <polyline points={`${cx - 10},${cy - 7} ${cx},${cy + 2} ${cx + 10},${cy - 7}`} {...sp} />
-      </>
-    );
-  }
-  if (["cron", "calendar", "apple-reminders"].includes(skill)) {
-    return (
-      <>
-        <circle cx={cx} cy={cy} r={9} {...sp} />
-        <line x1={cx} y1={cy - 5} x2={cx} y2={cy} {...sp} />
-        <line x1={cx} y1={cy} x2={cx + 4} y2={cy + 3} {...sp} />
-      </>
-    );
-  }
-  if (["nodes", "healthcheck", "firehose"].includes(skill)) {
-    return (
-      <>
-        <circle cx={cx} cy={cy} r={5} {...sp} />
-        {[0, 60, 120, 180, 240, 300].map((deg, i) => {
-          const rad = (deg - 90) * Math.PI / 180;
-          return (
-            <line
-              key={i}
-              x1={cx + Math.cos(rad) * 6.5} y1={cy + Math.sin(rad) * 6.5}
-              x2={cx + Math.cos(rad) * 10} y2={cy + Math.sin(rad) * 10}
-              {...sp} strokeWidth={2.5}
-            />
-          );
-        })}
-      </>
-    );
-  }
-  if (skill === "image" || skill === "camera") {
-    return (
-      <polygon
-        points={`${cx},${cy - 10} ${cx + 7},${cy} ${cx},${cy + 10} ${cx - 7},${cy}`}
-        {...sp}
-      />
-    );
-  }
-  // Default: circle with center dot
-  return (
-    <>
-      <circle cx={cx} cy={cy} r={9} {...sp} />
-      <circle cx={cx} cy={cy} r={2.5} fill={color} stroke="none" />
-    </>
-  );
-}
 
 export default function AgentGraph({ agent, viewMode, onViewModeChange, darkMode = true }: Props) {
   const [hoveredSkill, setHoveredSkill] = useState<string | null>(null);
   const [hoveredPos, setHoveredPos] = useState<{ x: number; y: number } | null>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
   const containerRef = useRef<HTMLDivElement | null>(null);
-
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const isDragging = useRef(false);
   const dragStart = useRef({ x: 0, y: 0 });
   const panStart = useRef({ x: 0, y: 0 });
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if ((e.target as SVGElement).tagName === "svg" || (e.target as SVGElement).tagName === "rect") {
-      isDragging.current = true;
-      dragStart.current = { x: e.clientX, y: e.clientY };
-      panStart.current = { ...pan };
-    }
-  }, [pan]);
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      if ((e.target as SVGElement).tagName === "svg" || (e.target as SVGElement).tagName === "rect") {
+        isDragging.current = true;
+        dragStart.current = { x: e.clientX, y: e.clientY };
+        panStart.current = { ...pan };
+      }
+    },
+    [pan]
+  );
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if (!isDragging.current) return;
-    e.preventDefault();
     const dx = e.clientX - dragStart.current.x;
     const dy = e.clientY - dragStart.current.y;
     setPan({ x: panStart.current.x + dx, y: panStart.current.y + dy });
@@ -174,137 +78,63 @@ export default function AgentGraph({ agent, viewMode, onViewModeChange, darkMode
 
   useEffect(() => {
     const obs = new ResizeObserver((entries) => {
-      for (const e of entries) {
-        setSize({ w: e.contentRect.width, h: e.contentRect.height });
+      for (const entry of entries) {
+        setSize({ w: entry.contentRect.width, h: entry.contentRect.height });
       }
     });
-    const el = document.getElementById("graph-container");
-    if (el) obs.observe(el);
+
+    if (containerRef.current) obs.observe(containerRef.current);
     return () => obs.disconnect();
   }, []);
 
   const cx = size.w / 2 + pan.x;
   const cy = size.h / 2 + pan.y;
-  const radius = Math.min(size.w, size.h) * 0.26;
+  const radiusX = Math.min(size.w, 980) * 0.26;
+  const radiusY = Math.min(size.h, 620) * 0.28;
 
-  const skillNodes: SkillNode[] = agent.skills.map((skill, i) => {
-    const angle = (i / agent.skills.length) * 2 * Math.PI - Math.PI / 2;
+  const skillNodes: SkillNode[] = agent.skills.map((skill, index) => {
+    const count = agent.skills.length;
+    const theta = (index / count) * Math.PI * 2 - Math.PI / 2;
+    const breath = index % 2 === 0 ? 1.06 : 0.92;
+
     return {
       skill,
-      x: cx + radius * Math.cos(angle),
-      y: cy + radius * Math.sin(angle),
-      angle,
+      x: cx + Math.cos(theta) * radiusX * breath,
+      y: cy + Math.sin(theta) * radiusY,
     };
   });
 
   if (viewMode === "workflow") {
     return (
-      <div ref={containerRef} style={{ width: "100%", height: "100%", position: "relative", display: "flex", alignItems: "center", justifyContent: "center", padding: 28 }}>
-        <button
-          onClick={() => onViewModeChange("graph")}
-          style={{
-            position: "absolute", top: 16, right: 16,
-            background: "rgba(232,93,39,0.12)",
-            border: "1px solid rgba(232,93,39,0.24)",
-            color: "#ff8a57",
-            padding: "9px 16px",
-            borderRadius: 999,
-            cursor: "pointer",
-            fontSize: 13,
-            fontWeight: 600,
-          }}
-        >← Graph View</button>
-
-        <div style={{ display: "flex", alignItems: "center", gap: 0, overflowX: "auto", padding: "0 32px", maxWidth: "100%" }}>
-          <motion.div
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            style={{
-              background: "rgba(255,255,255,0.04)",
-              border: "1px solid rgba(255,255,255,0.05)",
-              borderRadius: 18,
-              padding: "12px 20px",
-              textAlign: "center",
-              minWidth: 100,
-              flexShrink: 0,
-            }}
-          >
-            <div style={{ fontSize: 11, color: "#555", marginBottom: 4 }}>INPUT</div>
-            <div style={{ fontSize: 13, color: "#888" }}>User Request</div>
-          </motion.div>
-
-          {agent.skills.map((skill, i) => (
-            <div key={skill} style={{ display: "flex", alignItems: "center" }}>
-              <svg width="50" height="20" style={{ flexShrink: 0 }}>
-                <defs>
-                  <marker id={`arrow-${i}`} markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-                    <path d="M0,0 L0,6 L6,3 z" fill="rgba(232,93,39,0.36)" />
-                  </marker>
-                </defs>
-                <line
-                  x1="0" y1="10" x2="44" y2="10"
-                  stroke="rgba(232,93,39,0.22)"
-                  strokeWidth="1.5"
-                  strokeDasharray="4,3"
-                  markerEnd={`url(#arrow-${i})`}
-                />
-              </svg>
+      <div className="graph-workflow">
+        <div className="graph-workflow__header">
+          <div>
+            <div className="mc-kicker">Workflow mode</div>
+            <h3>{agent.name} execution sequence</h3>
+          </div>
+          <button className="graph-workflow__back" onClick={() => onViewModeChange("graph")}>
+            Return to graph
+          </button>
+        </div>
+        <div className="graph-workflow__strip">
+          <div className="graph-workflow__bookend">Input</div>
+          {agent.skills.map((skill, index) => (
+            <div key={skill} className="graph-workflow__step-wrap">
+              <div className="graph-workflow__connector" />
               <motion.div
-                initial={{ opacity: 0, y: 20 }}
+                className="graph-workflow__step"
+                initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.08 }}
-                style={{
-                  background: "linear-gradient(180deg, rgba(20,21,26,0.92), rgba(14,15,19,0.84))",
-                  border: "1px solid rgba(232,93,39,0.14)",
-                  borderRadius: 18,
-                  padding: "16px 18px",
-                  textAlign: "center",
-                  minWidth: 120,
-                  flexShrink: 0,
-                }}
+                transition={{ delay: index * 0.06 }}
               >
-                <div style={{ fontSize: 11, color: "#555", marginBottom: 4 }}>STEP {i + 1}</div>
-                <div style={{ fontSize: 20, marginBottom: 6 }}>{SKILL_ICONS[skill] || "🔧"}</div>
-                <div style={{ fontSize: 12, color: "#e85d27", fontWeight: 600 }}>{skill}</div>
-                <div style={{ fontSize: 11, color: "#666", marginTop: 4, maxWidth: 110 }}>
-                  {skillDescriptions[skill]?.slice(0, 40) ?? skill}
-                </div>
+                <span className="graph-workflow__glyph">{SKILL_ICONS[skill] || "•"}</span>
+                <strong>{skill}</strong>
+                <small>{skillDescriptions[skill]}</small>
               </motion.div>
             </div>
           ))}
-
-          <svg width="50" height="20" style={{ flexShrink: 0 }}>
-            <defs>
-              <marker id="arrow-out" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-                <path d="M0,0 L0,6 L6,3 z" fill="rgba(232,93,39,0.5)" />
-              </marker>
-            </defs>
-            <line
-              x1="0" y1="10" x2="44" y2="10"
-              stroke="rgba(232,93,39,0.3)"
-              strokeWidth="1.5"
-              strokeDasharray="4,3"
-              markerEnd="url(#arrow-out)"
-            />
-          </svg>
-
-          <motion.div
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: agent.skills.length * 0.08 }}
-            style={{
-              background: "rgba(232,93,39,0.1)",
-              border: "1px solid rgba(232,93,39,0.18)",
-              borderRadius: 18,
-              padding: "12px 20px",
-              textAlign: "center",
-              minWidth: 100,
-              flexShrink: 0,
-            }}
-          >
-            <div style={{ fontSize: 11, color: "#e85d27", marginBottom: 4 }}>OUTPUT</div>
-            <div style={{ fontSize: 13, color: "#f0f0f0" }}>{agent.name}</div>
-          </motion.div>
+          <div className="graph-workflow__connector" />
+          <div className="graph-workflow__bookend graph-workflow__bookend--accent">Output</div>
         </div>
       </div>
     );
@@ -313,199 +143,143 @@ export default function AgentGraph({ agent, viewMode, onViewModeChange, darkMode
   return (
     <div
       ref={containerRef}
-      style={{ width: "100%", height: "100%", position: "relative", cursor: isDragging.current ? "grabbing" : "grab", background: darkMode ? "radial-gradient(circle at top, rgba(232,93,39,0.08), transparent 28%), rgba(7,8,11,0.82)" : "linear-gradient(180deg, rgba(255,255,255,0.92), rgba(244,246,248,0.98))", borderRadius: 28 }}
+      className="graph-canvas"
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
+      style={{ cursor: isDragging.current ? "grabbing" : "grab" }}
     >
-      <button
-        onClick={() => onViewModeChange("workflow")}
-        onMouseDown={(e) => e.stopPropagation()}
-        style={{
-          position: "absolute", top: 16, right: 16, zIndex: 5,
-          background: "linear-gradient(135deg, #e85d27, #c44a1a)",
-          border: "none",
-          color: "#fff",
-          padding: "8px 18px",
-          borderRadius: 8,
-          cursor: "pointer",
-          fontSize: 13,
-          fontWeight: 600,
-          boxShadow: "0 0 20px rgba(232,93,39,0.3)",
-        }}
-      >
-        Visualize Workflow →
-      </button>
-
-      <div style={{ position: "absolute", bottom: 12, left: "50%", transform: "translateX(-50%)", fontSize: 11, color: "#444", pointerEvents: "none", zIndex: 5 }}>
-        drag to pan
+      <div className="graph-canvas__overlay graph-canvas__overlay--top-left">
+        <div className="mc-kicker">Mission surface</div>
+        <strong>{agent.role}</strong>
+        <span>{agent.skills.length} linked capabilities</span>
       </div>
 
-      <svg width={size.w} height={size.h} style={{ position: "absolute", top: 0, left: 0, userSelect: "none" }}>
-        <rect x={0} y={0} width={size.w} height={size.h} fill={darkMode ? "#0a0a0a" : "#f5f5f5"} />
+      <div className="graph-canvas__overlay graph-canvas__overlay--bottom-center">Drag to pan · hover nodes for detail</div>
 
+      <svg width={size.w} height={size.h} className="graph-canvas__svg">
         <defs>
-          <filter id="glow-orange" x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur stdDeviation="8" result="blur" />
-            <feComposite in="SourceGraphic" in2="blur" operator="over" />
-          </filter>
-          <filter id="glow-node" x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur stdDeviation="4" result="blur" />
-            <feComposite in="SourceGraphic" in2="blur" operator="over" />
-          </filter>
+          <radialGradient id="stage-vignette" cx="50%" cy="45%" r="70%">
+            <stop offset="0%" stopColor={darkMode ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.72)"} />
+            <stop offset="100%" stopColor="rgba(255,255,255,0)" />
+          </radialGradient>
         </defs>
 
-        {/* Connection lines — defined with IDs for animateMotion */}
-        {skillNodes.map((node, idx) => (
-          <path
-            key={`line-${idx}`}
-            id={`lp-${idx}`}
-            d={`M ${cx},${cy} L ${node.x},${node.y}`}
-            stroke={hoveredSkill === node.skill ? "rgba(232,93,39,0.45)" : "rgba(255,255,255,0.14)"}
-            strokeWidth={hoveredSkill === node.skill ? 1.5 : 1}
-            fill="none"
-            style={{ transition: "stroke 0.2s, stroke-width 0.2s" }}
-          />
-        ))}
+        <rect x={0} y={0} width={size.w} height={size.h} fill={darkMode ? "#0a121c" : "#f5f7fb"} />
+        <rect x={0} y={0} width={size.w} height={size.h} fill="url(#stage-vignette)" opacity={0.7} />
 
-        {/* Animated orange particles traveling along connection lines */}
-        {skillNodes.map((_node, idx) =>
-          [0, 0.8, 1.6].map((delay, j) => (
-            <circle key={`p-${idx}-${j}`} r={3} fill="#e85d27" opacity={0.85}>
-              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-              <animateMotion
-                {...({ dur: "2s", repeatCount: "indefinite", begin: `${delay}s` } as any)}
-              >
-                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                <mpath {...({ href: `#lp-${idx}` } as any)} />
-              </animateMotion>
-            </circle>
-          ))
-        )}
-
-        {/* Pulse rings */}
-        <motion.circle
-          cx={cx} cy={cy} r={56}
-          fill="none" stroke="rgba(232,93,39,0.25)" strokeWidth={1}
-          animate={{ r: [56, 95], opacity: [0.6, 0] }}
-          transition={{ repeat: Infinity, duration: 2.5, ease: "easeOut" }}
-        />
-        <motion.circle
-          cx={cx} cy={cy} r={56}
-          fill="none" stroke="rgba(232,93,39,0.15)" strokeWidth={1}
-          animate={{ r: [56, 95], opacity: [0.5, 0] }}
-          transition={{ repeat: Infinity, duration: 2.5, ease: "easeOut", delay: 1.25 }}
-        />
-
-        {/* Hex glow */}
-        <path
-          d={hexPath(cx, cy, 52)}
-          fill="rgba(232,93,39,0.08)"
-          filter="url(#glow-orange)"
-        />
-
-        {/* Hexagonal center node */}
-        <path
-          d={hexPath(cx, cy, 44)}
-          fill="#0d0d0d"
-          stroke="#e85d27"
-          strokeWidth={2}
-        />
-
-        {/* Robot face */}
-        {/* Left eye */}
-        <circle cx={cx - 11} cy={cy - 7} r={5} fill="#111" stroke="#e85d27" strokeWidth={1.5} />
-        <circle cx={cx - 11} cy={cy - 7} r={2} fill="#e85d27" />
-        {/* Right eye */}
-        <circle cx={cx + 11} cy={cy - 7} r={5} fill="#111" stroke="#e85d27" strokeWidth={1.5} />
-        <circle cx={cx + 11} cy={cy - 7} r={2} fill="#e85d27" />
-        {/* Mouth bar */}
-        <rect x={cx - 11} y={cy + 5} width={22} height={6} rx={2} fill="none" stroke="#e85d27" strokeWidth={1.5} />
-        <line x1={cx - 4} y1={cy + 5} x2={cx - 4} y2={cy + 11} stroke="#e85d27" strokeWidth={1} />
-        <line x1={cx + 4} y1={cy + 5} x2={cx + 4} y2={cy + 11} stroke="#e85d27" strokeWidth={1} />
-
-        {/* Center label */}
-        <text x={cx} y={cy + 62} textAnchor="middle" fill="#f0f0f0" fontSize={13} fontWeight={700} letterSpacing="0.08em">
-          Agent
-        </text>
-        <text x={cx} y={cy + 78} textAnchor="middle" fill="#666" fontSize={11}>
-          {agent.name}
-        </text>
-
-        {/* Skill nodes */}
-        {skillNodes.map((node, idx) => (
-          <g
-            key={node.skill}
-            style={{ cursor: "pointer" }}
-            onMouseEnter={(e) => {
-              e.stopPropagation();
-              setHoveredSkill(node.skill);
-              const rect = (e.currentTarget.closest("svg") as SVGElement).getBoundingClientRect();
-              setHoveredPos({ x: node.x + rect.left, y: node.y + rect.top });
-            }}
-            onMouseLeave={(e) => { e.stopPropagation(); setHoveredSkill(null); setHoveredPos(null); }}
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            {hoveredSkill === node.skill && (
-              <circle cx={node.x} cy={node.y} r={42} fill="rgba(232,93,39,0.08)" filter="url(#glow-node)" />
-            )}
-            <motion.circle
-              cx={node.x}
-              cy={node.y}
-              r={34}
-              fill={hoveredSkill === node.skill ? "rgba(28,28,28,1)" : "rgba(18,18,18,0.95)"}
-              stroke={hoveredSkill === node.skill ? "rgba(232,93,39,0.6)" : "rgba(255,255,255,0.1)"}
-              strokeWidth={1.5}
-              initial={{ scale: 0, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ delay: 0.1 + idx * 0.05, type: "spring", stiffness: 260, damping: 20 }}
+        {skillNodes.map((node) => {
+          const dimmed = hoveredSkill && hoveredSkill !== node.skill;
+          const active = hoveredSkill === node.skill;
+          return (
+            <line
+              key={`line-${node.skill}`}
+              x1={cx}
+              y1={cy}
+              x2={node.x}
+              y2={node.y}
+              stroke={active ? "rgba(240,120,73,0.7)" : darkMode ? "rgba(191,210,230,0.16)" : "rgba(92,110,132,0.2)"}
+              strokeWidth={active ? 1.6 : 1}
+              opacity={dimmed ? 0.18 : 1}
             />
-            <SkillIcon skill={node.skill} cx={node.x} cy={node.y} />
-            <text
-              x={node.x}
-              y={node.y + 48}
-              textAnchor="middle"
-              fill={hoveredSkill === node.skill ? "#e85d27" : "#aaa"}
-              fontSize={11}
-              fontWeight={500}
-              style={{ transition: "fill 0.2s", pointerEvents: "none" }}
+          );
+        })}
+
+        <motion.circle
+          cx={cx}
+          cy={cy}
+          r={84}
+          fill="rgba(240,120,73,0.04)"
+          animate={{ opacity: [0.25, 0.45, 0.25], scale: [1, 1.03, 1] }}
+          transition={{ duration: 3.8, repeat: Infinity, ease: "easeInOut" }}
+        />
+
+        <g>
+          <circle
+            cx={cx}
+            cy={cy}
+            r={64}
+            fill={darkMode ? "rgba(16,26,38,0.95)" : "rgba(255,255,255,0.95)"}
+            stroke="rgba(240,120,73,0.35)"
+            strokeWidth={1.2}
+          />
+          <circle cx={cx} cy={cy} r={42} fill="rgba(240,120,73,0.08)" />
+          <text x={cx} y={cy - 4} textAnchor="middle" fill={darkMode ? "#f1f5fa" : "#102033"} fontSize="15" fontWeight="700">
+            {agent.name}
+          </text>
+          <text x={cx} y={cy + 18} textAnchor="middle" fill={darkMode ? "#7d91a8" : "#6d7f92"} fontSize="11">
+            command node
+          </text>
+        </g>
+
+        {skillNodes.map((node, index) => {
+          const active = hoveredSkill === node.skill;
+          const dimmed = hoveredSkill && hoveredSkill !== node.skill;
+
+          return (
+            <g
+              key={node.skill}
+              onMouseEnter={(event) => {
+                setHoveredSkill(node.skill);
+                const rect = (event.currentTarget.closest("svg") as SVGElement).getBoundingClientRect();
+                setHoveredPos({ x: node.x + rect.left, y: node.y + rect.top });
+              }}
+              onMouseLeave={() => {
+                setHoveredSkill(null);
+                setHoveredPos(null);
+              }}
+              onMouseDown={(event) => event.stopPropagation()}
+              style={{ cursor: "pointer" }}
             >
-              {node.skill}
-            </text>
-          </g>
-        ))}
+              <motion.circle
+                cx={node.x}
+                cy={node.y}
+                r={active ? 44 : 36}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: dimmed ? 0.24 : 1, scale: 1 }}
+                transition={{ delay: index * 0.04 }}
+                fill={darkMode ? "rgba(18,28,40,0.92)" : "rgba(255,255,255,0.98)"}
+                stroke={active ? "rgba(240,120,73,0.55)" : darkMode ? "rgba(255,255,255,0.1)" : "rgba(16,32,51,0.1)"}
+                strokeWidth={1.2}
+              />
+              <text
+                x={node.x}
+                y={node.y + 4}
+                textAnchor="middle"
+                fill={active ? "#ff996d" : darkMode ? "#dce6f2" : "#203246"}
+                fontSize="12"
+                fontWeight="700"
+              >
+                {SKILL_ICONS[node.skill] || "•"}
+              </text>
+              <text
+                x={node.x}
+                y={node.y + 58}
+                textAnchor="middle"
+                fill={active ? "#ff996d" : darkMode ? "#8fa1b4" : "#5d6f83"}
+                fontSize="11"
+                opacity={dimmed ? 0.28 : 1}
+              >
+                {node.skill}
+              </text>
+            </g>
+          );
+        })}
       </svg>
 
-      {/* Hover popup */}
       <AnimatePresence>
         {hoveredSkill && hoveredPos && (
           <motion.div
-            initial={{ opacity: 0, scale: 0.9, y: -4 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.9 }}
-            style={{
-              position: "fixed",
-              left: hoveredPos.x + 30,
-              top: hoveredPos.y - 20,
-              background: "rgba(17,17,17,0.98)",
-              border: "1px solid rgba(232,93,39,0.3)",
-              borderRadius: 10,
-              padding: "10px 14px",
-              minWidth: 180,
-              maxWidth: 240,
-              pointerEvents: "none",
-              zIndex: 100,
-              boxShadow: "0 4px 24px rgba(0,0,0,0.5)",
-            }}
+            initial={{ opacity: 0, y: 4, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 6, scale: 0.98 }}
+            className="graph-tooltip"
+            style={{ left: hoveredPos.x + 22, top: hoveredPos.y - 24 }}
           >
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-              <span style={{ fontSize: 18 }}>{SKILL_ICONS[hoveredSkill] || "🔧"}</span>
-              <span style={{ fontSize: 13, fontWeight: 700, color: "#e85d27" }}>{hoveredSkill}</span>
-            </div>
-            <div style={{ fontSize: 12, color: "#888", lineHeight: 1.5 }}>
-              {skillDescriptions[hoveredSkill] ?? "Custom skill capability"}
-            </div>
+            <div className="mc-kicker">Capability</div>
+            <strong>{hoveredSkill}</strong>
+            <p>{skillDescriptions[hoveredSkill] ?? "Custom skill capability"}</p>
           </motion.div>
         )}
       </AnimatePresence>
