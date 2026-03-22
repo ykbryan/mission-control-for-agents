@@ -5,9 +5,8 @@ interface RouterAgent {
   id: string;
   name: string;
   configured: boolean;
+  files?: string[];
 }
-
-const DEFAULT_FILES = ["IDENTITY.md", "SKILLS.md", "SOUL.md"];
 
 export async function fetchAgentsFromRouter(
   routerUrl: string,
@@ -23,8 +22,11 @@ export async function fetchAgentsFromRouter(
   const staticMap = new Map(staticAgents.map((a) => [a.id, a]));
 
   const merged: Agent[] = routerAgents.map((ra) => {
+    // Always use the real file list from the router (what actually exists on disk).
+    // Fall back to static metadata for name/emoji/role/soul/skills.
     const known = staticMap.get(ra.id);
-    if (known) return { ...known, routerId, routerLabel };
+    const files = ra.files && ra.files.length > 0 ? ra.files : (known?.files ?? []);
+    if (known) return { ...known, files, routerId, routerLabel };
     return {
       id: ra.id,
       name: ra.name || ra.id,
@@ -32,7 +34,7 @@ export async function fetchAgentsFromRouter(
       role: "AI Agent",
       soul: "A capable AI agent.",
       skills: [],
-      files: DEFAULT_FILES,
+      files,
       routerId,
       routerLabel,
     };
