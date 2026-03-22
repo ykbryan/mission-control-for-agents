@@ -74,15 +74,12 @@ if [ -z "$OPENCLAW_URL" ]; then
   OPENCLAW_URL="${INPUT_URL:-http://127.0.0.1:18789}"
 fi
 
-if [ -z "$OPENCLAW_TOKEN" ]; then
-  printf "  OpenClaw Token: "
-  stty -echo 2>/dev/null || true
+while [ -z "$OPENCLAW_TOKEN" ]; do
+  printf "  OpenClaw Token (input hidden): "
   read -r OPENCLAW_TOKEN
-  stty echo 2>/dev/null || true
   echo ""
-fi
-
-[ -z "$OPENCLAW_TOKEN" ] && error "OpenClaw token is required."
+  [ -z "$OPENCLAW_TOKEN" ] && echo -e "  ${YELLOW}Token cannot be empty, please try again.${RESET}"
+done
 
 if [ -z "$ROUTER_PORT" ]; then
   printf "  Router port    [3010]: "
@@ -111,7 +108,7 @@ TMP_DIR=$(mktemp -d)
 trap "rm -rf $TMP_DIR" EXIT
 
 git clone --depth 1 --filter=blob:none --sparse "$REPO" "$TMP_DIR" -q
-(cd "$TMP_DIR" && git sparse-checkout set router -q)
+(cd "$TMP_DIR" && git sparse-checkout set router)
 cp -r "$TMP_DIR/router/." "$INSTALL_DIR/"
 
 # ── Install & build ──────────────────────────────────────────
