@@ -22,15 +22,13 @@ export default function NavRail({ activeView, onViewChange }: Props) {
         >
           <span className="text-xl">🎯</span>
         </button>
-        <button
-          className={`flex items-center justify-center w-10 h-10 rounded-md transition-colors ${
-            activeView === "swarms" ? "bg-[#e85d27] text-white" : "text-gray-400 hover:text-white hover:bg-[#222]"
-          }`}
-          onClick={() => onViewChange("swarms")}
-          title="Swarms Showcase"
+        <a
+          href="/teams"
+          className="flex items-center justify-center w-10 h-10 rounded-md transition-colors text-gray-400 hover:text-white hover:bg-[#222]"
+          title="Agentic Teams"
         >
           <span className="text-xl">🐝</span>
-        </button>
+        </a>
         <button
           className={`flex items-center justify-center w-10 h-10 rounded-md transition-colors ${
             activeView === "analytics" ? "bg-[#e85d27] text-white" : "text-gray-400 hover:text-white hover:bg-[#222]"

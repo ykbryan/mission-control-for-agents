@@ -69,8 +69,8 @@ export default function TopStatusStrip({
         <a href="/login" title="Manage routers" className="px-3 py-1.5 text-xs font-medium bg-transparent border border-zinc-700 text-zinc-300 rounded hover:bg-zinc-800 hover:text-zinc-100 transition-colors">
           ＋ Router
         </a>
-        <button onClick={handleLogout} title="Disconnect all" className="px-3 py-1.5 text-xs font-medium bg-transparent border border-zinc-700 text-zinc-300 rounded hover:bg-zinc-800 hover:text-zinc-100 transition-colors">
-          Disconnect
+        <button onClick={handleLogout} title="Reset all connections" className="px-3 py-1.5 text-xs font-medium bg-transparent border border-zinc-700 text-zinc-300 rounded hover:bg-zinc-800 hover:text-zinc-100 transition-colors">
+          Reset
         </button>
       </div>
     </header>

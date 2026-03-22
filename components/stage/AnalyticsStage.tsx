@@ -3,11 +3,20 @@
 import React, { useEffect, useMemo, useState } from "react";
 import AnimatedMetricCard from "../analytics/AnimatedMetricCard";
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Legend, LineChart, Line,
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  LineChart,
+  Line,
 } from "recharts";
 
-// ─── types ──────────────────────────────────────────────────────────────────
+// ─── types ────────────────────────────────────────────────────────────────────
 
 interface CostEntry {
   agentId: string;
@@ -39,115 +48,236 @@ interface AnalyticsData {
   byRouter: RouterEntry[];
 }
 
-type View = "agent" | "daily" | "weekly" | "router";
+type Tab = "overview" | "daily" | "weekly" | "byrouter";
 
-// ─── helpers ─────────────────────────────────────────────────────────────────
+// ─── helpers ──────────────────────────────────────────────────────────────────
 
 const ORANGE = "#e85d27";
-const COLORS  = [ORANGE, "#6366f1", "#22c55e", "#f59e0b", "#06b6d4", "#ec4899", "#a855f7", "#14b8a6"];
+const GREEN  = "#22c55e";
+const RED    = "#ef4444";
+const PURPLE = "#8b5cf6";
+const BLUE   = "#38bdf8";
+
+function fmtCost(n: number): string {
+  if (n === 0) return "$0.0000";
+  if (n < 0.001) return "< $0.001";
+  return `$${n.toFixed(4)}`;
+}
+
+function fmtCostFull(n: number): string {
+  if (n === 0) return "$0.000000";
+  return `$${n.toFixed(6)}`;
+}
+
+function fmtTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000)     return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
+}
+
+function fmtDate(dateStr: string): string {
+  const d = new Date(dateStr + "T12:00:00Z");
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function fmtTimestamp(d: Date): string {
+  return d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
 
 function isoWeek(dateStr: string): string {
   const d = new Date(dateStr + "T12:00:00Z");
   const jan4 = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
-  const dayOfWeek = jan4.getUTCDay() || 7;
-  const weekStart = new Date(jan4.getTime() - (dayOfWeek - 1) * 86400000);
+  const dow = jan4.getUTCDay() || 7;
+  const weekStart = new Date(jan4.getTime() - (dow - 1) * 86400000);
   const weekNum = Math.ceil((d.getTime() - weekStart.getTime()) / (7 * 86400000)) + 1;
   return `${d.getUTCFullYear()}-W${String(weekNum).padStart(2, "0")}`;
 }
 
-function fmtCost(n: number) {
-  return n < 0.001 ? `$${(n * 1000).toFixed(3)}m` : `$${n.toFixed(4)}`;
+function dateNDaysAgo(n: number): string {
+  return new Date(Date.now() - n * 86400000).toISOString().split("T")[0];
 }
 
-function fmtTokens(n: number) {
-  return n >= 1_000_000 ? `${(n / 1_000_000).toFixed(2)}M` : n >= 1_000 ? `${(n / 1_000).toFixed(1)}K` : String(n);
-}
+// ─── custom tooltip ───────────────────────────────────────────────────────────
 
-// ─── sub-charts ───────────────────────────────────────────────────────────────
-
-function AgentBarChart({ data }: { data: CostEntry[] }) {
-  const chartData = [...data]
-    .sort((a, b) => b.estimatedCost - a.estimatedCost)
-    .slice(0, 20)
-    .map((d) => ({ name: d.agentId, cost: d.estimatedCost, tokens: d.tokens }));
-
+function ChartTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null;
+  const cost = payload[0]?.value as number | undefined;
   return (
-    <div className="w-full h-80 bg-[#111] p-4 rounded-xl border border-[#222]">
-      <h3 className="text-[#f0f0f0] mb-3 text-sm font-medium uppercase tracking-widest opacity-60">Cost per Agent (all-time)</h3>
-      <ResponsiveContainer width="100%" height="88%">
-        <BarChart data={chartData} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#222" />
-          <XAxis dataKey="name" stroke="#555" tick={{ fontSize: 11 }} />
-          <YAxis stroke="#555" tick={{ fontSize: 11 }} tickFormatter={(v) => `$${v.toFixed(3)}`} />
-          <Tooltip
-            contentStyle={{ backgroundColor: "#111", border: `1px solid ${ORANGE}`, borderRadius: 8 }}
-            itemStyle={{ color: "#f0f0f0" }}
-            formatter={(v: number) => [`$${v.toFixed(6)}`, "Cost"]}
-          />
-          <Bar dataKey="cost" fill={ORANGE} name="Cost ($)" radius={[4, 4, 0, 0]} />
-        </BarChart>
-      </ResponsiveContainer>
+    <div style={{
+      backgroundColor: "#0f0f12",
+      border: "1px solid #1e1e26",
+      borderRadius: "8px",
+      padding: "10px 14px",
+      boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
+    }}>
+      <p style={{ color: "#888", fontSize: "11px", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+        {typeof label === "string" && label.length === 10 ? fmtDate(label) : label}
+      </p>
+      {cost !== undefined && (
+        <p style={{ color: ORANGE, fontFamily: "ui-monospace, monospace", fontWeight: 700, fontSize: "15px", margin: 0 }}>
+          {fmtCostFull(cost)}
+        </p>
+      )}
     </div>
   );
 }
 
-function DailyChart({ daily, label }: { daily: DailyEntry[]; label: string }) {
-  // Aggregate by date (sum all agents)
-  const byDate = new Map<string, number>();
-  for (const d of daily) {
-    byDate.set(d.date, (byDate.get(d.date) ?? 0) + d.estimatedCost);
-  }
-  const chartData = [...byDate.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, cost]) => ({ date, cost }));
+// ─── section heading ─────────────────────────────────────────────────────────
 
-  // Per-agent breakdown table (top 10)
-  const byAgent = new Map<string, number>();
-  for (const d of daily) byAgent.set(d.agentId, (byAgent.get(d.agentId) ?? 0) + d.estimatedCost);
-  const topAgents = [...byAgent.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10);
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p style={{
+      fontSize: "10px",
+      fontWeight: 600,
+      letterSpacing: "0.1em",
+      textTransform: "uppercase",
+      color: "#444",
+      margin: "0 0 12px 0",
+    }}>
+      {children}
+    </p>
+  );
+}
+
+// ─── refresh icon ─────────────────────────────────────────────────────────────
+
+function RefreshIcon({ spinning }: { spinning: boolean }) {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{
+        animation: spinning ? "spin 0.8s linear infinite" : "none",
+      }}
+    >
+      <polyline points="23 4 23 10 17 10" />
+      <polyline points="1 20 1 14 7 14" />
+      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+    </svg>
+  );
+}
+
+// ─── overview tab ─────────────────────────────────────────────────────────────
+
+function OverviewTab({
+  daily14,
+  costs,
+  totalCost,
+}: {
+  daily14: DailyEntry[];
+  costs: CostEntry[];
+  totalCost: number;
+}) {
+  const areaData = useMemo(() => {
+    const byDate = new Map<string, number>();
+    for (const d of daily14) {
+      byDate.set(d.date, (byDate.get(d.date) ?? 0) + d.estimatedCost);
+    }
+    return [...byDate.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, cost]) => ({ date, cost }));
+  }, [daily14]);
+
+  const topSpenders = useMemo(() => {
+    return [...costs]
+      .sort((a, b) => b.estimatedCost - a.estimatedCost)
+      .slice(0, 12);
+  }, [costs]);
 
   return (
-    <div className="space-y-4">
-      <div className="w-full h-72 bg-[#111] p-4 rounded-xl border border-[#222]">
-        <h3 className="text-[#f0f0f0] mb-3 text-sm font-medium uppercase tracking-widest opacity-60">{label} — Total Cost</h3>
-        <ResponsiveContainer width="100%" height="85%">
-          <LineChart data={chartData} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#222" />
-            <XAxis dataKey="date" stroke="#555" tick={{ fontSize: 11 }} />
-            <YAxis stroke="#555" tick={{ fontSize: 11 }} tickFormatter={(v) => `$${v.toFixed(3)}`} />
-            <Tooltip
-              contentStyle={{ backgroundColor: "#111", border: `1px solid ${ORANGE}`, borderRadius: 8 }}
-              itemStyle={{ color: "#f0f0f0" }}
-              formatter={(v: number) => [`$${v.toFixed(6)}`, "Cost"]}
+    <div style={{ display: "grid", gridTemplateColumns: "60% 40%", gap: "20px" }}>
+      {/* Left: area chart */}
+      <div style={{
+        backgroundColor: "#0f0f12",
+        border: "1px solid #1e1e26",
+        borderRadius: "10px",
+        padding: "20px 24px",
+      }}>
+        <SectionLabel>Cost over last 14 days</SectionLabel>
+        <ResponsiveContainer width="100%" height={280}>
+          <AreaChart data={areaData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+            <defs>
+              <linearGradient id="costGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor={ORANGE} stopOpacity={0.25} />
+                <stop offset="95%" stopColor={ORANGE} stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="#1a1a22" vertical={false} />
+            <XAxis
+              dataKey="date"
+              stroke="#333"
+              tick={{ fontSize: 11, fill: "#555", fontFamily: "ui-monospace, monospace" }}
+              tickLine={false}
+              axisLine={{ stroke: "#222" }}
+              tickFormatter={fmtDate}
             />
-            <Line type="monotone" dataKey="cost" stroke={ORANGE} strokeWidth={2} dot={{ r: 4, fill: ORANGE }} />
-          </LineChart>
+            <YAxis
+              stroke="#333"
+              tick={{ fontSize: 11, fill: "#555", fontFamily: "ui-monospace, monospace" }}
+              tickLine={false}
+              axisLine={false}
+              tickFormatter={(v) => `$${v.toFixed(3)}`}
+              width={64}
+            />
+            <Tooltip content={<ChartTooltip />} />
+            <Area
+              type="monotone"
+              dataKey="cost"
+              stroke={ORANGE}
+              strokeWidth={2}
+              fill="url(#costGradient)"
+              dot={false}
+              activeDot={{ r: 4, fill: ORANGE, stroke: "#0f0f12", strokeWidth: 2 }}
+            />
+          </AreaChart>
         </ResponsiveContainer>
       </div>
 
-      <div className="bg-[#111] rounded-xl border border-[#222] overflow-hidden">
-        <table className="w-full text-sm">
+      {/* Right: top spenders table */}
+      <div style={{
+        backgroundColor: "#0f0f12",
+        border: "1px solid #1e1e26",
+        borderRadius: "10px",
+        overflow: "hidden",
+      }}>
+        <div style={{ padding: "20px 24px 12px" }}>
+          <SectionLabel>Top spenders — all time</SectionLabel>
+        </div>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
           <thead>
-            <tr className="border-b border-[#222]">
-              <th className="px-4 py-2 text-left text-[#888] font-medium">Agent</th>
-              <th className="px-4 py-2 text-right text-[#888] font-medium">Cost</th>
-              <th className="px-4 py-2 text-right text-[#888] font-medium">Tokens</th>
+            <tr style={{ borderBottom: "1px solid #1e1e26" }}>
+              <th style={{ padding: "8px 12px 8px 24px", textAlign: "left", color: "#444", fontWeight: 500, letterSpacing: "0.06em", fontSize: "10px", textTransform: "uppercase" }}>#</th>
+              <th style={{ padding: "8px 12px", textAlign: "left", color: "#444", fontWeight: 500, letterSpacing: "0.06em", fontSize: "10px", textTransform: "uppercase" }}>Agent</th>
+              <th style={{ padding: "8px 12px", textAlign: "right", color: "#444", fontWeight: 500, letterSpacing: "0.06em", fontSize: "10px", textTransform: "uppercase" }}>Tokens</th>
+              <th style={{ padding: "8px 12px", textAlign: "right", color: "#444", fontWeight: 500, letterSpacing: "0.06em", fontSize: "10px", textTransform: "uppercase" }}>Cost</th>
+              <th style={{ padding: "8px 24px 8px 12px", textAlign: "right", color: "#444", fontWeight: 500, letterSpacing: "0.06em", fontSize: "10px", textTransform: "uppercase" }}>Share</th>
             </tr>
           </thead>
           <tbody>
-            {topAgents.map(([agentId, cost], i) => {
-              const tokens = [...daily].filter(d => d.agentId === agentId).reduce((s, d) => s + d.tokens, 0);
+            {topSpenders.map((agent, i) => {
+              const share = totalCost > 0 ? (agent.estimatedCost / totalCost) * 100 : 0;
               return (
-                <tr key={agentId} className="border-b border-[#1a1a1a] hover:bg-[#181818] transition-colors">
-                  <td className="px-4 py-2 text-[#f0f0f0] flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
-                    {agentId}
-                  </td>
-                  <td className="px-4 py-2 text-right" style={{ color: ORANGE }}>{fmtCost(cost)}</td>
-                  <td className="px-4 py-2 text-right text-[#888]">{fmtTokens(tokens)}</td>
-                </tr>
+                <TopSpenderRow
+                  key={agent.agentId}
+                  rank={i + 1}
+                  agent={agent}
+                  share={share}
+                />
               );
             })}
+            {topSpenders.length === 0 && (
+              <tr>
+                <td colSpan={5} style={{ padding: "24px", textAlign: "center", color: "#444", fontSize: "12px" }}>
+                  No agent data yet
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -155,38 +285,300 @@ function DailyChart({ daily, label }: { daily: DailyEntry[]; label: string }) {
   );
 }
 
-function RouterChart({ byRouter }: { byRouter: RouterEntry[] }) {
-  const chartData = byRouter.map((r) => ({ name: r.routerLabel, cost: r.estimatedCost, tokens: r.totalTokens }));
+function TopSpenderRow({ rank, agent, share }: { rank: number; agent: CostEntry; share: number }) {
+  const [hovered, setHovered] = useState(false);
   return (
-    <div className="space-y-4">
-      <div className="w-full h-72 bg-[#111] p-4 rounded-xl border border-[#222]">
-        <h3 className="text-[#f0f0f0] mb-3 text-sm font-medium uppercase tracking-widest opacity-60">Cost per Router</h3>
-        <ResponsiveContainer width="100%" height="85%">
-          <BarChart data={chartData} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#222" />
-            <XAxis dataKey="name" stroke="#555" tick={{ fontSize: 12 }} />
-            <YAxis stroke="#555" tick={{ fontSize: 11 }} tickFormatter={(v) => `$${v.toFixed(3)}`} />
-            <Tooltip
-              contentStyle={{ backgroundColor: "#111", border: `1px solid ${ORANGE}`, borderRadius: 8 }}
-              itemStyle={{ color: "#f0f0f0" }}
-              formatter={(v: number) => [`$${v.toFixed(6)}`, "Cost"]}
-            />
-            <Bar dataKey="cost" fill={ORANGE} name="Cost ($)" radius={[4, 4, 0, 0]} />
+    <tr
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        borderBottom: "1px solid #13131a",
+        backgroundColor: hovered ? "#131318" : "transparent",
+        transition: "background-color 0.15s",
+        cursor: "default",
+      }}
+    >
+      <td style={{ padding: "9px 12px 9px 24px", color: "#444", fontFamily: "ui-monospace, monospace", fontSize: "11px" }}>
+        {rank}
+      </td>
+      <td style={{ padding: "9px 12px", color: "#d0d0d0", maxWidth: "120px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {agent.agentId}
+      </td>
+      <td style={{ padding: "9px 12px", textAlign: "right", color: "#666", fontFamily: "ui-monospace, monospace", fontSize: "11px" }}>
+        {fmtTokens(agent.tokens)}
+      </td>
+      <td style={{ padding: "9px 12px", textAlign: "right", color: ORANGE, fontFamily: "ui-monospace, monospace", fontSize: "12px", fontWeight: 600 }}>
+        {fmtCost(agent.estimatedCost)}
+      </td>
+      <td style={{ padding: "9px 24px 9px 12px", textAlign: "right" }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "3px" }}>
+          <span style={{ color: "#666", fontFamily: "ui-monospace, monospace", fontSize: "11px" }}>
+            {share.toFixed(1)}%
+          </span>
+          <div style={{ width: "48px", height: "3px", backgroundColor: "#1e1e26", borderRadius: "2px", overflow: "hidden" }}>
+            <div style={{ width: `${Math.min(share, 100)}%`, height: "100%", backgroundColor: ORANGE, borderRadius: "2px" }} />
+          </div>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+// ─── daily tab ────────────────────────────────────────────────────────────────
+
+function DailyTab({ daily14, allDaily }: { daily14: DailyEntry[]; allDaily: DailyEntry[] }) {
+  const areaData = useMemo(() => {
+    const byDate = new Map<string, number>();
+    for (const d of daily14) {
+      byDate.set(d.date, (byDate.get(d.date) ?? 0) + d.estimatedCost);
+    }
+    return [...byDate.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, cost]) => ({ date, cost }));
+  }, [daily14]);
+
+  const agentTable = useMemo(() => {
+    const map = new Map<string, { tokens: number; cost: number; router: string; lastDate: string }>();
+    for (const d of allDaily) {
+      const existing = map.get(d.agentId);
+      if (existing) {
+        existing.tokens += d.tokens;
+        existing.cost += d.estimatedCost;
+        if (d.date > existing.lastDate) existing.lastDate = d.date;
+      } else {
+        map.set(d.agentId, { tokens: d.tokens, cost: d.estimatedCost, router: d.routerLabel, lastDate: d.date });
+      }
+    }
+    return [...map.entries()]
+      .sort((a, b) => b[1].cost - a[1].cost);
+  }, [allDaily]);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+      <div style={{ backgroundColor: "#0f0f12", border: "1px solid #1e1e26", borderRadius: "10px", padding: "20px 24px" }}>
+        <SectionLabel>Daily total cost — last 14 days</SectionLabel>
+        <ResponsiveContainer width="100%" height={280}>
+          <AreaChart data={areaData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+            <defs>
+              <linearGradient id="dailyGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor={ORANGE} stopOpacity={0.2} />
+                <stop offset="95%" stopColor={ORANGE} stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="#1a1a22" vertical={false} />
+            <XAxis dataKey="date" stroke="#333" tick={{ fontSize: 11, fill: "#555", fontFamily: "ui-monospace, monospace" }} tickLine={false} axisLine={{ stroke: "#222" }} tickFormatter={fmtDate} />
+            <YAxis stroke="#333" tick={{ fontSize: 11, fill: "#555", fontFamily: "ui-monospace, monospace" }} tickLine={false} axisLine={false} tickFormatter={(v) => `$${v.toFixed(3)}`} width={64} />
+            <Tooltip content={<ChartTooltip />} />
+            <Area type="monotone" dataKey="cost" stroke={ORANGE} strokeWidth={2} fill="url(#dailyGradient)" dot={false} activeDot={{ r: 4, fill: ORANGE, stroke: "#0f0f12", strokeWidth: 2 }} />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div style={{ backgroundColor: "#0f0f12", border: "1px solid #1e1e26", borderRadius: "10px", overflow: "hidden" }}>
+        <div style={{ padding: "20px 24px 12px" }}>
+          <SectionLabel>All agents — cumulative</SectionLabel>
+        </div>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+          <thead>
+            <tr style={{ borderBottom: "1px solid #1e1e26" }}>
+              {["Agent", "Router", "Tokens", "Cost", "Last Active"].map((col) => (
+                <th key={col} style={{ padding: "8px 16px", textAlign: col === "Agent" || col === "Router" ? "left" : "right", color: "#444", fontWeight: 500, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                  {col}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {agentTable.map(([agentId, data]) => (
+              <AgentRow key={agentId} agentId={agentId} data={data} />
+            ))}
+            {agentTable.length === 0 && (
+              <tr>
+                <td colSpan={5} style={{ padding: "24px", textAlign: "center", color: "#444" }}>No daily data available</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function AgentRow({ agentId, data }: { agentId: string; data: { tokens: number; cost: number; router: string; lastDate: string } }) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <tr
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{ borderBottom: "1px solid #13131a", backgroundColor: hovered ? "#131318" : "transparent", transition: "background-color 0.15s" }}
+    >
+      <td style={{ padding: "9px 16px", color: "#d0d0d0", maxWidth: "160px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{agentId}</td>
+      <td style={{ padding: "9px 16px", color: "#666", fontSize: "11px" }}>{data.router || "—"}</td>
+      <td style={{ padding: "9px 16px", textAlign: "right", color: "#666", fontFamily: "ui-monospace, monospace", fontSize: "11px" }}>{fmtTokens(data.tokens)}</td>
+      <td style={{ padding: "9px 16px", textAlign: "right", color: ORANGE, fontFamily: "ui-monospace, monospace", fontWeight: 600 }}>{fmtCost(data.cost)}</td>
+      <td style={{ padding: "9px 16px", textAlign: "right", color: "#555", fontFamily: "ui-monospace, monospace", fontSize: "11px" }}>{data.lastDate ? fmtDate(data.lastDate) : "—"}</td>
+    </tr>
+  );
+}
+
+// ─── weekly tab ───────────────────────────────────────────────────────────────
+
+function WeeklyTab({ daily }: { daily: DailyEntry[] }) {
+  const last42 = useMemo(() => {
+    const cutoff = dateNDaysAgo(42);
+    return daily.filter((d) => d.date >= cutoff);
+  }, [daily]);
+
+  const weeklyData = useMemo(() => {
+    const byWeek = new Map<string, number>();
+    for (const d of last42) {
+      const w = isoWeek(d.date);
+      byWeek.set(w, (byWeek.get(w) ?? 0) + d.estimatedCost);
+    }
+    return [...byWeek.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([week, cost]) => ({ week, cost }));
+  }, [last42]);
+
+  // week-over-week comparison
+  const wowComparison = useMemo(() => {
+    if (weeklyData.length < 2) return [];
+    return weeklyData.slice(-8).map((w, i, arr) => {
+      const prev = arr[i - 1];
+      const delta = prev ? ((w.cost - prev.cost) / (prev.cost || 1)) * 100 : null;
+      return { ...w, delta };
+    });
+  }, [weeklyData]);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+      <div style={{ backgroundColor: "#0f0f12", border: "1px solid #1e1e26", borderRadius: "10px", padding: "20px 24px" }}>
+        <SectionLabel>Weekly cost — last 6 weeks</SectionLabel>
+        <ResponsiveContainer width="100%" height={280}>
+          <BarChart data={weeklyData.slice(-8)} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#1a1a22" vertical={false} />
+            <XAxis dataKey="week" stroke="#333" tick={{ fontSize: 11, fill: "#555", fontFamily: "ui-monospace, monospace" }} tickLine={false} axisLine={{ stroke: "#222" }} />
+            <YAxis stroke="#333" tick={{ fontSize: 11, fill: "#555", fontFamily: "ui-monospace, monospace" }} tickLine={false} axisLine={false} tickFormatter={(v) => `$${v.toFixed(3)}`} width={64} />
+            <Tooltip content={<ChartTooltip />} />
+            <Bar dataKey="cost" fill={ORANGE} radius={[4, 4, 0, 0]} maxBarSize={56} />
           </BarChart>
         </ResponsiveContainer>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {byRouter.map((r, i) => (
-          <div key={r.routerId} className="bg-[#111] rounded-xl border border-[#222] p-4 flex items-center gap-4">
-            <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
-            <div className="flex-1 min-w-0">
-              <p className="text-[#f0f0f0] font-medium truncate">{r.routerLabel}</p>
-              <p className="text-[#888] text-sm">{fmtTokens(r.totalTokens)} tokens</p>
+      <div style={{ backgroundColor: "#0f0f12", border: "1px solid #1e1e26", borderRadius: "10px", overflow: "hidden" }}>
+        <div style={{ padding: "20px 24px 12px" }}>
+          <SectionLabel>Week-over-week</SectionLabel>
+        </div>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+          <thead>
+            <tr style={{ borderBottom: "1px solid #1e1e26" }}>
+              {["Week", "Total Cost", "vs Prior Week"].map((col) => (
+                <th key={col} style={{ padding: "8px 16px", textAlign: col === "Week" ? "left" : "right", color: "#444", fontWeight: 500, fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                  {col}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {wowComparison.map(({ week, cost, delta }) => (
+              <tr key={week} style={{ borderBottom: "1px solid #13131a" }}>
+                <td style={{ padding: "9px 16px", color: "#d0d0d0", fontFamily: "ui-monospace, monospace" }}>{week}</td>
+                <td style={{ padding: "9px 16px", textAlign: "right", color: ORANGE, fontFamily: "ui-monospace, monospace", fontWeight: 600 }}>{fmtCost(cost)}</td>
+                <td style={{ padding: "9px 16px", textAlign: "right" }}>
+                  {delta === null ? (
+                    <span style={{ color: "#444", fontSize: "11px" }}>—</span>
+                  ) : (
+                    <span style={{
+                      color: delta > 0 ? RED : delta < 0 ? GREEN : "#888",
+                      fontFamily: "ui-monospace, monospace",
+                      fontSize: "11px",
+                      fontWeight: 600,
+                    }}>
+                      {delta > 0 ? "+" : ""}{delta.toFixed(1)}%
+                    </span>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {wowComparison.length === 0 && (
+              <tr>
+                <td colSpan={3} style={{ padding: "24px", textAlign: "center", color: "#444" }}>Not enough data for weekly comparison</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ─── by router tab ────────────────────────────────────────────────────────────
+
+function ByRouterTab({ byRouter, totalCost }: { byRouter: RouterEntry[]; totalCost: number }) {
+  if (byRouter.length <= 1) {
+    return (
+      <div style={{
+        backgroundColor: "#0f0f12",
+        border: "1px solid #1e1e26",
+        borderRadius: "10px",
+        padding: "60px 24px",
+        textAlign: "center",
+      }}>
+        <p style={{ color: "#333", fontSize: "13px", margin: 0 }}>
+          Add more routers to compare spend across your fleet.
+        </p>
+        <p style={{ color: "#222", fontSize: "11px", marginTop: "8px" }}>
+          Currently tracking {byRouter.length === 0 ? "no" : "1"} router.
+        </p>
+      </div>
+    );
+  }
+
+  const chartData = byRouter.map((r) => ({ name: r.routerLabel, cost: r.estimatedCost }));
+  const ROUTER_COLORS = [ORANGE, PURPLE, GREEN, BLUE, "#f59e0b", "#ec4899"];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+      <div style={{ backgroundColor: "#0f0f12", border: "1px solid #1e1e26", borderRadius: "10px", padding: "20px 24px" }}>
+        <SectionLabel>Cost by router</SectionLabel>
+        <ResponsiveContainer width="100%" height={280}>
+          <BarChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#1a1a22" vertical={false} />
+            <XAxis dataKey="name" stroke="#333" tick={{ fontSize: 11, fill: "#555" }} tickLine={false} axisLine={{ stroke: "#222" }} />
+            <YAxis stroke="#333" tick={{ fontSize: 11, fill: "#555", fontFamily: "ui-monospace, monospace" }} tickLine={false} axisLine={false} tickFormatter={(v) => `$${v.toFixed(3)}`} width={64} />
+            <Tooltip content={<ChartTooltip />} />
+            <Bar dataKey="cost" radius={[4, 4, 0, 0]} maxBarSize={72}
+              fill={ORANGE}
+            />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "14px" }}>
+        {byRouter.map((r, i) => {
+          const share = totalCost > 0 ? (r.estimatedCost / totalCost) * 100 : 0;
+          const accent = ROUTER_COLORS[i % ROUTER_COLORS.length];
+          return (
+            <div key={r.routerId} style={{
+              backgroundColor: "#0f0f12",
+              border: "1px solid #1e1e26",
+              borderTop: `2px solid ${accent}`,
+              borderRadius: "10px",
+              padding: "18px 20px",
+            }}>
+              <p style={{ color: "#666", fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 6px 0" }}>Router</p>
+              <p style={{ color: "#d0d0d0", fontWeight: 600, fontSize: "14px", margin: "0 0 12px 0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.routerLabel}</p>
+              <p style={{ color: accent, fontFamily: "ui-monospace, monospace", fontWeight: 700, fontSize: "20px", margin: "0 0 4px 0" }}>{fmtCost(r.estimatedCost)}</p>
+              <p style={{ color: "#444", fontSize: "11px", margin: "0 0 10px 0" }}>{fmtTokens(r.totalTokens)} tokens</p>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <div style={{ flex: 1, height: "3px", backgroundColor: "#1e1e26", borderRadius: "2px", overflow: "hidden" }}>
+                  <div style={{ width: `${Math.min(share, 100)}%`, height: "100%", backgroundColor: accent, borderRadius: "2px" }} />
+                </div>
+                <span style={{ color: "#555", fontSize: "11px", fontFamily: "ui-monospace, monospace" }}>{share.toFixed(1)}%</span>
+              </div>
             </div>
-            <p className="text-lg font-bold" style={{ color: ORANGE }}>{fmtCost(r.estimatedCost)}</p>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -194,143 +586,255 @@ function RouterChart({ byRouter }: { byRouter: RouterEntry[] }) {
 
 // ─── main component ───────────────────────────────────────────────────────────
 
-const VIEWS: { id: View; label: string }[] = [
-  { id: "agent",  label: "By Agent"  },
-  { id: "daily",  label: "Daily"     },
-  { id: "weekly", label: "Weekly"    },
-  { id: "router", label: "By Router" },
+const TABS: { id: Tab; label: string }[] = [
+  { id: "overview", label: "Overview"  },
+  { id: "daily",    label: "Daily"     },
+  { id: "weekly",   label: "Weekly"    },
+  { id: "byrouter", label: "By Router" },
 ];
 
 export default function AnalyticsStage() {
-  const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
-  const [loading, setLoading]     = useState(true);
-  const [error, setError]         = useState<string | null>(null);
-  const [view, setView]           = useState<View>("agent");
+  const [analytics, setAnalytics]     = useState<AnalyticsData | null>(null);
+  const [loading, setLoading]         = useState(true);
+  const [error, setError]             = useState<string | null>(null);
+  const [tab, setTab]                 = useState<Tab>("overview");
+  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
+  const [refreshing, setRefreshing]   = useState(false);
+
+  async function fetchCosts() {
+    setRefreshing(true);
+    try {
+      const res = await fetch("/api/telemetry/agent-costs");
+      if (!res.ok) throw new Error("Failed to load telemetry data");
+      setAnalytics(await res.json());
+      setLastRefreshed(new Date());
+      setError(null);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }
 
   useEffect(() => {
-    async function fetchCosts() {
-      try {
-        const res = await fetch("/api/telemetry/agent-costs");
-        if (!res.ok) throw new Error("Failed to load telemetry data");
-        setAnalytics(await res.json());
-      } catch (err: any) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    }
     fetchCosts();
     const interval = setInterval(fetchCosts, 30_000);
     return () => clearInterval(interval);
   }, []);
 
-  // ── derived data ────────────────────────────────────────────────────────────
+  // ── derived calculations ─────────────────────────────────────────────────────
 
-  const totalCost   = useMemo(() => (analytics?.costs ?? []).reduce((s, c) => s + c.estimatedCost, 0), [analytics]);
-  const totalTokens = useMemo(() => (analytics?.costs ?? []).reduce((s, c) => s + c.tokens, 0), [analytics]);
-  const topAgent    = useMemo(() => [...(analytics?.costs ?? [])].sort((a, b) => b.estimatedCost - a.estimatedCost)[0], [analytics]);
+  const totalCost = useMemo(
+    () => (analytics?.costs ?? []).reduce((s, c) => s + c.estimatedCost, 0),
+    [analytics]
+  );
 
-  // Today's spend
-  const today = new Date().toISOString().split("T")[0];
-  const todayEntries  = useMemo(() => (analytics?.daily ?? []).filter(d => d.date === today), [analytics, today]);
-  const todayCost     = useMemo(() => todayEntries.reduce((s, d) => s + d.estimatedCost, 0), [todayEntries]);
+  const activeAgents = useMemo(
+    () => (analytics?.costs ?? []).filter((c) => c.estimatedCost > 0).length,
+    [analytics]
+  );
 
-  // Weekly data
-  const weeklyDaily = useMemo(() => {
+  const daily14 = useMemo(() => {
     if (!analytics) return [];
-    const cutoff = new Date(Date.now() - 28 * 86400000).toISOString().split("T")[0];
-    return analytics.daily.filter(d => d.date >= cutoff);
+    const cutoff = dateNDaysAgo(14);
+    return analytics.daily.filter((d) => d.date >= cutoff);
   }, [analytics]);
 
-  const weeklyGrouped = useMemo(() => {
-    const byWeek = new Map<string, number>();
-    for (const d of weeklyDaily) {
-      const w = isoWeek(d.date);
-      byWeek.set(w, (byWeek.get(w) ?? 0) + d.estimatedCost);
+  const runRate = useMemo(() => {
+    if (!analytics) return 0;
+    const cutoff = dateNDaysAgo(30);
+    const last30 = analytics.daily.filter((d) => d.date >= cutoff);
+    const sumCost = last30.reduce((s, d) => s + d.estimatedCost, 0);
+    const uniqueDays = new Set(last30.map((d) => d.date)).size;
+    if (uniqueDays === 0) return 0;
+    return (sumCost / uniqueDays) * 30;
+  }, [analytics]);
+
+  const dailyBurn = useMemo(() => {
+    if (!analytics) return 0;
+    const cutoff = dateNDaysAgo(7);
+    const last7 = analytics.daily.filter((d) => d.date >= cutoff);
+    const sumCost = last7.reduce((s, d) => s + d.estimatedCost, 0);
+    const uniqueDays = new Set(last7.map((d) => d.date)).size;
+    return uniqueDays > 0 ? sumCost / uniqueDays : 0;
+  }, [analytics]);
+
+  const spendTrend = useMemo(() => {
+    if (!analytics) return null;
+    const cutoff7  = dateNDaysAgo(7);
+    const cutoff14 = dateNDaysAgo(14);
+    const last7  = analytics.daily.filter((d) => d.date >= cutoff7).reduce((s, d) => s + d.estimatedCost, 0);
+    const prior7 = analytics.daily.filter((d) => d.date >= cutoff14 && d.date < cutoff7).reduce((s, d) => s + d.estimatedCost, 0);
+    if (prior7 === 0) return null;
+    return ((last7 - prior7) / prior7) * 100;
+  }, [analytics]);
+
+  // ── render ────────────────────────────────────────────────────────────────────
+
+  const spinStyle = `
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to   { transform: rotate(360deg); }
     }
-    return [...byWeek.entries()].sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, cost]) => ({ date, cost }));
-  }, [weeklyDaily]);
+  `;
 
-  // Last 14 days for daily chart
-  const dailyRecent = useMemo(() => {
-    if (!analytics) return [];
-    const cutoff = new Date(Date.now() - 14 * 86400000).toISOString().split("T")[0];
-    return analytics.daily.filter(d => d.date >= cutoff);
-  }, [analytics]);
+  if (loading) {
+    return (
+      <div
+        className="mc-stage"
+        style={{ gridColumn: "span 2", flex: 1, backgroundColor: "#060608", color: "#f0f0f0", display: "flex", alignItems: "center", justifyContent: "center" }}
+      >
+        <p style={{ color: ORANGE, fontSize: "13px", letterSpacing: "0.08em" }}>Loading analytics...</p>
+      </div>
+    );
+  }
 
-  // ── render ──────────────────────────────────────────────────────────────────
-
-  if (loading) return (
-    <div className="mc-stage flex items-center justify-center" style={{ gridColumn: "span 2", flex: 1, backgroundColor: "var(--mc-bg-stage, #0a0a0a)" }}>
-      <p className="text-[#e85d27] animate-pulse">Loading Analytics…</p>
-    </div>
-  );
-  if (error) return (
-    <div className="mc-stage flex items-center justify-center" style={{ gridColumn: "span 2", flex: 1, backgroundColor: "var(--mc-bg-stage, #0a0a0a)" }}>
-      <p className="text-red-500">{error}</p>
-    </div>
-  );
+  if (error) {
+    return (
+      <div
+        className="mc-stage"
+        style={{ gridColumn: "span 2", flex: 1, backgroundColor: "#060608", color: "#f0f0f0", display: "flex", alignItems: "center", justifyContent: "center" }}
+      >
+        <p style={{ color: RED, fontSize: "13px" }}>{error}</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="mc-stage" style={{ gridColumn: "span 2", flex: 1, backgroundColor: "var(--mc-bg-stage, #0a0a0a)", color: "#f0f0f0" }}>
-      <div className="h-full overflow-y-auto custom-scrollbar p-8 w-full space-y-6">
+    <div
+      className="mc-stage"
+      style={{ gridColumn: "span 2", flex: 1, backgroundColor: "#060608", color: "#f0f0f0" }}
+    >
+      <style>{spinStyle}</style>
+      <div className="h-full overflow-y-auto custom-scrollbar px-8 py-6 space-y-6">
 
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-white tracking-tight">Token &amp; Cost Analytics</h1>
+        {/* Page header */}
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+          <div>
+            <h1 style={{ fontSize: "22px", fontWeight: 700, color: "#f0f0f0", margin: 0, letterSpacing: "-0.01em" }}>
+              Cost Intelligence
+            </h1>
+            <p style={{ fontSize: "12px", color: "#555", margin: "4px 0 0 0", letterSpacing: "0.02em" }}>
+              Real-time spend across your AI agent fleet
+            </p>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            {lastRefreshed && (
+              <span style={{ fontSize: "11px", color: "#444", fontFamily: "ui-monospace, monospace" }}>
+                Updated {fmtTimestamp(lastRefreshed)}
+              </span>
+            )}
+            <button
+              onClick={fetchCosts}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: "28px",
+                height: "28px",
+                backgroundColor: "#0f0f12",
+                border: "1px solid #1e1e26",
+                borderRadius: "6px",
+                color: "#666",
+                cursor: "pointer",
+                padding: 0,
+              }}
+            >
+              <RefreshIcon spinning={refreshing} />
+            </button>
+          </div>
         </div>
 
-        {/* Summary cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <AnimatedMetricCard title="Total Cost"    prefix="$" value={totalCost}   decimals={4} />
-          <AnimatedMetricCard title="Total Tokens"  value={totalTokens} />
-          <AnimatedMetricCard title="Today's Cost"  prefix="$" value={todayCost}   decimals={4} />
-          <AnimatedMetricCard title="Top Spender"   prefix="$" value={topAgent?.estimatedCost ?? 0} decimals={4}
-            suffix={topAgent ? ` (${topAgent.agentId})` : ""} />
+        {/* KPI row */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "14px" }}>
+          <AnimatedMetricCard
+            title="All-Time Spend"
+            value={totalCost}
+            prefix="$"
+            decimals={4}
+            accentColor={ORANGE}
+            trend={spendTrend !== null ? { value: spendTrend, label: "vs last week" } : undefined}
+          />
+          <AnimatedMetricCard
+            title="30-Day Run Rate"
+            value={runRate}
+            prefix="$"
+            decimals={4}
+            accentColor={GREEN}
+            trend={undefined}
+          />
+          <AnimatedMetricCard
+            title="Daily Burn"
+            value={dailyBurn}
+            prefix="$"
+            decimals={4}
+            accentColor={PURPLE}
+            trend={undefined}
+          />
+          <AnimatedMetricCard
+            title="Agents Active"
+            value={activeAgents}
+            decimals={0}
+            accentColor="#38bdf8"
+            trend={undefined}
+          />
+        </div>
+
+        {/* KPI sub-labels */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "14px", marginTop: "-16px" }}>
+          <p style={{ fontSize: "10px", color: "#444", margin: 0, paddingLeft: "2px", textTransform: "uppercase", letterSpacing: "0.06em" }}>cumulative total</p>
+          <p style={{ fontSize: "10px", color: "#444", margin: 0, paddingLeft: "2px", textTransform: "uppercase", letterSpacing: "0.06em" }}>projected / mo</p>
+          <p style={{ fontSize: "10px", color: "#444", margin: 0, paddingLeft: "2px", textTransform: "uppercase", letterSpacing: "0.06em" }}>avg last 7 days</p>
+          <p style={{ fontSize: "10px", color: "#444", margin: 0, paddingLeft: "2px", textTransform: "uppercase", letterSpacing: "0.06em" }}>with recorded spend</p>
         </div>
 
         {/* Tab bar */}
-        <div className="flex gap-1 bg-[#111] border border-[#222] rounded-lg p-1 w-fit">
-          {VIEWS.map(({ id, label }) => (
+        <div style={{ display: "flex", gap: "4px", backgroundColor: "#0a0a0d", border: "1px solid #1e1e26", borderRadius: "8px", padding: "4px", width: "fit-content" }}>
+          {TABS.map(({ id, label }) => (
             <button
               key={id}
-              onClick={() => setView(id)}
-              className="px-4 py-1.5 rounded-md text-sm font-medium transition-all"
-              style={view === id
-                ? { backgroundColor: ORANGE, color: "#fff" }
-                : { color: "#888" }}
+              onClick={() => setTab(id)}
+              style={{
+                padding: "6px 16px",
+                borderRadius: "6px",
+                fontSize: "12px",
+                fontWeight: 500,
+                border: "none",
+                cursor: "pointer",
+                transition: "all 0.15s",
+                backgroundColor: tab === id ? ORANGE : "transparent",
+                color: tab === id ? "#fff" : "#666",
+              }}
             >
               {label}
             </button>
           ))}
         </div>
 
-        {/* Chart area */}
-        {view === "agent"  && <AgentBarChart data={analytics?.costs ?? []} />}
-        {view === "daily"  && <DailyChart daily={dailyRecent}  label="Last 14 Days" />}
-        {view === "weekly" && (
-          <div className="space-y-4">
-            <div className="w-full h-72 bg-[#111] p-4 rounded-xl border border-[#222]">
-              <h3 className="text-[#f0f0f0] mb-3 text-sm font-medium uppercase tracking-widest opacity-60">Weekly Cost (last 4 weeks)</h3>
-              <ResponsiveContainer width="100%" height="85%">
-                <BarChart data={weeklyGrouped} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#222" />
-                  <XAxis dataKey="date" stroke="#555" tick={{ fontSize: 11 }} />
-                  <YAxis stroke="#555" tick={{ fontSize: 11 }} tickFormatter={(v) => `$${v.toFixed(3)}`} />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: "#111", border: `1px solid ${ORANGE}`, borderRadius: 8 }}
-                    itemStyle={{ color: "#f0f0f0" }}
-                    formatter={(v: number) => [`$${v.toFixed(6)}`, "Cost"]}
-                  />
-                  <Bar dataKey="cost" fill={ORANGE} name="Cost ($)" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            <DailyChart daily={weeklyDaily} label="Last 28 Days — Agent Breakdown" />
-          </div>
+        {/* Tab content */}
+        {tab === "overview" && (
+          <OverviewTab
+            daily14={daily14}
+            costs={analytics?.costs ?? []}
+            totalCost={totalCost}
+          />
         )}
-        {view === "router" && <RouterChart byRouter={analytics?.byRouter ?? []} />}
+        {tab === "daily" && (
+          <DailyTab
+            daily14={daily14}
+            allDaily={analytics?.daily ?? []}
+          />
+        )}
+        {tab === "weekly" && (
+          <WeeklyTab daily={analytics?.daily ?? []} />
+        )}
+        {tab === "byrouter" && (
+          <ByRouterTab
+            byRouter={analytics?.byRouter ?? []}
+            totalCost={totalCost}
+          />
+        )}
 
       </div>
     </div>
