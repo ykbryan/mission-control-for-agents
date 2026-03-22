@@ -499,6 +499,36 @@ async function handleCosts(res: http.ServerResponse) {
   json(res, 200, { costs, daily });
 }
 
+async function handleAllSessions(res: http.ServerResponse) {
+  const raw = await listSessions(OPENCLAW_URL, OPENCLAW_TOKEN);
+  const ACTIVE_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
+  const now = Date.now();
+
+  const sessions = raw.map((s) => {
+    const parts = s.key?.split(":") ?? [];
+    const agentId   = parts[0] === "agent" ? parts[1] : null;
+    const sessionType = parts[2] ?? "main";
+    const context   = parts.slice(3).join(":") || null;
+
+    const raw_ts = s.updatedAt ?? 0;
+    const updatedAtMs = raw_ts > 0 && raw_ts < 1e12 ? raw_ts * 1000 : raw_ts;
+    const isActive = updatedAtMs > 0 && (now - updatedAtMs) < ACTIVE_WINDOW_MS;
+
+    return {
+      key:       s.key,
+      agentId,
+      type:      sessionType,
+      context,
+      updatedAt: updatedAtMs,
+      totalTokens: s.totalTokens ?? 0,
+      isActive,
+    };
+  }).filter(s => s.agentId);
+
+  sessions.sort((a, b) => b.updatedAt - a.updatedAt);
+  json(res, 200, { sessions });
+}
+
 async function handleDebugSession(res: http.ServerResponse, params: URLSearchParams) {
   const agentId = params.get("agentId") ?? "";
   const sessions = await listSessions(OPENCLAW_URL, OPENCLAW_TOKEN);
@@ -586,6 +616,7 @@ const server = http.createServer(async (req, res) => {
     if (urlPath === "/session") { await handleSession(res, params); return; }
     if (urlPath === "/file") { await handleFile(res, params); return; }
     if (urlPath === "/costs") { await handleCosts(res); return; }
+    if (urlPath === "/all-sessions") { await handleAllSessions(res); return; }
     if (urlPath === "/debug") { await handleDebug(res); return; }
     if (urlPath === "/debug-session") { await handleDebugSession(res, params); return; }
     json(res, 404, { error: "Not found" });
