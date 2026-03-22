@@ -3,6 +3,10 @@
 > The spatial operating system for your OpenClaw agent swarms.
 
 ![Canvas](media/canvas.png)
+![Canvas](media/teams.png)
+![Canvas](media/tokens.png)
+![Canvas](media/profile.png)
+![Canvas](media/login.png)
 
 Mission Control is a Next.js dashboard for visualizing, navigating, and managing autonomous [OpenClaw](https://github.com/openclaw/openclaw) agent swarms. Connect multiple gateways at once — each one gets its own cluster on the canvas, with orchestrators and specialists laid out in hierarchy. The dashboard can be hosted anywhere; a lightweight **Router** bridges each OpenClaw instance over HTTP.
 
