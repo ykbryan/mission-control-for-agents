@@ -27,12 +27,12 @@ const nodeTypes = {
 
 const AGENT_W = 240;
 const AGENT_H = 72;
-const AGENT_COL_GAP = 32;
+const AGENT_COL_GAP = 40;
 const AGENT_ROW_GAP = 24;
-const AGENTS_PER_ROW = 3;
+const AGENTS_PER_ROW = 4;
 const GATEWAY_H = 64;
 const GATEWAY_MARGIN_TOP = 60;
-const CLUSTER_GAP = 80;      // horizontal gap between gateway clusters
+const CLUSTER_GAP = 120;     // horizontal gap between gateway clusters
 const AGENTS_TOP_OFFSET = 120; // vertical space below gateway node
 
 export default function MissionStage({ agents, selectedAgentId, onSelectAgent, onNodeDoubleClick, mode, darkMode, onModeChange, routerConfigs }: Props) {
@@ -70,7 +70,11 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, o
     let cursorX = 60;
 
     for (const { routerId, label, url, routerAgents } of sourceList) {
-      const cols = Math.min(Math.max(routerAgents.length, 1), AGENTS_PER_ROW);
+      // Split agents into orchestrators (main) and specialists
+      const orchestrators = routerAgents.filter(a => a.tier === "orchestrator");
+      const specialists = routerAgents.filter(a => a.tier !== "orchestrator");
+
+      const cols = Math.min(Math.max(specialists.length || orchestrators.length, 1), AGENTS_PER_ROW);
       const clusterW = cols * AGENT_W + (cols - 1) * AGENT_COL_GAP;
       const totalW = Math.max(clusterW, gatewayW);
 
@@ -84,14 +88,60 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, o
         data: { label, url, agentCount: routerAgents.length },
       });
 
-      // Use compound node ID (routerId--agentId) to avoid collisions when
-      // two gateways expose the same agent name.
-      routerAgents.forEach((agent, i) => {
+      // Place orchestrators centered below the gateway
+      const ORCH_Y = GATEWAY_MARGIN_TOP + GATEWAY_H + 40;
+      const orchRowW = orchestrators.length * AGENT_W + (orchestrators.length - 1) * AGENT_COL_GAP;
+      const orchStartX = cursorX + totalW / 2 - orchRowW / 2;
+
+      orchestrators.forEach((agent, i) => {
+        const nodeId = `${routerId}--${agent.id}`;
+        const agentX = orchStartX + i * (AGENT_W + AGENT_COL_GAP);
+
+        nodes.push({
+          id: nodeId,
+          type: "agentNode",
+          position: { x: agentX, y: ORCH_Y },
+          data: {
+            id: agent.id,
+            name: agent.name,
+            emoji: agent.emoji,
+            role: agent.role,
+            status: (agent.status ?? "online") as "online" | "offline" | "idle",
+            isSelected: nodeId === selectedAgentId,
+            tier: "orchestrator",
+          },
+        });
+
+        // Edge: gateway → orchestrator (solid orange)
+        edges.push({
+          id: `e-${gatewayId}-${nodeId}`,
+          source: gatewayId,
+          target: nodeId,
+          style: { stroke: "#e85d27", strokeWidth: 1.5, opacity: 0.6 },
+          animated: false,
+        });
+      });
+
+      // Vertical offset for specialists: below orchestrators (or directly below gateway if none)
+      const specialistTopY = orchestrators.length > 0
+        ? ORCH_Y + AGENT_H + 56
+        : GATEWAY_MARGIN_TOP + GATEWAY_H + AGENTS_TOP_OFFSET;
+
+      // Determine the "parent" node for specialist edges
+      // If there's exactly one orchestrator, specialists connect to it; otherwise to gateway
+      const specialistParentId = orchestrators.length === 1
+        ? `${routerId}--${orchestrators[0].id}`
+        : gatewayId;
+      const specialistEdgeStyle = orchestrators.length === 1
+        ? { stroke: "#7c3aed", strokeWidth: 1, opacity: 0.25, strokeDasharray: "4 3" }
+        : { stroke: "#e85d27", strokeWidth: 1, opacity: 0.3 };
+
+      specialists.forEach((agent, i) => {
         const col = i % AGENTS_PER_ROW;
         const row = Math.floor(i / AGENTS_PER_ROW);
         const nodeId = `${routerId}--${agent.id}`;
         const agentX = cursorX + col * (AGENT_W + AGENT_COL_GAP);
-        const agentY = GATEWAY_MARGIN_TOP + GATEWAY_H + AGENTS_TOP_OFFSET + row * (AGENT_H + AGENT_ROW_GAP);
+        const agentY = specialistTopY + row * (AGENT_H + AGENT_ROW_GAP);
 
         nodes.push({
           id: nodeId,
@@ -102,20 +152,22 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, o
             name: agent.name,
             emoji: agent.emoji,
             role: agent.role,
-            status: "online" as const,
-            isSelected: agent.id === selectedAgentId && agent.routerId === routerId,
+            status: (agent.status ?? "online") as "online" | "offline" | "idle",
+            isSelected: nodeId === selectedAgentId,
+            tier: "specialist",
           },
         });
 
         edges.push({
-          id: `e-${gatewayId}-${nodeId}`,
-          source: gatewayId,
+          id: `e-${specialistParentId}-${nodeId}`,
+          source: specialistParentId,
           target: nodeId,
-          style: { stroke: "#e85d27", strokeWidth: 1, opacity: 0.3 },
+          style: specialistEdgeStyle,
           animated: false,
         });
       });
 
+      // If no specialists, connect all agents via orchestrators already done above
       cursorX += totalW + CLUSTER_GAP;
     }
 
@@ -128,12 +180,12 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, o
   useEffect(() => { setNodes(initialNodes); }, [initialNodes, setNodes]);
   useEffect(() => { setEdges(initialEdges); }, [initialEdges, setEdges]);
 
-  // Sync selection highlight — node IDs are "routerId--agentId"
+  // Sync selection highlight — compare by compound node.id ("routerId--agentId")
   useEffect(() => {
     setNodes((nds) =>
       nds.map((node) => ({
         ...node,
-        data: { ...node.data, isSelected: node.data.id === selectedAgentId },
+        data: { ...node.data, isSelected: node.id === selectedAgentId },
       }))
     );
   }, [selectedAgentId, setNodes]);
@@ -141,7 +193,7 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, o
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: any) => {
       if (node.id.startsWith("gateway-")) return;
-      onSelectAgent(node.data.id); // use real agentId stored in data
+      onSelectAgent(node.id); // pass compound "routerId--agentId" key
     },
     [onSelectAgent]
   );
@@ -149,8 +201,8 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, o
   const handleNodeDoubleClick = useCallback(
     (_: React.MouseEvent, node: any) => {
       if (node.id.startsWith("gateway-")) return;
-      onSelectAgent(node.data.id);
-      if (onNodeDoubleClick) onNodeDoubleClick(node.data.id);
+      onSelectAgent(node.id);
+      if (onNodeDoubleClick) onNodeDoubleClick(node.id);
     },
     [onSelectAgent, onNodeDoubleClick]
   );

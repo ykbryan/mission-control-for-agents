@@ -6,6 +6,7 @@ interface RouterAgent {
   name: string;
   configured: boolean;
   files?: string[];
+  lastActiveAt?: number;
 }
 
 export async function fetchAgentsFromRouter(
@@ -26,17 +27,29 @@ export async function fetchAgentsFromRouter(
     // Fall back to static metadata for name/emoji/role/soul/skills.
     const known = staticMap.get(ra.id);
     const files = ra.files && ra.files.length > 0 ? ra.files : (known?.files ?? []);
-    if (known) return { ...known, files, routerId, routerLabel };
+    const now = Date.now();
+    const raw = ra.lastActiveAt ?? 0;
+    // Normalise to ms — OpenClaw may return seconds (< 1e12) or ms (>= 1e12)
+    const last = raw > 0 && raw < 1e12 ? raw * 1000 : raw;
+    const status: "online" | "idle" | "offline" =
+      last > now - 7 * 24 * 60 * 60 * 1000  ? "online"
+      : last > now - 30 * 24 * 60 * 60 * 1000 ? "idle"
+      : "offline";
+    // "main" is always the gateway orchestrator; all others are specialists
+    const tier: Agent["tier"] = ra.id === "main" ? "orchestrator" : "specialist";
+    if (known) return { ...known, files, routerId, routerLabel, status, tier };
     return {
       id: ra.id,
       name: ra.name || ra.id,
-      emoji: "🤖",
-      role: "AI Agent",
+      emoji: ra.id === "main" ? "🎯" : "🤖",
+      role: ra.id === "main" ? "Orchestrator" : "AI Agent",
       soul: "A capable AI agent.",
       skills: [],
       files,
       routerId,
       routerLabel,
+      status,
+      tier,
     };
   });
 

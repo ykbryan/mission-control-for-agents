@@ -13,7 +13,10 @@ import AgentProfileStage from "@/components/stage/AgentProfileStage";
 import { AnimatePresence, motion } from "framer-motion";
 
 export default function MissionControlScreen({ agents, routerConfigs, routerErrors }: MissionControlScreenProps) {
-  const [selectedAgentId, setSelectedAgentId] = useState(agents[0]?.id ?? "");
+  // selectedAgentId is a compound "routerId--agentId" key for unique selection across gateways
+  const [selectedAgentId, setSelectedAgentId] = useState(
+    agents[0] ? `${agents[0].routerId}--${agents[0].id}` : ""
+  );
   const [drilledDownAgentId, setDrilledDownAgentId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFile, setActiveFile] = useState<string | null>(null);
@@ -91,7 +94,7 @@ export default function MissionControlScreen({ agents, routerConfigs, routerErro
               >
                 <MissionStage
                   agents={filteredAgents}
-                  selectedAgentId={selectedAgent.id}
+                  selectedAgentId={selectedAgentId}
                   onSelectAgent={(agentId) => {
                     setSelectedAgentId(agentId);
                     setMode("graph");

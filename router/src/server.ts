@@ -166,16 +166,16 @@ async function handleAgents(res: http.ServerResponse) {
   }
 
   // Merge gateway agents with session-derived ids
-  const agentMap = new Map<string, { id: string; name: string; configured: boolean; files: string[] }>();
+  const agentMap = new Map<string, { id: string; name: string; configured: boolean; files: string[]; lastActiveAt?: number }>();
   for (const a of gatewayAgents) {
     const sess = latestSession.get(a.id);
     const files = sess?.transcriptPath ? listAgentFiles(agentDirFromTranscript(sess.transcriptPath)) : [];
-    agentMap.set(a.id, { ...a, files });
+    agentMap.set(a.id, { ...a, files, lastActiveAt: sess?.updatedAt });
   }
   for (const [id, sess] of latestSession) {
     if (!agentMap.has(id)) {
       const files = sess.transcriptPath ? listAgentFiles(agentDirFromTranscript(sess.transcriptPath)) : [];
-      agentMap.set(id, { id, name: id, configured: false, files });
+      agentMap.set(id, { id, name: id, configured: false, files, lastActiveAt: sess?.updatedAt });
     }
   }
 
@@ -446,20 +446,20 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(ROUTER_PORT, () => {
+  const b = '\x1b[1m', r = '\x1b[0m', dim = '\x1b[2m', cyan = '\x1b[36m', green = '\x1b[32m', orange = '\x1b[38;5;208m';
+  const url = `http://localhost:${ROUTER_PORT}`;
   console.log("");
-  console.log("╔══════════════════════════════════════════════════════╗");
-  console.log("║         Mission Control Router — started             ║");
-  console.log("╠══════════════════════════════════════════════════════╣");
-  console.log(`║  Listening on  http://localhost:${ROUTER_PORT}                ║`);
-  console.log(`║  OpenClaw URL  ${OPENCLAW_URL.padEnd(38)}║`);
-  console.log("╠══════════════════════════════════════════════════════╣");
-  console.log("║  In Mission Control, set:                            ║");
-  console.log(`║  Router URL    http://localhost:${ROUTER_PORT}                ║`);
-  console.log(`║  Router Token  ${ROUTER_TOKEN.slice(0, 38)}║`);
-  if (ROUTER_TOKEN.length > 38) {
-    console.log(`║                ${ROUTER_TOKEN.slice(38).padEnd(38)}║`);
-  }
-  console.log("╚══════════════════════════════════════════════════════╝");
+  console.log(`  ${orange}${b}🛰  Mission Control Router${r}  ${dim}started${r}`);
+  console.log("");
+  console.log(`  ${dim}Listening ${r} ${cyan}${url}${r}`);
+  console.log(`  ${dim}OpenClaw  ${r} ${dim}${OPENCLAW_URL}${r}`);
+  console.log("");
+  console.log(`  ${dim}────────────────────────────────────────${r}`);
+  console.log(`  ${b}In Mission Control, add this router:${r}`);
+  console.log(`  ${dim}────────────────────────────────────────${r}`);
+  console.log("");
+  console.log(`  ${dim}Router URL  ${r} ${green}${url}${r}`);
+  console.log(`  ${dim}Token       ${r} ${green}${ROUTER_TOKEN}${r}`);
   console.log("");
 
   if (!OPENCLAW_TOKEN) {

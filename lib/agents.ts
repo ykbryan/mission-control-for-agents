@@ -8,6 +8,8 @@ export interface Agent {
   files: string[];
   routerId?: string;
   routerLabel?: string;
+  status?: "online" | "offline" | "idle";
+  tier?: "orchestrator" | "specialist";
 }
 
 export const agents: Agent[] = [
