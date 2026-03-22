@@ -19,7 +19,6 @@ import http from "http";
 import fs from "fs";
 import path from "path";
 import { randomBytes } from "crypto";
-import WebSocket from "ws";
 import {
   listSessions,
   listAgents,
@@ -171,44 +170,57 @@ async function handleFile(res: http.ServerResponse, params: URLSearchParams) {
 }
 
 async function handleDebug(res: http.ServerResponse) {
-  // Probe WebSocket: open connection, collect first 10 messages over 5s, report them
-  const wsUrl = OPENCLAW_URL.replace(/^http(s?):\/\//, "ws$1://").replace(/\/$/, "");
-  const messages: { t: number; type?: string; raw: string }[] = [];
-  const start = Date.now();
-
-  await new Promise<void>((resolve) => {
-    let done = false;
-    const finish = () => { if (!done) { done = true; resolve(); } };
-    const timer = setTimeout(finish, 5000);
-
-    let ws: WebSocket;
-    try {
-      ws = new WebSocket(wsUrl, { headers: { Origin: OPENCLAW_URL } });
-    } catch (e) {
-      messages.push({ t: 0, raw: `[open error] ${e}` });
-      clearTimeout(timer);
-      finish();
-      return;
-    }
-
-    ws.on("open", () => messages.push({ t: Date.now() - start, raw: "[open]" }));
-    ws.on("error", (e) => { messages.push({ t: Date.now() - start, raw: `[error] ${e.message}` }); clearTimeout(timer); try { ws.close(); } catch {} finish(); });
-    ws.on("close", (code, reason) => { messages.push({ t: Date.now() - start, raw: `[close] code=${code} reason=${reason}` }); clearTimeout(timer); finish(); });
-    ws.on("message", (raw) => {
-      const str = raw.toString();
-      let parsed: { type?: string } = {};
-      try { parsed = JSON.parse(str); } catch {}
-      messages.push({ t: Date.now() - start, type: parsed.type, raw: str.slice(0, 500) });
-      if (messages.filter((m) => m.type).length >= 5) { clearTimeout(timer); try { ws.close(); } catch {} finish(); }
-    });
-  });
-
-  json(res, 200, {
-    wsUrl,
+  const out: Record<string, unknown> = {
     gatewayUrl: OPENCLAW_URL,
+    wsUrl: OPENCLAW_URL.replace(/^http(s?):\/\//, "ws$1://"),
     hasToken: !!OPENCLAW_TOKEN,
-    messages,
-  });
+  };
+
+  // 1. HTTP — sessions list
+  try {
+    const sessions = await listSessions(OPENCLAW_URL, OPENCLAW_TOKEN);
+    out.http_sessions = { ok: true, count: sessions.length, first: sessions[0] ?? null };
+  } catch (e) {
+    out.http_sessions = { ok: false, error: String(e) };
+  }
+
+  // 2. HTTP — agents list
+  try {
+    const agents = await listAgents(OPENCLAW_URL, OPENCLAW_TOKEN);
+    out.http_agents = { ok: true, count: agents.length, agents };
+  } catch (e) {
+    out.http_agents = { ok: false, error: String(e) };
+  }
+
+  // 3. WebSocket — sessions.get on first available session
+  try {
+    const sessions = await listSessions(OPENCLAW_URL, OPENCLAW_TOKEN);
+    const first = sessions[0];
+    if (!first) {
+      out.ws_session = { ok: false, error: "No sessions to test with" };
+    } else {
+      const messages = await getSession(OPENCLAW_URL, OPENCLAW_TOKEN, first.key);
+      out.ws_session = { ok: true, key: first.key, messageCount: messages.length, first: messages[0] ?? null };
+    }
+  } catch (e) {
+    out.ws_session = { ok: false, error: String(e) };
+  }
+
+  // 4. WebSocket — agents.files.get for first agent
+  try {
+    const agents = await listAgents(OPENCLAW_URL, OPENCLAW_TOKEN);
+    const first = agents[0];
+    if (!first) {
+      out.ws_file = { ok: false, error: "No agents to test with" };
+    } else {
+      const content = await getAgentFile(OPENCLAW_URL, OPENCLAW_TOKEN, first.id, "IDENTITY.md");
+      out.ws_file = { ok: true, agentId: first.id, file: "IDENTITY.md", found: content !== null, preview: content?.slice(0, 200) ?? null };
+    }
+  } catch (e) {
+    out.ws_file = { ok: false, error: String(e) };
+  }
+
+  json(res, 200, out);
 }
 
 async function handleCosts(res: http.ServerResponse) {
