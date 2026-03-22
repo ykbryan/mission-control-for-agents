@@ -103,39 +103,43 @@ export default function InspectorPanel({ agent, activeFile, onSelectFile }: Prop
               <p className="mc-inspector__summary">{agent.soul}</p>
             </section>
 
-            <section className="mc-inspector__section">
-              <div className="mc-section-label">Capabilities</div>
-              <div className="mc-chip-grid">
-                {agent.skills.map((skill) => (
-                  <div key={skill} className="mc-skill-chip" title={skillDescriptions[skill] || skill}>
-                    <span className="mc-skill-chip__dot" />
-                    {skill}
-                  </div>
-                ))}
-              </div>
-            </section>
+            {agent.skills.length > 0 && (
+              <section className="mc-inspector__section">
+                <div className="mc-section-label">Capabilities</div>
+                <div className="mc-chip-grid">
+                  {agent.skills.map((skill) => (
+                    <div key={skill} className="mc-skill-chip" title={skillDescriptions[skill] || skill}>
+                      <span className="mc-skill-chip__dot" />
+                      {skill}
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
 
-            <section className="mc-inspector__section mc-inspector__section--files">
-              <div className="mc-section-label">Markdown files</div>
-              <div className="mc-file-list">
-                {agent.files.map((file) => {
-                  const active = file === activeFile;
-                  return (
-                    <button
-                      key={file}
-                      className={`mc-file-row ${active ? "is-active" : ""}`}
-                      onClick={() => onSelectFile(active ? null : file)}
-                    >
-                      <span className="mc-file-row__meta">
-                        <span>{FILE_ICONS[file] || "📄"}</span>
-                        <span>{file}</span>
-                      </span>
-                      <span className="mc-file-row__action">{active ? "Close" : "Open"}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
+            {agent.files.length > 0 && (
+              <section className="mc-inspector__section mc-inspector__section--files">
+                <div className="mc-section-label">Markdown files</div>
+                <div className="mc-file-list">
+                  {agent.files.map((file) => {
+                    const active = file === activeFile;
+                    return (
+                      <button
+                        key={file}
+                        className={`mc-file-row ${active ? "is-active" : ""}`}
+                        onClick={() => onSelectFile(active ? null : file)}
+                      >
+                        <span className="mc-file-row__meta">
+                          <span>{FILE_ICONS[file] || "📄"}</span>
+                          <span>{file}</span>
+                        </span>
+                        <span className="mc-file-row__action">{active ? "Close" : "Open"}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
 
             <section className="mc-inspector__section mc-inspector__section--overview">
               <div className="mc-section-label">Overview</div>
