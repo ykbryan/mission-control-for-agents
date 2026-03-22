@@ -69,19 +69,24 @@ echo -e "  ${BOLD}OpenClaw connection${RESET}"
 echo ""
 
 if [ -z "$OPENCLAW_URL" ]; then
-  read -rp "  OpenClaw URL   [http://127.0.0.1:18789]: " INPUT_URL
+  printf "  OpenClaw URL   [http://127.0.0.1:18789]: "
+  read -r INPUT_URL
   OPENCLAW_URL="${INPUT_URL:-http://127.0.0.1:18789}"
 fi
 
 if [ -z "$OPENCLAW_TOKEN" ]; then
-  read -rsp "  OpenClaw Token: " OPENCLAW_TOKEN
+  printf "  OpenClaw Token: "
+  stty -echo 2>/dev/null || true
+  read -r OPENCLAW_TOKEN
+  stty echo 2>/dev/null || true
   echo ""
 fi
 
 [ -z "$OPENCLAW_TOKEN" ] && error "OpenClaw token is required."
 
 if [ -z "$ROUTER_PORT" ]; then
-  read -rp "  Router port    [3010]: " INPUT_PORT
+  printf "  Router port    [3010]: "
+  read -r INPUT_PORT
   ROUTER_PORT="${INPUT_PORT:-3010}"
 fi
 
