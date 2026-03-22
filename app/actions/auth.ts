@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 export async function logout() {
   const cookieStore = await cookies();
+  cookieStore.delete("routers");
   cookieStore.delete("routerUrl");
   cookieStore.delete("routerToken");
   redirect("/login");
