@@ -113,13 +113,15 @@ cp -r "$TMP_DIR/router/." "$INSTALL_DIR/"
 
 # ── Install & build ──────────────────────────────────────────
 info "Installing dependencies …"
-(cd "$INSTALL_DIR" && npm install --silent)
+(cd "$INSTALL_DIR" && npm install 2>&1 | tail -5)
+
+[ ! -f "$INSTALL_DIR/node_modules/.bin/tsc" ] && error "TypeScript (tsc) not found after npm install. Check npm errors above."
 
 info "Building …"
-(cd "$INSTALL_DIR" && npm run build --silent)
+(cd "$INSTALL_DIR" && ./node_modules/.bin/tsc)
 
 info "Pruning dev dependencies …"
-(cd "$INSTALL_DIR" && npm prune --omit=dev --silent)
+(cd "$INSTALL_DIR" && npm prune --omit=dev --silent 2>/dev/null || true)
 
 # ── Write .env ───────────────────────────────────────────────
 cat > "$INSTALL_DIR/.env" <<EOF
