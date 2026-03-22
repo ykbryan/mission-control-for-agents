@@ -16,14 +16,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid token" }, { status: 401 });
     }
 
-    // /health must return JSON with ok:true to confirm this is actually the router
-    let healthData: { ok?: boolean } = {};
-    try { healthData = await res.json(); } catch {}
-    if (!healthData.ok) {
-      return NextResponse.json({ error: "Not a Mission Control Router (bad /health response)" }, { status: 401 });
-    }
-
-    // Verify the token works on a protected route and returns valid agent JSON
+    // /health is public — now verify the token actually works on a protected route
     const authRes = await fetch(`${routerUrl}/agents`, {
       headers: { Authorization: `Bearer ${routerToken}` },
       signal: AbortSignal.timeout(8_000),
@@ -31,12 +24,6 @@ export async function POST(req: NextRequest) {
 
     if (!authRes.ok) {
       return NextResponse.json({ error: "Invalid router token" }, { status: 401 });
-    }
-
-    let agentsData: { agents?: unknown[] } = {};
-    try { agentsData = await authRes.json(); } catch {}
-    if (!Array.isArray(agentsData.agents)) {
-      return NextResponse.json({ error: "Not a Mission Control Router (bad /agents response)" }, { status: 401 });
     }
 
     return NextResponse.json({ ok: true });
