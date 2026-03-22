@@ -1,6 +1,24 @@
 import { routerGet } from "@/lib/router-client";
 import { agents as staticAgents, Agent } from "@/lib/agents";
 
+// Keywords in role or soul that strongly indicate an orchestrator
+const ORCH_KEYWORDS = [
+  "chief of staff", "orchestrator", "orchestrating", "chief agent",
+  "head of agents", "lead agent", "agent coordinator", "agent manager",
+];
+
+function inferTier(known: Agent | undefined, routerTier: Agent["tier"]): Agent["tier"] {
+  // Highest signal: role/soul keyword match on the static definition
+  if (known) {
+    const text = `${known.role} ${known.soul}`.toLowerCase();
+    if (ORCH_KEYWORDS.some(k => text.includes(k))) return "orchestrator";
+  }
+  // Next: explicit tier in static config
+  if (known?.tier) return known.tier;
+  // Last resort: router's AGENTS.md cross-reference detection
+  return routerTier ?? "specialist";
+}
+
 interface RouterAgent {
   id: string;
   name: string;
@@ -36,10 +54,12 @@ export async function fetchAgentsFromRouter(
       last > now - 7 * 24 * 60 * 60 * 1000  ? "online"
       : last > now - 30 * 24 * 60 * 60 * 1000 ? "idle"
       : "offline";
-    // Tier: router detection wins (it reads AGENTS.md cross-refs dynamically),
-    // fall back to static config, default to specialist.
+    // Tier detection — three signals, highest confidence wins:
+    // 1. Role/soul keywords on the static agent (most reliable — "Chief of Staff" etc.)
+    // 2. Static config tier field (explicit override in agents.ts)
+    // 3. Router AGENTS.md cross-reference detection (dynamic, but noisy when all agents share a template)
     const routerTier = ra.tier === "orchestrator" || ra.tier === "specialist" ? ra.tier : undefined;
-    const tier: Agent["tier"] = routerTier ?? known?.tier ?? "specialist";
+    const tier: Agent["tier"] = inferTier(known, routerTier);
     if (known) return { ...known, files, routerId, routerLabel, status, tier };
     return {
       id: ra.id,
