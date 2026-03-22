@@ -514,7 +514,7 @@ export default function ActivitiesPage() {
         <div style={{ borderBottom: "1px solid #1a1a22", padding: "0 24px", display: "flex", alignItems: "center", height: "52px", gap: "16px", flexShrink: 0 }}>
           <span style={{ color: "#888", fontSize: "13px" }}>Mission Control</span>
           <span style={{ color: "#333" }}>/</span>
-          <span style={{ color: "#f0f0f0", fontSize: "13px", fontWeight: 500 }}>Activities</span>
+          <span style={{ color: "#f0f0f0", fontSize: "13px", fontWeight: 500 }}>Agent Activities</span>
           <div style={{ flex: 1 }} />
           {loading && <span style={{ fontSize: "11px", color: "#444", fontFamily: "monospace" }}>Refreshing…</span>}
           <span style={{ fontSize: "11px", color: "#333", fontFamily: "monospace" }}>↻ 15s</span>
@@ -525,6 +525,7 @@ export default function ActivitiesPage() {
           <NavRail activeView="activities" onViewChange={(v) => {
             if (v === "mission") window.location.href = "/";
             if (v === "swarms") window.location.href = "/teams";
+            if (v === "spending") window.location.href = "/spending";
             if (v === "analytics") window.location.href = "/";
           }} />
 

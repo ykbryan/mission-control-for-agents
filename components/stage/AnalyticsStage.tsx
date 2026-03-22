@@ -707,43 +707,26 @@ export default function AnalyticsStage() {
       style={{ gridColumn: "span 2", flex: 1, backgroundColor: "#060608", color: "#f0f0f0" }}
     >
       <style>{spinStyle}</style>
-      <div className="h-full overflow-y-auto custom-scrollbar px-8 py-6 space-y-6">
+      <div className="h-full overflow-y-auto custom-scrollbar px-8 py-6 flex flex-col gap-5">
 
-        {/* Page header */}
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+        {/* Section header */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div>
-            <h1 style={{ fontSize: "22px", fontWeight: 700, color: "#f0f0f0", margin: 0, letterSpacing: "-0.01em" }}>
-              Cost Intelligence
-            </h1>
-            <p style={{ fontSize: "12px", color: "#555", margin: "4px 0 0 0", letterSpacing: "0.02em" }}>
-              Real-time spend across your AI agent fleet
-            </p>
+            <h1 style={{ fontSize: "18px", fontWeight: 700, color: "#f0f0f0", margin: 0 }}>Cost Intelligence</h1>
+            <p style={{ fontSize: "12px", color: "#555", margin: "3px 0 0 0" }}>Real-time spend across your AI agent fleet</p>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            {lastRefreshed && (
-              <span style={{ fontSize: "11px", color: "#444", fontFamily: "ui-monospace, monospace" }}>
-                Updated {fmtTimestamp(lastRefreshed)}
-              </span>
-            )}
-            <button
-              onClick={fetchCosts}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                width: "28px",
-                height: "28px",
-                backgroundColor: "#0f0f12",
-                border: "1px solid #1e1e26",
-                borderRadius: "6px",
-                color: "#666",
-                cursor: "pointer",
-                padding: 0,
-              }}
-            >
-              <RefreshIcon spinning={refreshing} />
-            </button>
-          </div>
+          <a
+            href="/spending"
+            style={{
+              display: "flex", alignItems: "center", gap: "6px",
+              fontSize: "12px", fontWeight: 600, color: "#e85d27",
+              background: "rgba(232,93,39,0.08)", border: "1px solid rgba(232,93,39,0.2)",
+              borderRadius: "6px", padding: "6px 14px", textDecoration: "none",
+              transition: "all 0.15s",
+            }}
+          >
+            Open full page ↗
+          </a>
         </div>
 
         {/* KPI row */}
@@ -789,52 +772,26 @@ export default function AnalyticsStage() {
           <p style={{ fontSize: "10px", color: "#444", margin: 0, paddingLeft: "2px", textTransform: "uppercase", letterSpacing: "0.06em" }}>with recorded spend</p>
         </div>
 
-        {/* Tab bar */}
-        <div style={{ display: "flex", gap: "4px", backgroundColor: "#0a0a0d", border: "1px solid #1e1e26", borderRadius: "8px", padding: "4px", width: "fit-content" }}>
-          {TABS.map(({ id, label }) => (
-            <button
-              key={id}
-              onClick={() => setTab(id)}
-              style={{
-                padding: "6px 16px",
-                borderRadius: "6px",
-                fontSize: "12px",
-                fontWeight: 500,
-                border: "none",
-                cursor: "pointer",
-                transition: "all 0.15s",
-                backgroundColor: tab === id ? ORANGE : "transparent",
-                color: tab === id ? "#fff" : "#666",
-              }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        {/* Overview chart */}
+        <OverviewTab
+          daily14={daily14}
+          costs={analytics?.costs ?? []}
+          totalCost={totalCost}
+        />
 
-        {/* Tab content */}
-        {tab === "overview" && (
-          <OverviewTab
-            daily14={daily14}
-            costs={analytics?.costs ?? []}
-            totalCost={totalCost}
-          />
-        )}
-        {tab === "daily" && (
-          <DailyTab
-            daily14={daily14}
-            allDaily={analytics?.daily ?? []}
-          />
-        )}
-        {tab === "weekly" && (
-          <WeeklyTab daily={analytics?.daily ?? []} />
-        )}
-        {tab === "byrouter" && (
-          <ByRouterTab
-            byRouter={analytics?.byRouter ?? []}
-            totalCost={totalCost}
-          />
-        )}
+        {/* CTA to full page */}
+        <a
+          href="/spending"
+          style={{
+            display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
+            padding: "12px", borderRadius: "8px",
+            background: "rgba(232,93,39,0.04)", border: "1px dashed rgba(232,93,39,0.15)",
+            color: "#e85d27", fontSize: "12px", fontWeight: 500, textDecoration: "none",
+            transition: "all 0.15s",
+          }}
+        >
+          <span>💰</span> View full Cost Intelligence dashboard — daily, weekly, by router ↗
+        </a>
 
       </div>
     </div>

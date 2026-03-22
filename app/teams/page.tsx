@@ -477,6 +477,8 @@ export default function TeamsPage() {
       <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
         <NavRail activeView="swarms" onViewChange={(view) => {
           if (view === "mission") window.location.href = "/";
+          if (view === "activities") window.location.href = "/activities";
+          if (view === "spending") window.location.href = "/spending";
           if (view === "analytics") window.location.href = "/";
         }} />
 
