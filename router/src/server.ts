@@ -341,36 +341,43 @@ async function handleDebugSession(res: http.ServerResponse, params: URLSearchPar
   const agentId = params.get("agentId") ?? "";
   const sessions = await listSessions(OPENCLAW_URL, OPENCLAW_TOKEN);
 
-  // Show all session keys so we can see the key format
-  const allKeys = sessions.map((s) => ({ key: s.key, updatedAt: s.updatedAt, hasPath: !!s.transcriptPath }));
-
   const agentSessions = sessions.filter((s) => {
     const p = s.key?.split(":");
     return p?.[0] === "agent" && p[1] === agentId;
-  }).sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+  });
 
-  const latest = agentSessions[0];
-  if (!latest?.transcriptPath) {
-    json(res, 200, { agentId, allKeys, agentSessions, error: "No transcriptPath found" });
+  // Annotate each session with its file size so we can pick the right one
+  const annotated = agentSessions.map((s) => {
+    let fileSize = 0;
+    let lineCount = 0;
+    if (s.transcriptPath && fs.existsSync(s.transcriptPath)) {
+      const content = fs.readFileSync(s.transcriptPath, "utf8");
+      fileSize = Buffer.byteLength(content);
+      lineCount = content.split("\n").filter(Boolean).length;
+    }
+    return { key: s.key, updatedAt: s.updatedAt, transcriptPath: s.transcriptPath, fileSize, lineCount };
+  });
+
+  // Pick the session with the most content
+  const best = [...annotated].sort((a, b) => b.lineCount - a.lineCount)[0];
+
+  if (!best?.transcriptPath || best.lineCount === 0) {
+    json(res, 200, { agentId, sessions: annotated, error: "All transcripts are empty or missing" });
     return;
   }
 
-  // Read first 5 raw lines from the transcript to inspect format
-  const rawLines: string[] = [];
-  if (fs.existsSync(latest.transcriptPath)) {
-    const lines = fs.readFileSync(latest.transcriptPath, "utf8").split("\n").filter(Boolean);
-    rawLines.push(...lines.slice(0, 5));
-  }
+  // Read first 3 raw lines from the best transcript to inspect format
+  const rawLines = fs.readFileSync(best.transcriptPath, "utf8").split("\n").filter(Boolean).slice(0, 3);
 
   // Try parsing
-  const messages = readTranscript(latest.transcriptPath);
+  const messages = readTranscript(best.transcriptPath);
   const { parseMessages } = await import("./parse-session");
   const events = parseMessages(messages as Parameters<typeof parseMessages>[0]);
 
   json(res, 200, {
     agentId,
-    transcriptPath: latest.transcriptPath,
-    rawLineCount: rawLines.length,
+    sessions: annotated,
+    bestSession: best,
     rawSample: rawLines.map((l) => { try { return JSON.parse(l); } catch { return l; } }),
     parsedMessageCount: messages.length,
     eventCount: events.length,
