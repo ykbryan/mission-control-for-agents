@@ -1,6 +1,7 @@
 "use client";
 
 import SearchTrigger from "@/components/ui/SearchTrigger";
+import { logout } from "@/app/actions/auth";
 
 interface Props {
   mode: "graph" | "workflow";
@@ -21,10 +22,7 @@ export default function TopStatusStrip({
   onToggleTheme,
   selectedAgent,
 }: Props) {
-  const handleLogout = async () => {
-    await fetch("/api/auth/logout", { method: "POST" });
-    window.location.href = "/login";
-  };
+  const handleLogout = () => logout();
 
   return (
     <header className="flex items-center justify-between px-6 py-3 bg-zinc-950/80 backdrop-blur-md border-b border-zinc-800 text-zinc-100 shrink-0">
