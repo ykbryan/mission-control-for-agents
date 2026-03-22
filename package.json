@@ -4,7 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:local": "concurrently --names \"router,ui\" --prefix-colors \"cyan,magenta\" \"npm run dev --prefix router\" \"next dev\"",
     "build": "next build",
+    "build:router": "npm run build --prefix router",
     "start": "next start",
     "lint": "eslint"
   },
@@ -28,6 +30,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "concurrently": "^9.2.1",
     "eslint": "^9",
     "eslint-config-next": "16.2.1",
     "tailwindcss": "^4",
