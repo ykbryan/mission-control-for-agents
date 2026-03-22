@@ -105,7 +105,7 @@ fi
 
 # ── Clone router folder only ─────────────────────────────────
 TMP_DIR=$(mktemp -d)
-trap "rm -rf $TMP_DIR" EXIT
+trap "rm -rf $TMP_DIR; stty echo 2>/dev/null || true" EXIT INT TERM
 
 git clone --depth 1 --filter=blob:none --sparse "$REPO" "$TMP_DIR" -q
 (cd "$TMP_DIR" && git sparse-checkout set router)
