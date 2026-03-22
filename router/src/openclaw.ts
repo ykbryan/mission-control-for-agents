@@ -228,6 +228,7 @@ export interface GatewaySession {
   model?: string;
   totalTokens?: number;
   updatedAt?: number;
+  transcriptPath?: string;
 }
 
 export interface GatewayAgent {

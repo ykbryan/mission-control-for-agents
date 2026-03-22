@@ -22,11 +22,55 @@ import { randomBytes } from "crypto";
 import {
   listSessions,
   listAgents,
-  getSession,
-  getAgentFile,
   GatewaySession,
+  GatewayMessage,
 } from "./openclaw";
 import { parseMessages } from "./parse-session";
+
+// ---------------------------------------------------------------------------
+// Filesystem helpers (router runs alongside OpenClaw — direct disk access)
+// ---------------------------------------------------------------------------
+
+/** Read a .jsonl transcript and parse each line as a GatewayMessage. */
+function readTranscript(transcriptPath: string): GatewayMessage[] {
+  if (!fs.existsSync(transcriptPath)) return [];
+  const lines = fs.readFileSync(transcriptPath, "utf8").split("\n");
+  const messages: GatewayMessage[] = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const obj = JSON.parse(trimmed);
+      // OpenClaw JSONL lines have a "message" wrapper or are direct message objects
+      const msg = obj.message ?? obj;
+      if (msg.role) messages.push(msg as GatewayMessage);
+    } catch { /* skip malformed lines */ }
+  }
+  return messages;
+}
+
+/** Derive the agent's base directory from a session transcript path.
+ *  e.g. /home/user/.openclaw/agents/main/sessions/abc.jsonl → /home/user/.openclaw/agents/main
+ */
+function agentDirFromTranscript(transcriptPath: string): string {
+  // Go up two levels: sessions/ → agent dir
+  return path.dirname(path.dirname(transcriptPath));
+}
+
+/** List markdown files in an agent directory. */
+function listAgentFiles(agentDir: string): string[] {
+  if (!fs.existsSync(agentDir)) return [];
+  return fs.readdirSync(agentDir).filter((f) => f.endsWith(".md"));
+}
+
+/** Read a specific file from an agent directory. */
+function readAgentFile(agentDir: string, name: string): string | null {
+  // Safety: only allow simple filenames with .md extension, no path traversal
+  if (!name.endsWith(".md") || name.includes("/") || name.includes("..")) return null;
+  const filePath = path.join(agentDir, name);
+  if (!fs.existsSync(filePath)) return null;
+  return fs.readFileSync(filePath, "utf8");
+}
 
 // ---------------------------------------------------------------------------
 // Config
@@ -98,21 +142,30 @@ async function handleAgents(res: http.ServerResponse) {
     listAgents(OPENCLAW_URL, OPENCLAW_TOKEN).catch(() => [] as Awaited<ReturnType<typeof listAgents>>),
   ]);
 
-  // Derive unique agent IDs from session keys (agent:<id>:<channel>)
-  const seenIds = new Set<string>();
-  const agentIdsFromSessions: string[] = [];
+  // Build a map from agentId → most recent session (for transcriptPath)
+  const latestSession = new Map<string, GatewaySession>();
   for (const s of sessions) {
     const parts = s.key?.split(":");
     if (parts?.[0] === "agent" && parts[1]) {
-      if (!seenIds.has(parts[1])) { seenIds.add(parts[1]); agentIdsFromSessions.push(parts[1]); }
+      const existing = latestSession.get(parts[1]);
+      if (!existing || (s.updatedAt ?? 0) > (existing.updatedAt ?? 0)) {
+        latestSession.set(parts[1], s);
+      }
     }
   }
 
-  // Merge gateway agents (may have configured names) with session-derived ids
-  const agentMap = new Map<string, { id: string; name: string; configured: boolean }>();
-  for (const a of gatewayAgents) agentMap.set(a.id, a);
-  for (const id of agentIdsFromSessions) {
-    if (!agentMap.has(id)) agentMap.set(id, { id, name: id, configured: false });
+  // Merge gateway agents with session-derived ids
+  const agentMap = new Map<string, { id: string; name: string; configured: boolean; files: string[] }>();
+  for (const a of gatewayAgents) {
+    const sess = latestSession.get(a.id);
+    const files = sess?.transcriptPath ? listAgentFiles(agentDirFromTranscript(sess.transcriptPath)) : [];
+    agentMap.set(a.id, { ...a, files });
+  }
+  for (const [id, sess] of latestSession) {
+    if (!agentMap.has(id)) {
+      const files = sess.transcriptPath ? listAgentFiles(agentDirFromTranscript(sess.transcriptPath)) : [];
+      agentMap.set(id, { id, name: id, configured: false, files });
+    }
   }
 
   json(res, 200, { agents: Array.from(agentMap.values()) });
@@ -136,35 +189,55 @@ async function handleSession(res: http.ServerResponse, params: URLSearchParams) 
   const key = params.get("key");
   const agentId = params.get("agentId");
 
-  let sessionKey = key;
+  const sessions = await listSessions(OPENCLAW_URL, OPENCLAW_TOKEN);
 
-  // If only agentId given, look up the most recent session key
-  if (!sessionKey && agentId) {
-    const sessions = await listSessions(OPENCLAW_URL, OPENCLAW_TOKEN);
-    const match = sessions
-      .filter((s) => {
-        const parts = s.key?.split(":");
-        return parts?.[0] === "agent" && parts[1] === agentId;
-      })
+  // Find target session
+  let targetSession: GatewaySession | undefined;
+  if (key) {
+    targetSession = sessions.find((s) => s.key === key);
+  } else if (agentId) {
+    targetSession = sessions
+      .filter((s) => { const p = s.key?.split(":"); return p?.[0] === "agent" && p[1] === agentId; })
       .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))[0];
-    sessionKey = match?.key ?? null;
   }
 
-  if (!sessionKey) {
+  if (!targetSession) {
     json(res, 404, { error: "No session found" });
     return;
   }
 
-  const messages = await getSession(OPENCLAW_URL, OPENCLAW_TOKEN, sessionKey);
+  // Read transcript directly from disk (router is co-located with OpenClaw)
+  let messages: GatewayMessage[] = [];
+  if (targetSession.transcriptPath) {
+    messages = readTranscript(targetSession.transcriptPath);
+    console.log(`[router] read ${messages.length} messages from ${targetSession.transcriptPath}`);
+  } else {
+    json(res, 502, { error: "No transcriptPath available" });
+    return;
+  }
+
   const events = parseMessages(messages as Parameters<typeof parseMessages>[0]);
-  json(res, 200, { key: sessionKey, events });
+  json(res, 200, { key: targetSession.key, events });
 }
 
 async function handleFile(res: http.ServerResponse, params: URLSearchParams) {
   const agentId = params.get("agentId");
   const name = params.get("name");
   if (!agentId || !name) { json(res, 400, { error: "Missing agentId or name" }); return; }
-  const content = await getAgentFile(OPENCLAW_URL, OPENCLAW_TOKEN, agentId, name);
+
+  // Find agent dir from latest session transcriptPath
+  const sessions = await listSessions(OPENCLAW_URL, OPENCLAW_TOKEN);
+  const latestSess = sessions
+    .filter((s) => { const p = s.key?.split(":"); return p?.[0] === "agent" && p[1] === agentId; })
+    .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))[0];
+
+  if (!latestSess?.transcriptPath) {
+    json(res, 404, { error: "File not found" });
+    return;
+  }
+
+  const agentDir = agentDirFromTranscript(latestSess.transcriptPath);
+  const content = readAgentFile(agentDir, name);
   if (content === null) { json(res, 404, { error: "File not found" }); return; }
   json(res, 200, { content });
 }
@@ -192,32 +265,35 @@ async function handleDebug(res: http.ServerResponse) {
     out.http_agents = { ok: false, error: String(e) };
   }
 
-  // 3. WebSocket — sessions.get on first available session
+  // 3. Filesystem — read transcript of first session
   try {
     const sessions = await listSessions(OPENCLAW_URL, OPENCLAW_TOKEN);
     const first = sessions[0];
     if (!first) {
-      out.ws_session = { ok: false, error: "No sessions to test with" };
+      out.fs_session = { ok: false, error: "No sessions found" };
+    } else if (!first.transcriptPath) {
+      out.fs_session = { ok: false, error: "Session has no transcriptPath" };
     } else {
-      const messages = await getSession(OPENCLAW_URL, OPENCLAW_TOKEN, first.key);
-      out.ws_session = { ok: true, key: first.key, messageCount: messages.length, first: messages[0] ?? null };
+      const messages = readTranscript(first.transcriptPath);
+      out.fs_session = { ok: true, key: first.key, transcriptPath: first.transcriptPath, messageCount: messages.length, firstRole: messages[0]?.role ?? null };
     }
   } catch (e) {
-    out.ws_session = { ok: false, error: String(e) };
+    out.fs_session = { ok: false, error: String(e) };
   }
 
-  // 4. WebSocket — agents.files.get for first agent
+  // 4. Filesystem — list agent files
   try {
-    const agents = await listAgents(OPENCLAW_URL, OPENCLAW_TOKEN);
-    const first = agents[0];
-    if (!first) {
-      out.ws_file = { ok: false, error: "No agents to test with" };
+    const sessions = await listSessions(OPENCLAW_URL, OPENCLAW_TOKEN);
+    const first = sessions[0];
+    if (first?.transcriptPath) {
+      const agentDir = agentDirFromTranscript(first.transcriptPath);
+      const files = listAgentFiles(agentDir);
+      out.fs_files = { ok: true, agentDir, files };
     } else {
-      const content = await getAgentFile(OPENCLAW_URL, OPENCLAW_TOKEN, first.id, "IDENTITY.md");
-      out.ws_file = { ok: true, agentId: first.id, file: "IDENTITY.md", found: content !== null, preview: content?.slice(0, 200) ?? null };
+      out.fs_files = { ok: false, error: "No transcriptPath" };
     }
   } catch (e) {
-    out.ws_file = { ok: false, error: String(e) };
+    out.fs_files = { ok: false, error: String(e) };
   }
 
   json(res, 200, out);

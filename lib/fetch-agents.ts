@@ -5,9 +5,8 @@ interface RouterAgent {
   id: string;
   name: string;
   configured: boolean;
+  files?: string[];
 }
-
-const DEFAULT_FILES: string[] = [];
 
 export async function fetchAgentsFromRouter(
   routerUrl: string,
@@ -30,7 +29,7 @@ export async function fetchAgentsFromRouter(
       role: "AI Agent",
       soul: "A capable AI agent.",
       skills: [],
-      files: DEFAULT_FILES,
+      files: ra.files ?? [],
     };
   });
 
