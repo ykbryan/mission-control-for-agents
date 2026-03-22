@@ -57,17 +57,28 @@ function agentDirFromTranscript(transcriptPath: string): string {
   return path.dirname(path.dirname(transcriptPath));
 }
 
-/** List markdown files in an agent directory. */
-function listAgentFiles(agentDir: string): string[] {
-  if (!fs.existsSync(agentDir)) return [];
-  return fs.readdirSync(agentDir).filter((f) => f.endsWith(".md"));
+/** Resolve the directory that actually contains .md files.
+ *  OpenClaw may store them directly in agentDir or in agentDir/workspace/. */
+function resolveFilesDir(agentDir: string): string {
+  const workspace = path.join(agentDir, "workspace");
+  if (fs.existsSync(workspace) && fs.readdirSync(workspace).some((f) => f.endsWith(".md"))) {
+    return workspace;
+  }
+  return agentDir;
 }
 
-/** Read a specific file from an agent directory. */
+/** List markdown files in an agent directory (checks workspace/ subdir too). */
+function listAgentFiles(agentDir: string): string[] {
+  const dir = resolveFilesDir(agentDir);
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir).filter((f) => f.endsWith(".md"));
+}
+
+/** Read a specific file from an agent directory (checks workspace/ subdir too). */
 function readAgentFile(agentDir: string, name: string): string | null {
   // Safety: only allow simple filenames with .md extension, no path traversal
   if (!name.endsWith(".md") || name.includes("/") || name.includes("..")) return null;
-  const filePath = path.join(agentDir, name);
+  const filePath = path.join(resolveFilesDir(agentDir), name);
   if (!fs.existsSync(filePath)) return null;
   return fs.readFileSync(filePath, "utf8");
 }
