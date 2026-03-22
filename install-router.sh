@@ -115,10 +115,13 @@ cp -r "$TMP_DIR/router/." "$INSTALL_DIR/"
 info "Installing dependencies …"
 (cd "$INSTALL_DIR" && npm install 2>&1 | tail -5)
 
-[ ! -f "$INSTALL_DIR/node_modules/.bin/tsc" ] && error "TypeScript (tsc) not found after npm install. Check npm errors above."
+if ! command -v tsc >/dev/null 2>&1; then
+  info "Installing TypeScript globally …"
+  npm install -g typescript
+fi
 
 info "Building …"
-(cd "$INSTALL_DIR" && ./node_modules/.bin/tsc)
+(cd "$INSTALL_DIR" && tsc)
 
 info "Pruning dev dependencies …"
 (cd "$INSTALL_DIR" && npm prune --omit=dev --silent 2>/dev/null || true)
