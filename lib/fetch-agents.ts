@@ -35,14 +35,14 @@ export async function fetchAgentsFromRouter(
       last > now - 7 * 24 * 60 * 60 * 1000  ? "online"
       : last > now - 30 * 24 * 60 * 60 * 1000 ? "idle"
       : "offline";
-    // "main" is always the gateway orchestrator; all others are specialists
-    const tier: Agent["tier"] = ra.id === "main" ? "orchestrator" : "specialist";
+    // Tier: use static definition if known; unknown dynamic agents are specialists
+    const tier: Agent["tier"] = known?.tier ?? "specialist";
     if (known) return { ...known, files, routerId, routerLabel, status, tier };
     return {
       id: ra.id,
       name: ra.name || ra.id,
-      emoji: ra.id === "main" ? "🎯" : "🤖",
-      role: ra.id === "main" ? "Orchestrator" : "AI Agent",
+      emoji: "🤖",
+      role: "AI Agent",
       soul: "A capable AI agent.",
       skills: [],
       files,
