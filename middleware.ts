@@ -1,18 +1,27 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-export function middleware(req: NextRequest) {
+function hasValidAuth(req: NextRequest): boolean {
+  const routers = req.cookies.get("routers")?.value;
+  if (routers) {
+    try {
+      const parsed = JSON.parse(decodeURIComponent(routers));
+      if (Array.isArray(parsed) && parsed.length > 0) return true;
+    } catch {}
+  }
+  // Legacy single-router cookies
   const token = req.cookies.get("routerToken")?.value;
   const url = req.cookies.get("routerUrl")?.value;
+  return !!(token && url);
+}
 
-  if (!token || !url) {
-    if (!req.nextUrl.pathname.startsWith("/login")) {
-      return NextResponse.redirect(new URL("/login", req.url));
-    }
-  } else if (req.nextUrl.pathname === "/login") {
-    return NextResponse.redirect(new URL("/", req.url));
+export function middleware(req: NextRequest) {
+  const authed = hasValidAuth(req);
+  // Unauthenticated: redirect everything except /login to /login
+  if (!authed && !req.nextUrl.pathname.startsWith("/login")) {
+    return NextResponse.redirect(new URL("/login", req.url));
   }
-
+  // Authenticated: /login is always accessible (it's the connections manager)
   return NextResponse.next();
 }
 

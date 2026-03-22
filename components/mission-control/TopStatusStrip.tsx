@@ -66,7 +66,10 @@ export default function TopStatusStrip({
         <button onClick={onToggleTheme} title="Toggle theme" className="p-1.5 text-zinc-400 hover:text-zinc-100 transition-colors">
           {darkMode ? "☀︎" : "☾"}
         </button>
-        <button onClick={handleLogout} title="Disconnect" className="px-3 py-1.5 text-xs font-medium bg-transparent border border-zinc-700 text-zinc-300 rounded hover:bg-zinc-800 hover:text-zinc-100 transition-colors">
+        <a href="/login" title="Manage routers" className="px-3 py-1.5 text-xs font-medium bg-transparent border border-zinc-700 text-zinc-300 rounded hover:bg-zinc-800 hover:text-zinc-100 transition-colors">
+          ＋ Router
+        </a>
+        <button onClick={handleLogout} title="Disconnect all" className="px-3 py-1.5 text-xs font-medium bg-transparent border border-zinc-700 text-zinc-300 rounded hover:bg-zinc-800 hover:text-zinc-100 transition-colors">
           Disconnect
         </button>
       </div>
