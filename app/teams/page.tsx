@@ -43,11 +43,19 @@ const MANAGE_KEYWORDS   = ["delegate", "orchestrat", "manage", "assign task", "c
 const REPORT_KEYWORDS   = ["report to", "work under", "supervised by", "managed by", "your orchestrator", "your lead", "you report"];
 const MEMORY_ORCH_TERMS = ["delegated to", "asked .+ to", "assigned .+ to", "coordinated with", "i manage", "my team"];
 
+// Lines that are part of generic AGENTS.md templates — skip these
+const TEMPLATE_SKIP = [
+  "bootstrap", "birth certificate", "figure out who you are",
+  "you won't need it again", "delete it", "if `",
+];
+
 function extractWorkflow(content: string): string {
-  // Try to pull the first meaningful paragraph (skip headers, lists)
   const lines = content.split("\n").map(l => l.trim()).filter(Boolean);
   for (const line of lines) {
     if (line.startsWith("#") || line.startsWith("-") || line.startsWith("*") || line.startsWith("|")) continue;
+    if (line.startsWith("If ") || line.startsWith("You ") || line.startsWith("Your ")) continue;
+    const lower = line.toLowerCase();
+    if (TEMPLATE_SKIP.some(t => lower.includes(t))) continue;
     if (line.length > 40) return line.slice(0, 220) + (line.length > 220 ? "…" : "");
   }
   return "";
@@ -91,18 +99,6 @@ function detectOrchestrators(
       if (isManage && !isReportTo) an.outgoing.add(otherId);
     }
 
-    // MEMORY.md delegation patterns
-    const mem = (an.memoryMd ?? "").toLowerCase();
-    for (const otherId of allIds) {
-      if (otherId === an.agentId) continue;
-      const regexes = [
-        new RegExp(`delegated to ${otherId}`),
-        new RegExp(`asked ${otherId}`),
-        new RegExp(`assigned ${otherId}`),
-        new RegExp(`${otherId}.*complet`),
-      ];
-      if (regexes.some(r => r.test(mem))) an.outgoing.add(otherId);
-    }
   }
 
   // Pass 2: build incoming (who manages this agent?) as inverse of outgoing
@@ -114,24 +110,34 @@ function detectOrchestrators(
   }
 
   // Pass 3: score — orchestrator = high outgoing, low incoming
+  // Cross-ref weight is kept LOW (×1) so roster entries in AGENTS.md don't dominate.
+  // Role/soul keywords are the primary signal (×20) — "Chief of Staff" etc.
   for (const [, an] of analyses) {
-    let score = an.outgoing.size * 3 - an.incoming.size * 2;
+    let score = an.outgoing.size * 1 - an.incoming.size * 1;
 
-    // Bonus: static agent role contains orchestrator keywords
+    // PRIMARY signal: static agent role/soul contains explicit orchestrator language
     const staticAgent = staticAgents.find(s => s.id === an.agentId);
     if (staticAgent) {
       const text = `${staticAgent.role ?? ""} ${staticAgent.soul ?? ""}`.toLowerCase();
-      const orchWords = ["chief of staff", "orchestrat", "head of", "director", "lead agent", "chief agent", "manager of agents"];
-      if (orchWords.some(w => text.includes(w))) score += 8;
+      const orchWords = ["chief of staff", "orchestrat", "head of agents", "director of agents", "lead agent", "chief agent", "manager of agents"];
+      if (orchWords.some(w => text.includes(w))) score += 20;
     }
 
-    // Bonus: AGENTS.md contains orchestration language in own description
-    const ownContent = (an.agentsMd ?? "").toLowerCase();
-    const orchBonusWords = ["you orchestrate", "you manage", "your team", "delegate to", "coordinate across", "you are the orchestrator"];
-    if (orchBonusWords.some(w => ownContent.includes(w))) score += 5;
+    // SECONDARY: MEMORY.md shows this agent actually delegating tasks (+3 per unique agent)
+    const mem = (an.memoryMd ?? "").toLowerCase();
+    for (const otherId of allIds) {
+      if (otherId === an.agentId) continue;
+      const delegatePatterns = [
+        new RegExp(`delegated to ${otherId}`),
+        new RegExp(`asked ${otherId}\\b`),
+        new RegExp(`assigned ${otherId}\\b`),
+      ];
+      if (delegatePatterns.some(r => r.test(mem))) score += 3;
+    }
 
-    // Penalty: AGENTS.md says "you report to" or "your orchestrator is"
-    if (REPORT_KEYWORDS.some(k => ownContent.includes(k))) score -= 4;
+    // Penalty: this agent's AGENTS.md says it reports to someone else
+    const ownContent = (an.agentsMd ?? "").toLowerCase();
+    if (REPORT_KEYWORDS.some(k => ownContent.includes(k))) score -= 6;
 
     an.orchScore = score;
   }
@@ -237,8 +243,10 @@ export default function TeamsPage() {
     // Sort by orchScore desc
     const sorted = [...analyses.values()].sort((a, b) => b.orchScore - a.orchScore);
 
-    // An agent is an orchestrator if score > 2 AND has at least 1 outgoing
-    const orchestrators = sorted.filter(a => a.orchScore > 2 && a.outgoing.size > 0);
+    // An agent is an orchestrator if:
+    // - score ≥ 15 (requires the role-keyword signal — cross-ref noise alone can't reach this)
+    // - outgoing ≥ 1 (has at least one identified report)
+    const orchestrators = sorted.filter(a => a.orchScore >= 15 && a.outgoing.size >= 1);
 
     const assigned = new Set<string>();
     const teams: Team[] = orchestrators.map(orch => {
