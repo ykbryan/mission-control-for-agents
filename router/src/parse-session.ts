@@ -164,9 +164,8 @@ export async function fetchSessionKey(
         Authorization: `Bearer ${gatewayToken}`,
       },
       body: JSON.stringify({ tool: "sessions_list", args: { limit: 500 } }),
-      cache: "no-store",
     });
-    const data = await res.json();
+    const data = await res.json() as { ok: boolean; result?: { content?: Array<{ text?: string }> } };
     if (!data.ok) return null;
     const text = data.result?.content?.[0]?.text ?? "{}";
     const parsed = JSON.parse(text) as {

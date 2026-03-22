@@ -7,6 +7,7 @@
 import WebSocket from "ws";
 import { randomUUID } from "crypto";
 import { subtle } from "crypto";
+import type { webcrypto } from "crypto";
 
 // ---------------------------------------------------------------------------
 // Ed25519 device identity (cached for process lifetime)
@@ -15,14 +16,14 @@ import { subtle } from "crypto";
 interface DeviceIdentity {
   deviceId: string;
   publicKeyB64: string;
-  privateKey: CryptoKey;
+  privateKey: webcrypto.CryptoKey;
 }
 
 let cachedDevice: DeviceIdentity | null = null;
 
 async function getDeviceIdentity(): Promise<DeviceIdentity> {
   if (cachedDevice) return cachedDevice;
-  const kp = await subtle.generateKey("Ed25519", true, ["sign", "verify"]) as CryptoKeyPair;
+  const kp = await subtle.generateKey("Ed25519", true, ["sign", "verify"]) as webcrypto.CryptoKeyPair;
   const pubRaw = new Uint8Array(await subtle.exportKey("raw", kp.publicKey));
   const hashBuf = await subtle.digest("SHA-256", pubRaw);
   const deviceId = Buffer.from(hashBuf).toString("hex");
