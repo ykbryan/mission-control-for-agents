@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import NavRail from "@/components/mission-control/NavRail";
 import type { ActivitySession } from "@/app/api/activities/route";
+import type { ScheduledJob } from "@/app/api/cron-schedule/route";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -445,9 +446,216 @@ function CronCard({ g, onOpen }: { g: CronGroup; onOpen: (s: ActivitySession) =>
   );
 }
 
+// ── scheduled jobs tab ────────────────────────────────────────────────────────
+
+const AGENT_EMOJI: Record<string, string> = {
+  evelyn: "👔", brainy: "🧠", charles: "👔", faith: "🌻", angel: "📈",
+  bob: "🧮", gorilla: "🦍", hex: "⛓️", ivy: "📱", kat: "🎯",
+  looker: "🔍", mother: "🛡️", norton: "🔒", omega: "🏛️", pat: "🏷️",
+  queen: "👑", roy: "💼", jelly: "✍️",
+};
+
+function fmtNextRun(ms: number | null, now: number): { label: string; urgency: "overdue" | "soon" | "upcoming" | "unknown" } {
+  if (!ms) return { label: "—", urgency: "unknown" };
+  const diff = ms - now;
+  if (diff < 0) {
+    const ago = Math.abs(diff);
+    const m = Math.floor(ago / 60_000);
+    if (m < 60) return { label: `overdue ${m}m`, urgency: "overdue" };
+    return { label: `overdue ${Math.floor(m / 60)}h`, urgency: "overdue" };
+  }
+  const m = Math.floor(diff / 60_000);
+  if (m < 5) return { label: `in ${m}m`, urgency: "soon" };
+  if (m < 60) return { label: `in ${m}m`, urgency: "upcoming" };
+  const h = Math.floor(m / 60);
+  if (h < 24) return { label: `in ${h}h ${m % 60}m`, urgency: "upcoming" };
+  return { label: `in ${Math.floor(h / 24)}d`, urgency: "upcoming" };
+}
+
+function ScheduleTab({ agentFilter }: { agentFilter: string }) {
+  const [jobs, setJobs] = useState<ScheduledJob[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [expandedJob, setExpandedJob] = useState<string | null>(null);
+  const [now, setNow] = useState(Date.now());
+
+  // tick every minute for countdown refresh
+  useEffect(() => {
+    const iv = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(iv);
+  }, []);
+
+  useEffect(() => {
+    setLoading(true);
+    fetch("/api/cron-schedule")
+      .then(r => r.json())
+      .then(d => setJobs(d.jobs ?? []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const filtered = agentFilter === "all" ? jobs : jobs.filter(j => j.agentId === agentFilter);
+
+  // Split into upcoming (have nextRunAt) and no-schedule
+  const upcoming = filtered.filter(j => j.nextRunAt !== null).sort((a, b) => (a.nextRunAt ?? 0) - (b.nextRunAt ?? 0));
+  const noSchedule = filtered.filter(j => j.nextRunAt === null);
+
+  if (loading) return (
+    <div className="flex items-center justify-center gap-3 py-24">
+      <div className="w-5 h-5 rounded-full border-2 animate-spin" style={{ borderColor: "#222", borderTopColor: "#e85d27" }} />
+      <span className="text-xs text-zinc-600">Analysing schedules…</span>
+    </div>
+  );
+
+  if (filtered.length === 0) return <Empty label="No scheduled jobs found" />;
+
+  return (
+    <div className="flex flex-col">
+      {/* Table header */}
+      <div className="flex items-center gap-2 px-4 py-2 border-b text-[10px] font-semibold uppercase tracking-wider text-zinc-700 flex-shrink-0" style={{ borderColor: "#111", background: "#07070a" }}>
+        <div className="w-6" />
+        <div className="flex-1">Job / Agent</div>
+        <div className="w-24 text-right">Schedule</div>
+        <div className="w-28 text-right">Last Run</div>
+        <div className="w-28 text-right">Next Run</div>
+        <div className="w-20 text-right">Avg Tokens</div>
+        <div className="w-14 text-right">Runs</div>
+        <div className="w-5" />
+      </div>
+
+      {/* Upcoming jobs */}
+      {upcoming.map(job => {
+        const { label: nextLabel, urgency } = fmtNextRun(job.nextRunAt, now);
+        const nextColor = urgency === "overdue" ? "#ef4444" : urgency === "soon" ? "#f59e0b" : "#6366f1";
+        const isOpen = expandedJob === job.id;
+        return (
+          <div key={job.id} className="border-b" style={{ borderColor: "#0e0e0e" }}>
+            <button
+              onClick={() => setExpandedJob(isOpen ? null : job.id)}
+              className="group w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-white/[0.02] transition-colors"
+            >
+              {/* Status dot */}
+              <div className="w-6 flex-shrink-0 flex justify-center">
+                {job.isActive
+                  ? <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  : <span className="w-2 h-2 rounded-full bg-zinc-800" />
+                }
+              </div>
+
+              {/* Job name + agent */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm">{AGENT_EMOJI[job.agentId] ?? "🤖"}</span>
+                  <span className="text-xs font-medium text-zinc-200 truncate">{job.name}</span>
+                  {job.isActive && (
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 px-1.5 py-px rounded flex-shrink-0">
+                      Running
+                    </span>
+                  )}
+                  {job.source === "heartbeat" && (
+                    <span className="text-[9px] text-amber-600/70 bg-amber-500/5 border border-amber-500/10 px-1.5 py-px rounded flex-shrink-0">HEARTBEAT</span>
+                  )}
+                </div>
+                <div className="text-[10px] text-zinc-700 mt-0.5">{job.agentId} · {job.routerLabel}</div>
+              </div>
+
+              {/* Schedule */}
+              <div className="w-24 text-right flex-shrink-0">
+                <span className="text-[11px] text-zinc-400 font-mono">{job.scheduleStr}</span>
+              </div>
+
+              {/* Last run */}
+              <div className="w-28 text-right flex-shrink-0">
+                <span className="text-[11px] text-zinc-600">{job.lastRunAt ? timeAgo(job.lastRunAt) : "never"}</span>
+              </div>
+
+              {/* Next run */}
+              <div className="w-28 text-right flex-shrink-0">
+                <span className="text-[11px] font-semibold" style={{ color: nextColor }}>{nextLabel}</span>
+              </div>
+
+              {/* Avg tokens */}
+              <div className="w-20 text-right flex-shrink-0">
+                <span className="text-[11px] text-zinc-700 font-mono">{job.avgTokens > 0 ? fmtTokens(job.avgTokens) : "—"}</span>
+              </div>
+
+              {/* Run count */}
+              <div className="w-14 text-right flex-shrink-0">
+                <span className="text-[11px] text-zinc-600">{job.runCount}</span>
+              </div>
+
+              {/* Expand chevron */}
+              <div className="w-5 text-right flex-shrink-0 text-zinc-700 text-xs">{isOpen ? "▲" : "▼"}</div>
+            </button>
+
+            {/* Expanded description */}
+            {isOpen && (
+              <div className="px-4 pb-4 pt-1" style={{ borderTop: "1px solid #0e0e0e", background: "#06060a" }}>
+                <p className="text-[11px] text-zinc-500 leading-relaxed mb-3">{job.description || "No description available."}</p>
+                <div className="flex items-center gap-4 flex-wrap">
+                  <span className="text-[10px] text-zinc-700">Total tokens: <span className="text-zinc-500 font-mono">{fmtTokens(job.totalTokens)}</span></span>
+                  <span className="text-[10px] text-zinc-700">Interval: <span className="text-zinc-500">{job.scheduleStr}</span></span>
+                  <span className="text-[10px] text-zinc-700">Source: <span className="text-zinc-500">{job.source}</span></span>
+                  {job.lastRunAt > 0 && (
+                    <span className="text-[10px] text-zinc-700">Last: <span className="text-zinc-500">{fmtTs(job.lastRunAt)}</span></span>
+                  )}
+                  {job.nextRunAt && (
+                    <span className="text-[10px] text-zinc-700">Next: <span className="font-mono" style={{ color: nextColor }}>{new Date(job.nextRunAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span></span>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {/* Never-run / no-schedule jobs */}
+      {noSchedule.length > 0 && (
+        <>
+          <div className="px-4 py-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-800 border-b" style={{ borderColor: "#0e0e0e", background: "#06060a" }}>
+            Ad-hoc / No inferred schedule
+          </div>
+          {noSchedule.map(job => {
+            const isOpen = expandedJob === job.id;
+            return (
+              <div key={job.id} className="border-b" style={{ borderColor: "#0e0e0e" }}>
+                <button
+                  onClick={() => setExpandedJob(isOpen ? null : job.id)}
+                  className="group w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-white/[0.02] transition-colors opacity-60"
+                >
+                  <div className="w-6 flex-shrink-0 flex justify-center">
+                    <span className="w-2 h-2 rounded-full bg-zinc-800" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm">{AGENT_EMOJI[job.agentId] ?? "🤖"}</span>
+                      <span className="text-xs font-medium text-zinc-400 truncate">{job.name}</span>
+                    </div>
+                    <div className="text-[10px] text-zinc-800 mt-0.5">{job.agentId}</div>
+                  </div>
+                  <div className="w-24 text-right"><span className="text-[11px] text-zinc-700">{job.scheduleStr}</span></div>
+                  <div className="w-28 text-right"><span className="text-[11px] text-zinc-700">{job.lastRunAt ? timeAgo(job.lastRunAt) : "never"}</span></div>
+                  <div className="w-28 text-right"><span className="text-[11px] text-zinc-800">—</span></div>
+                  <div className="w-20 text-right"><span className="text-[11px] text-zinc-700 font-mono">{job.avgTokens > 0 ? fmtTokens(job.avgTokens) : "—"}</span></div>
+                  <div className="w-14 text-right"><span className="text-[11px] text-zinc-700">{job.runCount}</span></div>
+                  <div className="w-5 text-right text-zinc-800 text-xs">{isOpen ? "▲" : "▼"}</div>
+                </button>
+                {isOpen && (
+                  <div className="px-4 pb-4 pt-1" style={{ borderTop: "1px solid #0e0e0e", background: "#06060a" }}>
+                    <p className="text-[11px] text-zinc-600 leading-relaxed">{job.description || "No description available."}</p>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── main page ─────────────────────────────────────────────────────────────────
 
-type Tab = "active" | "cron" | "tasks" | "all";
+type Tab = "active" | "cron" | "tasks" | "all" | "scheduled";
 
 export default function ActivitiesPage() {
   const [sessions, setSessions] = useState<ActivitySession[]>([]);
@@ -501,10 +709,11 @@ export default function ActivitiesPage() {
   }
 
   const tabList: { key: Tab; label: string; count: number }[] = [
-    { key: "active", label: "Active Now",      count: active.length },
-    { key: "cron",   label: "Cron Jobs",        count: cronGroups.length },
-    { key: "tasks",  label: "Delegated Tasks",  count: tasks.length },
-    { key: "all",    label: "All Activity",     count: sessions.length },
+    { key: "active",    label: "Active Now",      count: active.length },
+    { key: "scheduled", label: "Scheduled Crons", count: -1 },
+    { key: "cron",      label: "Cron History",    count: cronGroups.length },
+    { key: "tasks",     label: "Delegated Tasks", count: tasks.length },
+    { key: "all",       label: "All Activity",    count: sessions.length },
   ];
 
   return (
@@ -562,9 +771,11 @@ export default function ActivitiesPage() {
                     }`}
                   >
                     {t.label}
-                    <span className={`text-[10px] font-mono px-1.5 py-px rounded ${tab === t.key ? "bg-[#2a2a2a] text-zinc-400" : "text-zinc-700"}`}>
-                      {t.count}
-                    </span>
+                    {t.count >= 0 && (
+                      <span className={`text-[10px] font-mono px-1.5 py-px rounded ${tab === t.key ? "bg-[#2a2a2a] text-zinc-400" : "text-zinc-700"}`}>
+                        {t.count}
+                      </span>
+                    )}
                   </button>
                 ))}
               </div>
@@ -597,6 +808,11 @@ export default function ActivitiesPage() {
                         filtered(active).map(s => <SessionRow key={s.key} s={s} onClick={() => setDetailSession(s)} />)
                       )}
                     </div>
+                  )}
+
+                  {/* Scheduled Crons */}
+                  {tab === "scheduled" && (
+                    <ScheduleTab agentFilter={agentFilter} />
                   )}
 
                   {/* Cron Jobs */}
