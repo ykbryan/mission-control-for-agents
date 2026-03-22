@@ -12,28 +12,38 @@ interface LogEntry {
   model?: string;
 }
 
+interface ErrorResponse {
+  error: string;
+}
+
 const POLL_INTERVAL = 4000; // ms
 
 export default function AgentLogStream({ agentId }: { agentId: string }) {
   const [filter, setFilter] = useState<LogType | "all">("all");
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let active = true;
     setLogs([]);
     setLoading(true);
+    setFetchError(null);
 
     async function fetchLogs() {
       try {
         const res = await fetch(`/api/agent-session?agent=${encodeURIComponent(agentId)}`);
-        if (!res.ok) return;
-        const data: LogEntry[] = await res.json();
+        const data: LogEntry[] | ErrorResponse = await res.json();
         if (!active) return;
-        setLogs(data);
-      } catch {
-        // ignore
+        if (!res.ok || "error" in data) {
+          setFetchError((data as ErrorResponse).error ?? `HTTP ${res.status}`);
+          return;
+        }
+        setFetchError(null);
+        setLogs(data as LogEntry[]);
+      } catch (e) {
+        if (active) setFetchError(e instanceof Error ? e.message : "Network error");
       } finally {
         if (active) setLoading(false);
       }
@@ -95,6 +105,12 @@ export default function AgentLogStream({ agentId }: { agentId: string }) {
         {loading ? (
           <div className="flex flex-col items-center justify-center h-full py-12 text-center">
             <div className="text-gray-500 text-xs animate-pulse">Loading activity…</div>
+          </div>
+        ) : fetchError ? (
+          <div className="flex flex-col items-center justify-center h-full py-12 text-center px-4">
+            <div className="text-2xl mb-2 opacity-40">⚠️</div>
+            <p className="text-red-400 text-xs font-mono break-all">{fetchError}</p>
+            <p className="text-gray-600 text-xs mt-2">Check router terminal for details.</p>
           </div>
         ) : filteredLogs.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full py-12 text-center">

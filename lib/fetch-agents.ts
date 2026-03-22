@@ -7,7 +7,7 @@ interface RouterAgent {
   configured: boolean;
 }
 
-const DEFAULT_FILES = ["IDENTITY.md", "SKILLS.md", "SOUL.md"];
+const DEFAULT_FILES: string[] = [];
 
 export async function fetchAgentsFromRouter(
   routerUrl: string,

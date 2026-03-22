@@ -19,6 +19,7 @@ import http from "http";
 import fs from "fs";
 import path from "path";
 import { randomBytes } from "crypto";
+import WebSocket from "ws";
 import {
   listSessions,
   listAgents,
@@ -169,6 +170,47 @@ async function handleFile(res: http.ServerResponse, params: URLSearchParams) {
   json(res, 200, { content });
 }
 
+async function handleDebug(res: http.ServerResponse) {
+  // Probe WebSocket: open connection, collect first 10 messages over 5s, report them
+  const wsUrl = OPENCLAW_URL.replace(/^http(s?):\/\//, "ws$1://").replace(/\/$/, "");
+  const messages: { t: number; type?: string; raw: string }[] = [];
+  const start = Date.now();
+
+  await new Promise<void>((resolve) => {
+    let done = false;
+    const finish = () => { if (!done) { done = true; resolve(); } };
+    const timer = setTimeout(finish, 5000);
+
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(wsUrl, { headers: { Origin: OPENCLAW_URL } });
+    } catch (e) {
+      messages.push({ t: 0, raw: `[open error] ${e}` });
+      clearTimeout(timer);
+      finish();
+      return;
+    }
+
+    ws.on("open", () => messages.push({ t: Date.now() - start, raw: "[open]" }));
+    ws.on("error", (e) => { messages.push({ t: Date.now() - start, raw: `[error] ${e.message}` }); clearTimeout(timer); try { ws.close(); } catch {} finish(); });
+    ws.on("close", (code, reason) => { messages.push({ t: Date.now() - start, raw: `[close] code=${code} reason=${reason}` }); clearTimeout(timer); finish(); });
+    ws.on("message", (raw) => {
+      const str = raw.toString();
+      let parsed: { type?: string } = {};
+      try { parsed = JSON.parse(str); } catch {}
+      messages.push({ t: Date.now() - start, type: parsed.type, raw: str.slice(0, 500) });
+      if (messages.filter((m) => m.type).length >= 5) { clearTimeout(timer); try { ws.close(); } catch {} finish(); }
+    });
+  });
+
+  json(res, 200, {
+    wsUrl,
+    gatewayUrl: OPENCLAW_URL,
+    hasToken: !!OPENCLAW_TOKEN,
+    messages,
+  });
+}
+
 async function handleCosts(res: http.ServerResponse) {
   const sessions = await listSessions(OPENCLAW_URL, OPENCLAW_TOKEN);
   const byAgent = new Map<string, { totalTokens: number }>();
@@ -228,6 +270,7 @@ const server = http.createServer(async (req, res) => {
     if (urlPath === "/session") { await handleSession(res, params); return; }
     if (urlPath === "/file") { await handleFile(res, params); return; }
     if (urlPath === "/costs") { await handleCosts(res); return; }
+    if (urlPath === "/debug") { await handleDebug(res); return; }
     json(res, 404, { error: "Not found" });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
