@@ -111,27 +111,48 @@ fi
 
 success "Router is running."
 
-# ── Print token ──────────────────────────────────────────────
-sleep 1   # let the process write the token file
+# ── Wait for token file to be written by the process ─────────
+info "Waiting for router to generate token …"
 TOKEN_FILE="$INSTALL_DIR/.router-token"
 ROUTER_TOKEN=""
-if [ -f "$TOKEN_FILE" ]; then
-  ROUTER_TOKEN=$(cat "$TOKEN_FILE")
-fi
+for i in $(seq 1 10); do
+  sleep 1
+  if [ -f "$TOKEN_FILE" ] && [ -s "$TOKEN_FILE" ]; then
+    ROUTER_TOKEN=$(cat "$TOKEN_FILE")
+    break
+  fi
+done
 
+ROUTER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+ROUTER_URL="http://${ROUTER_IP}:${ROUTER_PORT}"
+
+# ── Write .env.local with connection details ──────────────────
+cat > "$INSTALL_DIR/.env.local" <<EOF
+# Mission Control Router — connection details
+# Copy these values into Mission Control > + Router
+
+ROUTER_URL=${ROUTER_URL}
+ROUTER_TOKEN=${ROUTER_TOKEN}
+EOF
+success "Connection details saved to ${INSTALL_DIR}/.env.local"
+
+# ── Final output ──────────────────────────────────────────────
 echo ""
-echo -e "${GREEN}  ╔══════════════════════════════════════════════════════╗${RESET}"
-echo -e "${GREEN}  ║   Router installed and running!                     ║${RESET}"
-echo -e "${GREEN}  ╠══════════════════════════════════════════════════════╣${RESET}"
-echo -e "${GREEN}  ║${RESET}  URL:    http://$(hostname -I | awk '{print $1}'):${ROUTER_PORT}"
-echo -e "${GREEN}  ║${RESET}  Token:  ${BOLD}${ROUTER_TOKEN:-"(check: pm2 logs mission-control-router)"}${RESET}"
-echo -e "${GREEN}  ╠══════════════════════════════════════════════════════╣${RESET}"
-echo -e "${GREEN}  ║${RESET}  In Mission Control click ${BOLD}+ Router${RESET} and enter the"
-echo -e "${GREEN}  ║${RESET}  URL and Token above."
-echo -e "${GREEN}  ╠══════════════════════════════════════════════════════╣${RESET}"
-echo -e "${GREEN}  ║${RESET}  Useful commands:"
-echo -e "${GREEN}  ║${RESET}    pm2 logs mission-control-router"
-echo -e "${GREEN}  ║${RESET}    pm2 restart mission-control-router"
-echo -e "${GREEN}  ║${RESET}    pm2 stop mission-control-router"
-echo -e "${GREEN}  ╚══════════════════════════════════════════════════════╝${RESET}"
+echo -e "${GREEN}  ┌─────────────────────────────────────────────────────┐${RESET}"
+echo -e "${GREEN}  │${RESET}  ${BOLD}Router installed and running!${RESET}                      ${GREEN}│${RESET}"
+echo -e "${GREEN}  ├─────────────────────────────────────────────────────┤${RESET}"
+echo -e "${GREEN}  │${RESET}  Add this router in Mission Control (+ Router):      ${GREEN}│${RESET}"
+echo -e "${GREEN}  │${RESET}                                                      ${GREEN}│${RESET}"
+echo -e "${GREEN}  │${RESET}  ${BOLD}Router URL${RESET}                                         ${GREEN}│${RESET}"
+echo -e "${GREEN}  │${RESET}  ${CYAN}${ROUTER_URL}${RESET}"
+echo -e "${GREEN}  │${RESET}                                                      ${GREEN}│${RESET}"
+echo -e "${GREEN}  │${RESET}  ${BOLD}Router Token${RESET}                                       ${GREEN}│${RESET}"
+echo -e "${GREEN}  │${RESET}  ${CYAN}${ROUTER_TOKEN:-"(not yet generated — check pm2 logs)"}${RESET}"
+echo -e "${GREEN}  │${RESET}                                                      ${GREEN}│${RESET}"
+echo -e "${GREEN}  ├─────────────────────────────────────────────────────┤${RESET}"
+echo -e "${GREEN}  │${RESET}  Saved to: ${INSTALL_DIR}/.env.local          ${GREEN}│${RESET}"
+echo -e "${GREEN}  ├─────────────────────────────────────────────────────┤${RESET}"
+echo -e "${GREEN}  │${RESET}  pm2 logs mission-control-router               ${GREEN}│${RESET}"
+echo -e "${GREEN}  │${RESET}  pm2 restart mission-control-router            ${GREEN}│${RESET}"
+echo -e "${GREEN}  └─────────────────────────────────────────────────────┘${RESET}"
 echo ""
