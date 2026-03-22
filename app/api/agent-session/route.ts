@@ -24,9 +24,14 @@ export async function GET(req: NextRequest) {
   }
   const { url: routerUrl, token: routerToken } = resolved;
 
+  // Optional: fetch a specific session by key
+  const sessionKey = searchParams.get("sessionKey");
+
   try {
+    const params: Record<string, string> = { agentId };
+    if (sessionKey) params.sessionKey = sessionKey;
     const data = await routerGet<{ key: string; events: ActivityEvent[] }>(
-      routerUrl, routerToken, "/session", { agentId }
+      routerUrl, routerToken, "/session", params
     );
     return NextResponse.json(data.events ?? []);
   } catch (err: unknown) {

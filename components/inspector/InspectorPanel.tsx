@@ -2,8 +2,9 @@ import { Agent, skillDescriptions } from "@/lib/agents";
 import MarkdownViewer from "@/components/MarkdownViewer";
 import AgentLogStream from "./AgentLogStream";
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import type { SessionGroup } from "@/app/api/agent-sessions/route";
+import type { SessionGroup, SessionDetail } from "@/app/api/agent-sessions/route";
 
 interface Props {
   agent: Agent;
@@ -83,8 +84,30 @@ function timeAgo(ms: number): string {
 export default function InspectorPanel({ agent, activeFile, onSelectFile }: Props) {
   const [activeTab, setActiveTab] = useState<"context" | "logs">("context");
   const { groups: sessionGroups, total: sessionTotal } = useSessionGroups(agent.id, agent.routerId);
+  const [expandedGroup, setExpandedGroup] = useState<SessionGroup | null>(null);
+  const [drillSession, setDrillSession] = useState<SessionDetail | null>(null);
+  const [drillLogs, setDrillLogs] = useState<{ id: string; type: string; message: string; fullMessage?: string; timestamp: string; model?: string }[]>([]);
+  const [drillLoading, setDrillLoading] = useState(false);
+
+  function openSession(s: SessionDetail) {
+    setDrillSession(s);
+    setDrillLogs([]);
+    setDrillLoading(true);
+    const routerParam = agent.routerId ? `&routerId=${encodeURIComponent(agent.routerId)}` : "";
+    fetch(`/api/agent-session?agent=${encodeURIComponent(agent.id)}&sessionKey=${encodeURIComponent(s.key)}${routerParam}`)
+      .then(r => r.json())
+      .then(data => {
+        const normalised = (Array.isArray(data) ? data : []).map((e: { type: string; message: string; fullMessage?: string; id: string; timestamp: string; model?: string }) =>
+          e.type === "info" && e.message.startsWith("💬") ? { ...e, type: "chat" } : e
+        );
+        setDrillLogs(normalised);
+      })
+      .catch(() => setDrillLogs([]))
+      .finally(() => setDrillLoading(false));
+  }
 
   return (
+    <>
     <aside className="mc-inspector w-[332px] flex flex-col h-full flex-shrink-0 relative overflow-hidden" style={{ display: 'flex', flexDirection: 'column', height: '100%', flexShrink: 0 }}>
       {/* Tabs Header */}
       <div className="flex border-b border-[#333] sticky top-0 z-20 bg-[#0a0a0a]">
@@ -126,7 +149,11 @@ export default function InspectorPanel({ agent, activeFile, onSelectFile }: Prop
                 <div className="mc-section-label">Sessions · {sessionTotal}</div>
                 <div className="flex flex-col gap-1 mt-1">
                   {sessionGroups.map(g => (
-                    <div key={g.type} className="flex items-center justify-between px-2 py-1.5 rounded-md bg-[#141414] border border-[#222]">
+                    <button
+                      key={g.type}
+                      onClick={() => setExpandedGroup(g)}
+                      className="flex items-center justify-between px-2 py-1.5 rounded-md bg-[#141414] border border-[#222] hover:border-[#333] hover:bg-[#1a1a1a] transition-colors w-full text-left group"
+                    >
                       <div className="flex items-center gap-2">
                         <span className="text-sm">{g.icon}</span>
                         <div>
@@ -136,12 +163,17 @@ export default function InspectorPanel({ agent, activeFile, onSelectFile }: Prop
                           )}
                         </div>
                       </div>
-                      <span className="text-xs font-mono text-zinc-500 bg-[#1e1e1e] px-1.5 py-0.5 rounded">{g.count}</span>
-                    </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-mono text-zinc-500 bg-[#1e1e1e] px-1.5 py-0.5 rounded">{g.count}</span>
+                        <span className="text-[10px] text-zinc-700 group-hover:text-zinc-500 transition-colors">↗</span>
+                      </div>
+                    </button>
                   ))}
                 </div>
               </section>
             )}
+
+{/* portals rendered outside inspector overflow */}
 
             <section className="mc-inspector__section">
               <div className="mc-section-label">Summary</div>
@@ -239,5 +271,138 @@ export default function InspectorPanel({ agent, activeFile, onSelectFile }: Prop
         )}
       </AnimatePresence>
     </aside>
+
+    {/* ── Session group popup (portal) ── */}
+    {expandedGroup && typeof document !== "undefined" && createPortal(
+      <div
+        className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+        style={{ background: "rgba(0,0,0,0.8)", backdropFilter: "blur(6px)" }}
+        onClick={() => setExpandedGroup(null)}
+      >
+        <div
+          className="w-full max-w-md flex flex-col overflow-hidden"
+          style={{ background: "#0f0f0f", border: "1px solid #222", borderRadius: "10px", maxHeight: "72vh" }}
+          onClick={e => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: "#1a1a1a" }}>
+            <div className="flex items-center gap-2">
+              <span>{expandedGroup.icon}</span>
+              <span className="text-sm font-semibold text-zinc-100">{expandedGroup.label}</span>
+              <span className="text-[10px] text-zinc-600 font-mono bg-[#1a1a1a] px-1.5 py-0.5 rounded">{expandedGroup.count} sessions</span>
+            </div>
+            <button onClick={() => setExpandedGroup(null)} className="text-zinc-600 hover:text-zinc-300 transition-colors text-xl leading-none px-1">×</button>
+          </div>
+          {/* Summary */}
+          <div className="flex gap-6 px-4 py-2.5 border-b" style={{ borderColor: "#141414", background: "#0a0a0a" }}>
+            <div>
+              <div className="text-[9px] uppercase tracking-wider text-zinc-700 mb-0.5">Last Active</div>
+              <div className="text-xs text-zinc-400">{timeAgo(expandedGroup.lastUpdated)}</div>
+            </div>
+            <div>
+              <div className="text-[9px] uppercase tracking-wider text-zinc-700 mb-0.5">Total Tokens</div>
+              <div className="text-xs text-zinc-400 font-mono">{expandedGroup.totalTokens.toLocaleString()}</div>
+            </div>
+          </div>
+          {/* Sessions list — click to drill in */}
+          <div className="overflow-y-auto custom-scrollbar">
+            {(expandedGroup.sessions ?? []).map((s: SessionDetail, i: number) => (
+              <button
+                key={s.key}
+                onClick={() => { openSession(s); setExpandedGroup(null); }}
+                className="w-full text-left px-4 py-3 border-b hover:bg-white/[0.03] transition-colors group"
+                style={{ borderColor: "#111" }}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-[10px] text-zinc-700 font-mono flex-shrink-0">#{i + 1}</span>
+                    <span className="text-xs text-zinc-200 truncate">{s.label}</span>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {s.totalTokens > 0 && <span className="text-[10px] font-mono text-zinc-600">{s.totalTokens.toLocaleString()} tok</span>}
+                    <span className="text-[10px] text-zinc-700 group-hover:text-[#e85d27] transition-colors">View logs ↗</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 mt-0.5">
+                  <span className="text-[9px] text-zinc-700">{timeAgo(s.updatedAt)}</span>
+                  <span className="text-[9px] text-zinc-800 font-mono truncate">{s.key}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>,
+      document.body
+    )}
+
+    {/* ── Session log drill-down (portal) ── */}
+    {drillSession && typeof document !== "undefined" && createPortal(
+      <div
+        className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+        style={{ background: "rgba(0,0,0,0.85)", backdropFilter: "blur(6px)" }}
+        onClick={() => setDrillSession(null)}
+      >
+        <div
+          className="w-full max-w-lg flex flex-col overflow-hidden"
+          style={{ background: "#0a0a0a", border: "1px solid #222", borderRadius: "10px", maxHeight: "78vh" }}
+          onClick={e => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: "#1a1a1a" }}>
+            <div className="flex items-center gap-2 min-w-0">
+              <button onClick={() => { setDrillSession(null); setExpandedGroup(expandedGroup); }} className="text-zinc-600 hover:text-zinc-300 text-sm transition-colors mr-1">←</button>
+              <span className="text-sm font-semibold text-zinc-100 truncate">{drillSession.label}</span>
+              {drillSession.totalTokens > 0 && (
+                <span className="text-[10px] text-zinc-600 font-mono bg-[#1a1a1a] px-1.5 py-0.5 rounded flex-shrink-0">{drillSession.totalTokens.toLocaleString()} tok</span>
+              )}
+            </div>
+            <button onClick={() => setDrillSession(null)} className="text-zinc-600 hover:text-zinc-300 transition-colors text-xl leading-none px-1 flex-shrink-0">×</button>
+          </div>
+          {/* Log entries */}
+          <div className="overflow-y-auto custom-scrollbar flex-1" style={{ minHeight: 0 }}>
+            {drillLoading ? (
+              <div className="flex items-center justify-center py-16 gap-3">
+                <div className="w-4 h-4 rounded-full border-2 animate-spin" style={{ borderColor: "#222", borderTopColor: "#e85d27" }} />
+                <span className="text-xs text-zinc-600">Loading logs…</span>
+              </div>
+            ) : drillLogs.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 gap-2">
+                <div className="text-xl opacity-10">◌</div>
+                <p className="text-xs text-zinc-600">No activity found for this session</p>
+              </div>
+            ) : (
+              drillLogs.map((log, i) => {
+                const typeColors: Record<string, string> = {
+                  chat: "text-sky-300/90", info: "text-emerald-300/90",
+                  memory: "text-violet-300/90", error: "text-red-300/90",
+                };
+                const borderColors: Record<string, string> = {
+                  chat: "border-l-sky-500/40", info: "border-l-emerald-500/30",
+                  memory: "border-l-violet-500/40", error: "border-l-red-500/50",
+                };
+                return (
+                  <div key={log.id} className={`border-l-2 px-3 pt-2 pb-2.5 ${borderColors[log.type] ?? "border-l-zinc-800"}`}
+                    style={{ background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.008)", borderBottom: "1px solid #0f0f0f" }}>
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <span className="text-[10px] tabular-nums text-zinc-700">{new Date(log.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
+                      {log.model && <span className="text-[9px] font-mono text-zinc-700 bg-[#111] border border-[#1e1e1e] px-1.5 py-px rounded">{log.model.split("/").pop()}</span>}
+                    </div>
+                    <p className={`text-[11px] ${typeColors[log.type] ?? "text-zinc-400"} leading-relaxed break-words whitespace-pre-wrap`}>
+                      {log.fullMessage ?? log.message}
+                    </p>
+                  </div>
+                );
+              })
+            )}
+          </div>
+          <div className="px-4 py-1.5 border-t flex items-center justify-between" style={{ borderColor: "#141414", background: "#080808" }}>
+            <span className="text-[9px] text-zinc-800 font-mono truncate">{drillSession.key}</span>
+            {drillLogs.length > 0 && <span className="text-[10px] text-zinc-700 tabular-nums">{drillLogs.length} events</span>}
+          </div>
+        </div>
+      </div>,
+      document.body
+    )}
+    </>
   );
 }
