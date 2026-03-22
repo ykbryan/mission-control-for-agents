@@ -180,30 +180,117 @@ async function handleAgents(res: http.ServerResponse) {
     }
   }
 
-  // Detect orchestrators: the agent whose AGENTS.md mentions the most other
-  // registered agent IDs is the orchestrator (manages the rest of the team).
+  // ── Orchestrator detection (three-signal scoring) ──────────────────────────
+  //
+  // Signal 1 — AGENTS.md responsibilities:
+  //   Read every agent's AGENTS.md. If it contains delegation/management language
+  //   ("delegate", "coordinate", "you manage", "assign tasks") near other agent IDs
+  //   → strong orchestrator signal. If it contains "report to", "your lead",
+  //   "orchestrator is" → subtract (this agent is a specialist, not the top).
+  //
+  // Signal 2 — MEMORY.md orchestration evidence:
+  //   Read MEMORY.md. Patterns like "I asked <id> to…", "delegated to <id>",
+  //   "<id> completed" → this agent has been actively orchestrating others.
+  //
+  // Signal 3 — Inbound subagent count:
+  //   For each agent, count how many OTHER agents' files reference it in a
+  //   "report-to" / "lead" / "orchestrator" context → more inbound = more orchestrator.
+  //
+  // Agents are multi-orchestrator aware: score >= 70% of max score qualifies.
+  // ────────────────────────────────────────────────────────────────────────────
+
   const allIds = new Set(agentMap.keys());
-  const mentionScores = new Map<string, number>();
+
+  // Keywords that indicate this agent delegates/manages others (outbound)
+  const DELEGATE_KW = ["delegate", "orchestrat", "coordinate", "you manage", "your team", "assign task", "assigns task", "direct the", "you lead", "manage the following"];
+  // Keywords that indicate this agent reports to someone else (inbound — penalise)
+  const REPORT_KW   = ["report to", "your orchestrator", "your lead", "managed by", "supervised by", "work under"];
+  // Delegation verb patterns in MEMORY.md: "<verb> <agentId>"
+  const DELEG_VERBS = ["asked", "delegated to", "assigned", "told", "instructed", "requested"];
+
+  // Pre-load AGENTS.md + MEMORY.md for agents that have a session path
+  const agentDocs = new Map<string, { agentsMd: string; memoryMd: string }>();
   for (const [id] of agentMap) {
     const sess = latestSession.get(id);
     if (!sess?.transcriptPath) continue;
-    const content = readAgentFile(agentDirFromTranscript(sess.transcriptPath), "AGENTS.md");
-    if (!content) continue;
-    const lower = content.toLowerCase();
-    let score = 0;
-    for (const otherId of allIds) {
-      if (otherId !== id && lower.includes(otherId.toLowerCase())) score++;
-    }
-    if (score > 0) mentionScores.set(id, score);
+    const dir = agentDirFromTranscript(sess.transcriptPath);
+    agentDocs.set(id, {
+      agentsMd: readAgentFile(dir, "AGENTS.md") ?? "",
+      memoryMd: readAgentFile(dir, "MEMORY.md") ?? "",
+    });
   }
 
-  // The orchestrator has the highest mention count, with at least 2 mentions
-  // to avoid false positives when there are only a few agents.
+  const scores = new Map<string, number>();
+  const getScore = (id: string) => scores.get(id) ?? 0;
+
+  // ── Signal 1: AGENTS.md ──────────────────────────────────────────────────
+  for (const [id, docs] of agentDocs) {
+    const lower = docs.agentsMd.toLowerCase();
+    let s = 0;
+
+    // How many other registered agents appear in this agent's AGENTS.md?
+    for (const otherId of allIds) {
+      if (otherId !== id && lower.includes(otherId.toLowerCase())) s += 2;
+    }
+    // Delegation/management language → strong positive
+    for (const kw of DELEGATE_KW) {
+      if (lower.includes(kw)) s += 12;
+    }
+    // "Report to / lead" language → this agent is a specialist
+    for (const kw of REPORT_KW) {
+      if (lower.includes(kw)) s -= 8;
+    }
+
+    scores.set(id, getScore(id) + s);
+  }
+
+  // ── Signal 2: MEMORY.md delegation patterns ──────────────────────────────
+  for (const [id, docs] of agentDocs) {
+    const lower = docs.memoryMd.toLowerCase();
+    let s = 0;
+
+    for (const otherId of allIds) {
+      if (otherId === id) continue;
+      for (const verb of DELEG_VERBS) {
+        // "asked angel to", "delegated to bob" etc.
+        if (lower.includes(`${verb} ${otherId}`)) s += 6;
+      }
+      // "<agentId> completed", "<agentId> reported back" → orchestrator assigned work
+      if (lower.includes(`${otherId} completed`) || lower.includes(`${otherId} reported`)) s += 4;
+    }
+    // Explicit orchestration memory entries
+    if (lower.includes("orchestrat") || lower.includes("i coordinated") || lower.includes("i delegated")) s += 10;
+
+    scores.set(id, getScore(id) + s);
+  }
+
+  // ── Signal 3: Inbound subagent references ────────────────────────────────
+  // If agent B's files say "report to X" / "orchestrator is X", give X inbound credit.
+  for (const [, docs] of agentDocs) {
+    const lower = (docs.agentsMd + " " + docs.memoryMd).toLowerCase();
+    for (const candidateId of allIds) {
+      const cLower = candidateId.toLowerCase();
+      for (const kw of REPORT_KW) {
+        // "report to evelyn", "orchestrator is evelyn"
+        if (lower.includes(`${kw} ${cLower}`) || lower.includes(`${kw}: ${cLower}`)) {
+          scores.set(candidateId, getScore(candidateId) + 5);
+        }
+      }
+    }
+  }
+
+  // ── Determine orchestrators ───────────────────────────────────────────────
   let maxScore = 0;
-  for (const s of mentionScores.values()) if (s > maxScore) maxScore = s;
-  const orchestratorIds = maxScore >= 2
-    ? new Set([...mentionScores.entries()].filter(([, s]) => s === maxScore).map(([id]) => id))
+  for (const s of scores.values()) if (s > maxScore) maxScore = s;
+
+  // Qualify agents scoring >= 70% of top score, and at least a minimum threshold
+  // to avoid false positives when there's no meaningful signal.
+  const MIN_THRESHOLD = 10;
+  const orchestratorIds = maxScore >= MIN_THRESHOLD
+    ? new Set([...scores.entries()].filter(([, s]) => s >= maxScore * 0.7).map(([id]) => id))
     : new Set<string>();
+
+  console.log(`[router] orchestrator detection scores: ${[...scores.entries()].sort(([,a],[,b]) => b-a).slice(0,5).map(([id,s]) => `${id}=${s}`).join(", ")}`);
 
   for (const [id, agent] of agentMap) {
     agent.tier = orchestratorIds.has(id) ? "orchestrator" : "specialist";
