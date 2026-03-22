@@ -1,7 +1,6 @@
 "use client";
 
 import SearchTrigger from "@/components/ui/SearchTrigger";
-import Cookies from "js-cookie";
 
 interface Props {
   mode: "graph" | "workflow";
@@ -22,9 +21,8 @@ export default function TopStatusStrip({
   onToggleTheme,
   selectedAgent,
 }: Props) {
-  const handleLogout = () => {
-    Cookies.remove("routerUrl", { path: "/" });
-    Cookies.remove("routerToken", { path: "/" });
+  const handleLogout = async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
     window.location.href = "/login";
   };
 
