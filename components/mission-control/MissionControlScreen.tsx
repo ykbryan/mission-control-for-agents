@@ -12,7 +12,7 @@ import AnalyticsStage from "@/components/stage/AnalyticsStage";
 import AgentProfileStage from "@/components/stage/AgentProfileStage";
 import { AnimatePresence, motion } from "framer-motion";
 
-export default function MissionControlScreen({ agents, routerError }: MissionControlScreenProps) {
+export default function MissionControlScreen({ agents, routerConfigs, routerErrors }: MissionControlScreenProps) {
   const [selectedAgentId, setSelectedAgentId] = useState(agents[0]?.id ?? "");
   const [drilledDownAgentId, setDrilledDownAgentId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -26,6 +26,8 @@ export default function MissionControlScreen({ agents, routerError }: MissionCon
   const profileAgent = getSelectedAgent(agents, drilledDownAgentId ?? "");
   const status = getSystemStatusSummary(agents, mode, selectedAgent);
   const inspectorMode = getInspectorMode(activeFile);
+
+  const errorEntries = Object.entries(routerErrors);
 
   useEffect(() => {
     setActiveFile(null);
@@ -59,12 +61,16 @@ export default function MissionControlScreen({ agents, routerError }: MissionCon
         selectedAgent={drilledDownAgentId ? profileAgent?.name : selectedAgent?.name}
       />
 
-      {routerError && (
-        <div className="bg-red-950 border-b border-red-800 text-red-300 text-xs px-4 py-2 flex items-center gap-2">
-          <span>⚠️</span>
-          <span><strong>Router unreachable</strong> — showing static agents. {routerError}</span>
-        </div>
-      )}
+      {errorEntries.map(([routerId, errorMsg]) => {
+        const rc = routerConfigs.find(r => r.id === routerId);
+        const label = rc?.label ?? routerId;
+        return (
+          <div key={routerId} className="bg-red-950 border-b border-red-800 text-red-300 text-xs px-4 py-2 flex items-center gap-2">
+            <span>⚠️</span>
+            <span><strong>{label} unreachable</strong> — showing static agents. {errorMsg}</span>
+          </div>
+        );
+      })}
 
       <div className="flex flex-row overflow-hidden flex-nowrap w-full h-full flex-1 min-h-0">
         <NavRail
@@ -96,10 +102,11 @@ export default function MissionControlScreen({ agents, routerError }: MissionCon
                   mode={mode}
                   darkMode={darkMode}
                   onModeChange={setMode}
+                  routerConfigs={routerConfigs}
                 />
               </motion.div>
             )}
-            
+
             {activeView === "mission" && drilledDownAgentId && profileAgent && (
               <motion.div
                 key="agent-profile-stage"
@@ -115,7 +122,7 @@ export default function MissionControlScreen({ agents, routerError }: MissionCon
                 />
               </motion.div>
             )}
-            
+
             {activeView === "swarms" && (
               <motion.div
                 key="swarm-stage"

@@ -6,6 +6,8 @@ export interface Agent {
   soul: string;
   skills: string[];
   files: string[];
+  routerId?: string;
+  routerLabel?: string;
 }
 
 export const agents: Agent[] = [

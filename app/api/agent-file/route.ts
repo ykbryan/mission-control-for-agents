@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { routerGet } from "@/lib/router-client";
+import { parseRouters } from "@/lib/router-config";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -14,8 +15,21 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Invalid file" }, { status: 400 });
   }
 
-  const routerUrl = req.cookies.get("routerUrl")?.value;
-  const routerToken = req.cookies.get("routerToken")?.value;
+  // Get router config
+  const routerId = searchParams.get("routerId") ?? "legacy";
+  const routers = parseRouters(req.cookies.get("routers")?.value);
+  let routerUrl: string | undefined;
+  let routerToken: string | undefined;
+
+  if (routers.length > 0) {
+    const router = routers.find(r => r.id === routerId) ?? routers[0];
+    routerUrl = router.url;
+    routerToken = router.token;
+  } else {
+    // Legacy fallback
+    routerUrl = req.cookies.get("routerUrl")?.value;
+    routerToken = req.cookies.get("routerToken")?.value;
+  }
 
   if (!routerUrl || !routerToken) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

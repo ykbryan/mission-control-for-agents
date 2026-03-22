@@ -5,12 +5,15 @@ interface RouterAgent {
   id: string;
   name: string;
   configured: boolean;
-  files?: string[];
 }
+
+const DEFAULT_FILES = ["IDENTITY.md", "SKILLS.md", "SOUL.md"];
 
 export async function fetchAgentsFromRouter(
   routerUrl: string,
-  routerToken: string
+  routerToken: string,
+  routerId: string,
+  routerLabel: string
 ): Promise<Agent[]> {
   const data = await routerGet<{ agents: RouterAgent[] }>(
     routerUrl, routerToken, "/agents"
@@ -21,7 +24,7 @@ export async function fetchAgentsFromRouter(
 
   const merged: Agent[] = routerAgents.map((ra) => {
     const known = staticMap.get(ra.id);
-    if (known) return known;
+    if (known) return { ...known, routerId, routerLabel };
     return {
       id: ra.id,
       name: ra.name || ra.id,
@@ -29,7 +32,9 @@ export async function fetchAgentsFromRouter(
       role: "AI Agent",
       soul: "A capable AI agent.",
       skills: [],
-      files: ra.files ?? [],
+      files: DEFAULT_FILES,
+      routerId,
+      routerLabel,
     };
   });
 
@@ -42,5 +47,5 @@ export async function fetchAgentsFromRouter(
     return a.name.localeCompare(b.name);
   });
 
-  return merged.length > 0 ? merged : staticAgents;
+  return merged.length > 0 ? merged : staticAgents.map(a => ({ ...a, routerId, routerLabel }));
 }

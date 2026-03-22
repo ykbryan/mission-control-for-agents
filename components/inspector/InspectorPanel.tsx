@@ -22,45 +22,32 @@ const FILE_ICONS: Record<string, string> = {
   "ARCHITECTURE.md": "🏗️",
 };
 
-function FilePreview({ agentId, file }: { agentId: string; file: string }) {
-  const [content, setContent] = useState<string | null>(null);
-  const [missing, setMissing] = useState(false);
+function FilePreview({ agentId, file, routerId }: { agentId: string; file: string; routerId?: string }) {
+  const [content, setContent] = useState<string>("Loading preview…");
 
   useEffect(() => {
     let cancelled = false;
-    setContent(null);
-    setMissing(false);
 
-    fetch(`/api/agent-file?agent=${agentId}&file=${file}`)
-      .then((response) => {
-        if (response.status === 404) { if (!cancelled) setMissing(true); return null; }
-        return response.json();
-      })
+    const routerParam = routerId ? `&routerId=${encodeURIComponent(routerId)}` : "";
+    fetch(`/api/agent-file?agent=${agentId}&file=${file}${routerParam}`)
+      .then((response) => response.json())
       .then((data) => {
-        if (!data || cancelled) return;
-        if (data.error) setMissing(true);
-        else setContent(data.content ?? "");
+        if (!cancelled) {
+          if (data.error) {
+            setContent(`# ${file}\n\n_Error: ${data.error}_`);
+          } else {
+            setContent(data.content ?? `# ${file}\n\n_No preview available._`);
+          }
+        }
       })
       .catch(() => {
-        if (!cancelled) setMissing(true);
+        if (!cancelled) setContent(`# ${file}\n\n_Failed to load content._`);
       });
 
-    return () => { cancelled = true; };
-  }, [agentId, file]);
-
-  if (missing) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full py-16 text-center px-4">
-        <div className="text-3xl mb-3 opacity-30">📄</div>
-        <p className="text-gray-500 text-xs">{file} not found on this agent.</p>
-        <p className="text-gray-600 text-xs mt-1">Reload the page to refresh the file list.</p>
-      </div>
-    );
-  }
-
-  if (content === null) {
-    return <div className="p-4 text-gray-500 text-xs animate-pulse">Loading…</div>;
-  }
+    return () => {
+      cancelled = true;
+    };
+  }, [agentId, file, routerId]);
 
   return <MarkdownViewer content={content} />;
 }
@@ -98,48 +85,51 @@ export default function InspectorPanel({ agent, activeFile, onSelectFile }: Prop
               </div>
             </div>
 
+            {agent.routerLabel && (
+              <section className="mc-inspector__section">
+                <div className="mc-section-label">Gateway</div>
+                <p className="text-xs text-zinc-400">{agent.routerLabel}</p>
+              </section>
+            )}
+
             <section className="mc-inspector__section">
               <div className="mc-section-label">Summary</div>
               <p className="mc-inspector__summary">{agent.soul}</p>
             </section>
 
-            {agent.skills.length > 0 && (
-              <section className="mc-inspector__section">
-                <div className="mc-section-label">Capabilities</div>
-                <div className="mc-chip-grid">
-                  {agent.skills.map((skill) => (
-                    <div key={skill} className="mc-skill-chip" title={skillDescriptions[skill] || skill}>
-                      <span className="mc-skill-chip__dot" />
-                      {skill}
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
+            <section className="mc-inspector__section">
+              <div className="mc-section-label">Capabilities</div>
+              <div className="mc-chip-grid">
+                {agent.skills.map((skill) => (
+                  <div key={skill} className="mc-skill-chip" title={skillDescriptions[skill] || skill}>
+                    <span className="mc-skill-chip__dot" />
+                    {skill}
+                  </div>
+                ))}
+              </div>
+            </section>
 
-            {agent.files.length > 0 && (
-              <section className="mc-inspector__section mc-inspector__section--files">
-                <div className="mc-section-label">Markdown files</div>
-                <div className="mc-file-list">
-                  {agent.files.map((file) => {
-                    const active = file === activeFile;
-                    return (
-                      <button
-                        key={file}
-                        className={`mc-file-row ${active ? "is-active" : ""}`}
-                        onClick={() => onSelectFile(active ? null : file)}
-                      >
-                        <span className="mc-file-row__meta">
-                          <span>{FILE_ICONS[file] || "📄"}</span>
-                          <span>{file}</span>
-                        </span>
-                        <span className="mc-file-row__action">{active ? "Close" : "Open"}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </section>
-            )}
+            <section className="mc-inspector__section mc-inspector__section--files">
+              <div className="mc-section-label">Markdown files</div>
+              <div className="mc-file-list">
+                {agent.files.map((file) => {
+                  const active = file === activeFile;
+                  return (
+                    <button
+                      key={file}
+                      className={`mc-file-row ${active ? "is-active" : ""}`}
+                      onClick={() => onSelectFile(active ? null : file)}
+                    >
+                      <span className="mc-file-row__meta">
+                        <span>{FILE_ICONS[file] || "📄"}</span>
+                        <span>{file}</span>
+                      </span>
+                      <span className="mc-file-row__action">{active ? "Close" : "Open"}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
 
             <section className="mc-inspector__section mc-inspector__section--overview">
               <div className="mc-section-label">Overview</div>
@@ -153,7 +143,7 @@ export default function InspectorPanel({ agent, activeFile, onSelectFile }: Prop
 
         {activeTab === 'logs' && (
           <div className="h-full">
-             <AgentLogStream agentId={agent.id} />
+             <AgentLogStream agentId={agent.id} routerId={agent.routerId} />
           </div>
         )}
       </div>
@@ -169,15 +159,15 @@ export default function InspectorPanel({ agent, activeFile, onSelectFile }: Prop
           >
             <div className="flex items-center justify-between px-4 py-3 border-b border-[#333] bg-[#0a0a0a] sticky top-0 z-40">
               <strong className="text-sm font-medium text-white">{activeFile}</strong>
-              <button 
-                className="text-gray-400 hover:text-white transition-colors flex items-center justify-center w-6 h-6 rounded-md hover:bg-[#333]" 
+              <button
+                className="text-gray-400 hover:text-white transition-colors flex items-center justify-center w-6 h-6 rounded-md hover:bg-[#333]"
                 onClick={() => onSelectFile(null)}
               >
                 ×
               </button>
             </div>
             <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
-              <FilePreview agentId={agent.id} file={activeFile} />
+              <FilePreview agentId={agent.id} file={activeFile} routerId={agent.routerId} />
             </div>
           </motion.div>
         )}
