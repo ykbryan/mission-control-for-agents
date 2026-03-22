@@ -1,4 +1,5 @@
 import { Agent } from "@/lib/agents";
+import { RouterConfig } from "@/lib/router-config";
 
 export interface MissionControlUIState {
   theme: "dark" | "light";
@@ -21,5 +22,6 @@ export interface MissionControlUIState {
 
 export interface MissionControlScreenProps {
   agents: Agent[];
-  routerError?: string;
+  routerConfigs: RouterConfig[];
+  routerErrors: Record<string, string>;
 }

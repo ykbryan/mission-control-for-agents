@@ -22,13 +22,14 @@ const FILE_ICONS: Record<string, string> = {
   "ARCHITECTURE.md": "🏗️",
 };
 
-function FilePreview({ agentId, file }: { agentId: string; file: string }) {
+function FilePreview({ agentId, file, routerId }: { agentId: string; file: string; routerId?: string }) {
   const [content, setContent] = useState<string>("Loading preview…");
 
   useEffect(() => {
     let cancelled = false;
 
-    fetch(`/api/agent-file?agent=${agentId}&file=${file}`)
+    const routerParam = routerId ? `&routerId=${encodeURIComponent(routerId)}` : "";
+    fetch(`/api/agent-file?agent=${agentId}&file=${file}${routerParam}`)
       .then((response) => response.json())
       .then((data) => {
         if (!cancelled) {
@@ -46,7 +47,7 @@ function FilePreview({ agentId, file }: { agentId: string; file: string }) {
     return () => {
       cancelled = true;
     };
-  }, [agentId, file]);
+  }, [agentId, file, routerId]);
 
   return <MarkdownViewer content={content} />;
 }
@@ -83,6 +84,13 @@ export default function InspectorPanel({ agent, activeFile, onSelectFile }: Prop
                 <p>{agent.role}</p>
               </div>
             </div>
+
+            {agent.routerLabel && (
+              <section className="mc-inspector__section">
+                <div className="mc-section-label">Gateway</div>
+                <p className="text-xs text-zinc-400">{agent.routerLabel}</p>
+              </section>
+            )}
 
             <section className="mc-inspector__section">
               <div className="mc-section-label">Summary</div>
@@ -135,7 +143,7 @@ export default function InspectorPanel({ agent, activeFile, onSelectFile }: Prop
 
         {activeTab === 'logs' && (
           <div className="h-full">
-             <AgentLogStream agentId={agent.id} />
+             <AgentLogStream agentId={agent.id} routerId={agent.routerId} />
           </div>
         )}
       </div>
@@ -151,15 +159,15 @@ export default function InspectorPanel({ agent, activeFile, onSelectFile }: Prop
           >
             <div className="flex items-center justify-between px-4 py-3 border-b border-[#333] bg-[#0a0a0a] sticky top-0 z-40">
               <strong className="text-sm font-medium text-white">{activeFile}</strong>
-              <button 
-                className="text-gray-400 hover:text-white transition-colors flex items-center justify-center w-6 h-6 rounded-md hover:bg-[#333]" 
+              <button
+                className="text-gray-400 hover:text-white transition-colors flex items-center justify-center w-6 h-6 rounded-md hover:bg-[#333]"
                 onClick={() => onSelectFile(null)}
               >
                 ×
               </button>
             </div>
             <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
-              <FilePreview agentId={agent.id} file={activeFile} />
+              <FilePreview agentId={agent.id} file={activeFile} routerId={agent.routerId} />
             </div>
           </motion.div>
         )}

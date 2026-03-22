@@ -14,7 +14,7 @@ interface LogEntry {
 
 const POLL_INTERVAL = 4000; // ms
 
-export default function AgentLogStream({ agentId }: { agentId: string }) {
+export default function AgentLogStream({ agentId, routerId }: { agentId: string; routerId?: string }) {
   const [filter, setFilter] = useState<LogType | "all">("all");
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -27,7 +27,8 @@ export default function AgentLogStream({ agentId }: { agentId: string }) {
 
     async function fetchLogs() {
       try {
-        const res = await fetch(`/api/agent-session?agent=${encodeURIComponent(agentId)}`);
+        const routerParam = routerId ? `&routerId=${encodeURIComponent(routerId)}` : "";
+        const res = await fetch(`/api/agent-session?agent=${encodeURIComponent(agentId)}${routerParam}`);
         if (!res.ok) return;
         const data: LogEntry[] = await res.json();
         if (!active) return;
@@ -46,7 +47,7 @@ export default function AgentLogStream({ agentId }: { agentId: string }) {
       active = false;
       clearInterval(interval);
     };
-  }, [agentId]);
+  }, [agentId, routerId]);
 
   // Auto-scroll to bottom on new logs
   useEffect(() => {
