@@ -25,10 +25,13 @@ export interface GatewayMessage {
   isError?: boolean;
 }
 
+const PREVIEW_LEN = 160;
+
 export interface ActivityEvent {
   id: string;
   type: "info" | "error" | "memory";
-  message: string;
+  message: string;       // preview (truncated to PREVIEW_LEN chars)
+  fullMessage?: string;  // full text, set only when message was truncated
   timestamp: string;
   model?: string;
 }
@@ -57,8 +60,12 @@ function shortModel(model: string): string {
 
 function summariseArgs(args: unknown): string {
   if (!args || typeof args !== "object") return "";
-  const str = JSON.stringify(args);
-  return str.length > 80 ? str.slice(0, 77) + "…" : str;
+  return JSON.stringify(args, null, 2);
+}
+
+function preview(text: string, maxLen = PREVIEW_LEN): { message: string; fullMessage?: string } {
+  if (text.length <= maxLen) return { message: text };
+  return { message: text.slice(0, maxLen) + "…", fullMessage: text };
 }
 
 export function parseMessages(messages: GatewayMessage[]): ActivityEvent[] {
@@ -74,12 +81,8 @@ export function parseMessages(messages: GatewayMessage[]): ActivityEvent[] {
       const raw = msg.content?.find((c) => c.type === "text")?.text ?? "";
       const text = extractUserText(raw);
       if (text) {
-        events.push({
-          id: `${base}-user`,
-          type: "info",
-          message: `💬 ${text.slice(0, 140)}${text.length > 140 ? "…" : ""}`,
-          timestamp: ts,
-        });
+        const p0 = preview(`💬 ${text}`);
+        events.push({ id: `${base}-user`, type: "info", timestamp: ts, ...p0 });
       }
     } else if (msg.role === "assistant") {
       const model = msg.model;
@@ -105,13 +108,8 @@ export function parseMessages(messages: GatewayMessage[]): ActivityEvent[] {
         if (item.type === "text" && item.text) {
           const text = item.text.replace(/^\[\[reply_to_current\]\]\s*/, "").trim();
           if (text) {
-            events.push({
-              id: `${base}-text-${j}`,
-              type: "info",
-              message: `🤖 ${text.slice(0, 160)}${text.length > 160 ? "…" : ""}`,
-              timestamp: ts,
-              model: model ?? undefined,
-            });
+            const p1 = preview(`🤖 ${text}`);
+            events.push({ id: `${base}-text-${j}`, type: "info", timestamp: ts, model: model ?? undefined, ...p1 });
           }
         } else if (item.type === "toolCall" && item.name) {
           events.push({
@@ -138,7 +136,7 @@ export function parseMessages(messages: GatewayMessage[]): ActivityEvent[] {
         events.push({
           id: `${base}-result-memory`,
           type: "memory",
-          message: `🧠 ${toolName} → ${resultText.slice(0, 80)}${resultText.length > 80 ? "…" : ""}`,
+          ...preview(`🧠 ${toolName} → ${resultText}`),
           timestamp: ts,
         });
       }

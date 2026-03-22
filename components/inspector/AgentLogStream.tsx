@@ -8,6 +8,7 @@ interface LogEntry {
   id: string;
   type: LogType;
   message: string;
+  fullMessage?: string;
   timestamp: string;
   model?: string;
 }
@@ -65,6 +66,7 @@ export default function AgentLogStream({
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [autoScroll, setAutoScroll] = useState(true);
+  const [expandedLog, setExpandedLog] = useState<LogEntry | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -219,10 +221,12 @@ export default function AgentLogStream({
                 second: "2-digit",
               });
 
+              const expandable = !!(log.fullMessage);
               return (
                 <div
                   key={log.id}
-                  className={`group relative border-l-2 px-3 pt-2 pb-2.5 transition-colors ${cfg.bar}`}
+                  onClick={() => expandable && setExpandedLog(log)}
+                  className={`group relative border-l-2 px-3 pt-2 pb-2.5 transition-colors ${cfg.bar} ${expandable ? "cursor-pointer hover:bg-white/[0.02]" : ""}`}
                   style={{
                     background:
                       i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.008)",
@@ -249,9 +253,14 @@ export default function AgentLogStream({
                         {log.model.split("/").pop()}
                       </span>
                     )}
-                    <span
-                      className={`ml-auto w-1.5 h-1.5 rounded-full flex-shrink-0 ${cfg.dot2}`}
-                    />
+                    {expandable && (
+                      <span className="ml-auto text-[9px] opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: "#e85d27" }}>
+                        expand ↗
+                      </span>
+                    )}
+                    {!expandable && (
+                      <span className={`ml-auto w-1.5 h-1.5 rounded-full flex-shrink-0 ${cfg.dot2}`} />
+                    )}
                   </div>
                   {/* Message */}
                   {tool ? (
@@ -265,9 +274,7 @@ export default function AgentLogStream({
                       {log.message}
                     </pre>
                   ) : (
-                    <p
-                      className={`text-[11px] ${cfg.text} leading-relaxed break-words`}
-                    >
+                    <p className={`text-[11px] ${cfg.text} leading-relaxed break-words`}>
                       {log.message}
                     </p>
                   )}
@@ -316,6 +323,48 @@ export default function AgentLogStream({
           )}
         </div>
       </div>
+
+      {/* ── Full message popup ── */}
+      {expandedLog && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(4px)" }}
+          onClick={() => setExpandedLog(null)}
+        >
+          <div
+            className="relative w-full max-w-lg max-h-[70vh] flex flex-col rounded-lg overflow-hidden"
+            style={{ background: "#0f0f0f", border: "1px solid #222" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: "#1a1a1a" }}>
+              <div className="flex items-center gap-2">
+                <span className={`w-2 h-2 rounded-full ${TYPE_CFG[expandedLog.type].dot}`} />
+                <span className="text-[11px] tabular-nums" style={{ color: "#555" }}>
+                  {new Date(expandedLog.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                </span>
+                {expandedLog.model && (
+                  <span className="text-[9px] font-mono px-1.5 py-px rounded border" style={{ color: "#555", background: "#161616", borderColor: "#222" }}>
+                    {expandedLog.model.split("/").pop()}
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={() => setExpandedLog(null)}
+                className="text-gray-600 hover:text-gray-300 transition-colors text-lg leading-none px-1"
+              >
+                ×
+              </button>
+            </div>
+            {/* Modal body */}
+            <div className="overflow-y-auto p-4 custom-scrollbar">
+              <p className={`text-xs ${TYPE_CFG[expandedLog.type].text} leading-relaxed whitespace-pre-wrap break-words`}>
+                {expandedLog.fullMessage ?? expandedLog.message}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

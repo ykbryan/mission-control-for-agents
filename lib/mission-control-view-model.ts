@@ -26,9 +26,9 @@ export function getSelectedAgent(agents: Agent[], nodeId: string) {
 }
 
 export function getSystemStatusSummary(agents: Agent[], mode: "graph" | "workflow", selectedAgent?: Agent) {
+  const onlineCount = agents.filter(a => a.status === "online").length;
   return [
-    `${agents.length} agents online`,
-    mode === "graph" ? "graph stage" : "workflow stage",
+    `${onlineCount} online`,
     selectedAgent ? `${selectedAgent.name} focused` : null,
   ].filter(Boolean) as string[];
 }

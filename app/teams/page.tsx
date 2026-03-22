@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { agents as staticAgents } from "@/lib/agents";
+import NavRail from "@/components/mission-control/NavRail";
 
 // ─── types ────────────────────────────────────────────────────────────────────
 
@@ -457,16 +458,13 @@ export default function TeamsPage() {
   // ── render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ height: "100vh", overflowY: "auto", background: "#060608", color: "#f0f0f0", fontFamily: "ui-sans-serif, system-ui, sans-serif" }}>
+    <div style={{ height: "100vh", display: "flex", flexDirection: "column", background: "#060608", color: "#f0f0f0", fontFamily: "ui-sans-serif, system-ui, sans-serif" }}>
 
       {/* Top nav */}
-      <div style={{ borderBottom: "1px solid #1a1a22", padding: "0 40px", display: "flex", alignItems: "center", height: "52px", gap: "16px" }}>
-        <a href="/" style={{ color: "#444", fontSize: "13px", textDecoration: "none", display: "flex", alignItems: "center", gap: "6px" }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6" /></svg>
-          Mission Control
-        </a>
-        <span style={{ color: "#222" }}>/</span>
-        <span style={{ color: "#888", fontSize: "13px", fontWeight: 500 }}>Agentic Teams</span>
+      <div style={{ borderBottom: "1px solid #1a1a22", padding: "0 24px", display: "flex", alignItems: "center", height: "52px", gap: "16px", flexShrink: 0 }}>
+        <span style={{ color: "#888", fontSize: "13px" }}>Mission Control</span>
+        <span style={{ color: "#333" }}>/</span>
+        <span style={{ color: "#f0f0f0", fontSize: "13px", fontWeight: 500 }}>Agentic Teams</span>
         <div style={{ flex: 1 }} />
         {loadingFiles && (
           <span style={{ fontSize: "11px", color: "#444", fontFamily: "ui-monospace,monospace" }}>
@@ -475,6 +473,14 @@ export default function TeamsPage() {
         )}
       </div>
 
+      {/* Body with NavRail */}
+      <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
+        <NavRail activeView="swarms" onViewChange={(view) => {
+          if (view === "mission") window.location.href = "/";
+          if (view === "analytics") window.location.href = "/";
+        }} />
+
+        <div style={{ flex: 1, overflowY: "auto" }}>
       <div style={{ maxWidth: "1280px", margin: "0 auto", padding: "36px 40px", display: "flex", flexDirection: "column", gap: "32px" }}>
 
         {/* Header */}
@@ -596,7 +602,9 @@ export default function TeamsPage() {
             </div>
           </div>
         )}
-      </div>
+        </div>
+        </div>{/* end scrollable content */}
+      </div>{/* end body flex */}
     </div>
   );
 }
