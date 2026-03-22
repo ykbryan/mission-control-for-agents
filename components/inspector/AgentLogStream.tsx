@@ -34,7 +34,7 @@ export default function AgentLogStream({ agentId, routerId }: { agentId: string;
         const data = await res.json();
         if (!active) return;
         if (!res.ok) {
-          setFetchError(data?.error ?? `HTTP ${res.status}`);
+          setFetchError(data?.error ?? `HTTP ${res.status} — check that the correct gateway router is configured`);
           return;
         }
         if (data?.error) {
