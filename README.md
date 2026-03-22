@@ -4,7 +4,7 @@
 
 ![Canvas](media/canvas.png)
 
-Mission Control is a Next.js dashboard for visualizing, navigating, and managing autonomous [OpenClaw](https://github.com/openclaw/openclaw) agents. It connects through a lightweight **Router** that runs alongside OpenClaw, so the dashboard itself can be hosted anywhere — locally, on a VPS, or in the cloud.
+Mission Control is a Next.js dashboard for visualizing, navigating, and managing autonomous [OpenClaw](https://github.com/openclaw/openclaw) agent swarms. Connect multiple gateways at once — each one gets its own cluster on the canvas, with orchestrators and specialists laid out in hierarchy. The dashboard can be hosted anywhere; a lightweight **Router** bridges each OpenClaw instance over HTTP.
 
 ## Architecture
 
@@ -57,15 +57,20 @@ npm run dev:local
 
 This starts the router (port 3010) and the dashboard (port 3000) simultaneously.
 
-The router terminal will print its generated token:
+The router terminal will print its URL and token:
 
 ```
-╔══════════════════════════════════════════════════════╗
-║         Mission Control Router — started             ║
-╠══════════════════════════════════════════════════════╣
-║  Router URL    http://localhost:3010                 ║
-║  Router Token  abc123...                             ║
-╚══════════════════════════════════════════════════════╝
+  🛰  Mission Control Router  v1.1.0
+
+  Listening   http://localhost:3010
+  OpenClaw    http://127.0.0.1:18789
+
+  ────────────────────────────────────────
+  In Mission Control, add this router:
+  ────────────────────────────────────────
+
+  Router URL  http://localhost:3010
+  Token       abc123def456...
 ```
 
 ### 4. Log in
