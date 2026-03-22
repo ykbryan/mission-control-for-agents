@@ -113,10 +113,13 @@ cp -r "$TMP_DIR/router/." "$INSTALL_DIR/"
 
 # ── Install & build ──────────────────────────────────────────
 info "Installing dependencies …"
-(cd "$INSTALL_DIR" && npm install --omit=dev --silent)
+(cd "$INSTALL_DIR" && npm install --silent)
 
 info "Building …"
 (cd "$INSTALL_DIR" && npm run build --silent)
+
+info "Pruning dev dependencies …"
+(cd "$INSTALL_DIR" && npm prune --omit=dev --silent)
 
 # ── Write .env ───────────────────────────────────────────────
 cat > "$INSTALL_DIR/.env" <<EOF
