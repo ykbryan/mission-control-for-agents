@@ -232,13 +232,20 @@ async function handleFile(res: http.ServerResponse, params: URLSearchParams) {
     .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))[0];
 
   if (!latestSess?.transcriptPath) {
-    json(res, 404, { error: "File not found" });
+    console.warn(`[router] /file: no transcriptPath for agent=${agentId}`);
+    json(res, 404, { error: `No transcript found for agent "${agentId}"` });
     return;
   }
 
   const agentDir = agentDirFromTranscript(latestSess.transcriptPath);
+  const filesOnDisk = listAgentFiles(agentDir);
+  console.log(`[router] /file agent=${agentId} dir=${agentDir} filesOnDisk=${filesOnDisk.join(",") || "none"} requested=${name}`);
+
   const content = readAgentFile(agentDir, name);
-  if (content === null) { json(res, 404, { error: "File not found" }); return; }
+  if (content === null) {
+    json(res, 404, { error: `"${name}" not found in ${agentDir} (found: ${filesOnDisk.join(", ") || "no .md files"})` });
+    return;
+  }
   json(res, 200, { content });
 }
 
