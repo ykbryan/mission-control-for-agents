@@ -479,7 +479,6 @@ export default function TeamsPage() {
           if (view === "mission") window.location.href = "/";
           if (view === "activities") window.location.href = "/activities";
           if (view === "spending") window.location.href = "/spending";
-          if (view === "analytics") window.location.href = "/";
         }} />
 
         <div style={{ flex: 1, overflowY: "auto" }}>

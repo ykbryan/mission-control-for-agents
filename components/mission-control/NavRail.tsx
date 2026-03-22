@@ -1,8 +1,8 @@
 import { Agent } from "@/lib/agents";
 
 interface Props {
-  activeView: "mission" | "swarms" | "analytics" | "activities" | "spending";
-  onViewChange: (view: "mission" | "swarms" | "analytics" | "activities" | "spending") => void;
+  activeView: "mission" | "swarms" | "activities" | "spending";
+  onViewChange: (view: "mission" | "swarms" | "activities" | "spending") => void;
 }
 
 export default function NavRail({ activeView, onViewChange }: Props) {
@@ -43,10 +43,6 @@ export default function NavRail({ activeView, onViewChange }: Props) {
           {activeView === "spending" && <span className="absolute left-0 top-1 bottom-1 w-[2px] bg-[#e85d27] rounded-none" />}
           <span className="text-xl">💰</span>
         </a>
-        <button className={navBtn(activeView === "analytics")} onClick={() => onViewChange("analytics")} title="Analytics">
-          {activeView === "analytics" && <span className="absolute left-0 top-1 bottom-1 w-[2px] bg-[#e85d27] rounded-none" />}
-          <span className="text-xl">📊</span>
-        </button>
       </nav>
 
       <div className="mt-auto w-full">

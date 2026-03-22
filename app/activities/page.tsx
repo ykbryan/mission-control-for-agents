@@ -526,7 +526,6 @@ export default function ActivitiesPage() {
             if (v === "mission") window.location.href = "/";
             if (v === "swarms") window.location.href = "/teams";
             if (v === "spending") window.location.href = "/spending";
-            if (v === "analytics") window.location.href = "/";
           }} />
 
           <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column" }}>
