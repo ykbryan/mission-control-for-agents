@@ -88,11 +88,13 @@ export default function InspectorPanel({ agent, activeFile, onSelectFile }: Prop
   const [drillSession, setDrillSession] = useState<SessionDetail | null>(null);
   const [drillLogs, setDrillLogs] = useState<{ id: string; type: string; message: string; fullMessage?: string; timestamp: string; model?: string }[]>([]);
   const [drillLoading, setDrillLoading] = useState(false);
+  const [drillFilter, setDrillFilter] = useState<"all" | "chat" | "info" | "memory" | "error">("all");
 
   function openSession(s: SessionDetail) {
     setDrillSession(s);
     setDrillLogs([]);
     setDrillLoading(true);
+    setDrillFilter("all");
     const routerParam = agent.routerId ? `&routerId=${encodeURIComponent(agent.routerId)}` : "";
     fetch(`/api/agent-session?agent=${encodeURIComponent(agent.id)}&sessionKey=${encodeURIComponent(s.key)}${routerParam}`)
       .then(r => r.json())
@@ -358,6 +360,43 @@ export default function InspectorPanel({ agent, activeFile, onSelectFile }: Prop
             </div>
             <button onClick={() => setDrillSession(null)} className="text-zinc-600 hover:text-zinc-300 transition-colors text-xl leading-none px-1 flex-shrink-0">×</button>
           </div>
+          {/* Filter bar */}
+          {!drillLoading && drillLogs.length > 0 && (() => {
+            const counts = {
+              chat:   drillLogs.filter(l => l.type === "chat").length,
+              info:   drillLogs.filter(l => l.type === "info").length,
+              memory: drillLogs.filter(l => l.type === "memory").length,
+              error:  drillLogs.filter(l => l.type === "error").length,
+            };
+            const tabs = [
+              { key: "all",    label: "All",    dot: null,            count: drillLogs.length },
+              { key: "chat",   label: "Chats",  dot: "bg-sky-500",    count: counts.chat },
+              { key: "info",   label: "Info",   dot: "bg-emerald-500",count: counts.info },
+              { key: "memory", label: "Memory", dot: "bg-violet-500", count: counts.memory },
+              { key: "error",  label: "Error",  dot: "bg-red-500",    count: counts.error },
+            ].filter(t => t.key === "all" || t.count > 0);
+            return (
+              <div className="flex items-center gap-1 px-3 py-2 border-b flex-wrap" style={{ background: "#0a0a0a", borderColor: "#161616" }}>
+                {tabs.map(t => (
+                  <button
+                    key={t.key}
+                    onClick={() => setDrillFilter(t.key as typeof drillFilter)}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+                      drillFilter === t.key
+                        ? "bg-[#1e1e1e] text-white border border-[#2e2e2e]"
+                        : "text-zinc-600 hover:text-zinc-300 hover:bg-[#111]"
+                    }`}
+                  >
+                    {t.dot && <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${drillFilter === t.key ? t.dot : "bg-zinc-700"}`} />}
+                    {t.label}
+                    <span className={`px-1.5 py-px rounded text-[10px] font-mono ${drillFilter === t.key ? "bg-[#2a2a2a] text-zinc-400" : "text-zinc-700"}`}>
+                      {t.count}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            );
+          })()}
           {/* Log entries */}
           <div className="overflow-y-auto custom-scrollbar flex-1" style={{ minHeight: 0 }}>
             {drillLoading ? (
@@ -370,30 +409,28 @@ export default function InspectorPanel({ agent, activeFile, onSelectFile }: Prop
                 <div className="text-xl opacity-10">◌</div>
                 <p className="text-xs text-zinc-600">No activity found for this session</p>
               </div>
-            ) : (
-              drillLogs.map((log, i) => {
-                const typeColors: Record<string, string> = {
-                  chat: "text-sky-300/90", info: "text-emerald-300/90",
-                  memory: "text-violet-300/90", error: "text-red-300/90",
-                };
-                const borderColors: Record<string, string> = {
-                  chat: "border-l-sky-500/40", info: "border-l-emerald-500/30",
-                  memory: "border-l-violet-500/40", error: "border-l-red-500/50",
-                };
-                return (
-                  <div key={log.id} className={`border-l-2 px-3 pt-2 pb-2.5 ${borderColors[log.type] ?? "border-l-zinc-800"}`}
-                    style={{ background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.008)", borderBottom: "1px solid #0f0f0f" }}>
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <span className="text-[10px] tabular-nums text-zinc-700">{new Date(log.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
-                      {log.model && <span className="text-[9px] font-mono text-zinc-700 bg-[#111] border border-[#1e1e1e] px-1.5 py-px rounded">{log.model.split("/").pop()}</span>}
-                    </div>
-                    <p className={`text-[11px] ${typeColors[log.type] ?? "text-zinc-400"} leading-relaxed break-words whitespace-pre-wrap`}>
-                      {log.fullMessage ?? log.message}
-                    </p>
+            ) : (() => {
+              const visible = drillFilter === "all" ? drillLogs : drillLogs.filter(l => l.type === drillFilter);
+              const typeColors: Record<string, string> = { chat: "text-sky-300/90", info: "text-emerald-300/90", memory: "text-violet-300/90", error: "text-red-300/90" };
+              const borderColors: Record<string, string> = { chat: "border-l-sky-500/40", info: "border-l-emerald-500/30", memory: "border-l-violet-500/40", error: "border-l-red-500/50" };
+              return visible.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 gap-2">
+                  <div className="text-xl opacity-10">◌</div>
+                  <p className="text-xs text-zinc-600">No entries match this filter</p>
+                </div>
+              ) : visible.map((log, i) => (
+                <div key={log.id} className={`border-l-2 px-3 pt-2 pb-2.5 ${borderColors[log.type] ?? "border-l-zinc-800"}`}
+                  style={{ background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.008)", borderBottom: "1px solid #0f0f0f" }}>
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="text-[10px] tabular-nums text-zinc-700">{new Date(log.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
+                    {log.model && <span className="text-[9px] font-mono text-zinc-700 bg-[#111] border border-[#1e1e1e] px-1.5 py-px rounded">{log.model.split("/").pop()}</span>}
                   </div>
-                );
-              })
-            )}
+                  <p className={`text-[11px] ${typeColors[log.type] ?? "text-zinc-400"} leading-relaxed break-words whitespace-pre-wrap`}>
+                    {log.fullMessage ?? log.message}
+                  </p>
+                </div>
+              ));
+            })()}
           </div>
           <div className="px-4 py-1.5 border-t flex items-center justify-between" style={{ borderColor: "#141414", background: "#080808" }}>
             <span className="text-[9px] text-zinc-800 font-mono truncate">{drillSession.key}</span>
