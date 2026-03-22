@@ -140,35 +140,54 @@ export async function gatewayRpc<T = unknown>(
     ws.on("open", () => { /* wait for challenge or fallback */ });
 
     ws.on("message", async (raw) => {
-      let msg: { type?: string; nonce?: string; id?: string; result?: T; error?: string };
+      // OpenClaw wraps messages as { type:"event", event:"...", payload:{...} }
+      // Some messages may also use type directly — handle both.
+      let msg: {
+        type?: string;
+        event?: string;
+        payload?: Record<string, unknown>;
+        id?: string;
+        result?: T;
+        error?: string;
+      };
       try { msg = JSON.parse(raw.toString()); } catch { return; }
-      console.log(`[ws:${method}] msg type=${msg.type}`, msg.error ?? "");
 
-      if (msg.type === "connect.challenge") {
+      // Resolve the effective event name
+      const ev = msg.type === "event" ? (msg.event ?? "") : (msg.type ?? "");
+      console.log(`[ws:${method}] type=${msg.type} event=${msg.event ?? "-"}`);
+
+      if (ev === "connect.challenge") {
         clearTimeout(challengeTimer);
-        await sendConnect(msg.nonce);
+        const nonce = msg.payload?.nonce as string | undefined;
+        await sendConnect(nonce);
         return;
       }
 
-      if (msg.type === "connect.ok" || msg.type === "connected") {
+      if (ev === "connect.ok" || ev === "connected" || ev === "connect.ready") {
         const reqId = randomUUID();
         ws.send(JSON.stringify({ type: "rpc", id: reqId, method, params: params ?? {} }));
         return;
       }
 
-      if (msg.type === "rpc.result" || msg.type === "result") {
-        if (msg.error) { done(new Error(`Gateway RPC error (${method}): ${msg.error}`)); return; }
-        done(undefined, msg.result as T);
+      if (ev === "rpc.result" || ev === "result" || ev === "rpc.response") {
+        const payload = (msg.payload ?? msg) as { result?: T; error?: string };
+        if (payload.error) { done(new Error(`Gateway RPC error (${method}): ${payload.error}`)); return; }
+        done(undefined, (payload.result ?? msg.result) as T);
         return;
       }
 
-      if (msg.type === "connect.error" || msg.type === "error") {
-        done(new Error(`Gateway connect error: ${msg.error ?? JSON.stringify(msg)}`));
+      if (ev === "connect.error" || ev === "error") {
+        const errMsg = (msg.payload?.message ?? msg.payload?.error ?? msg.error ?? JSON.stringify(msg)) as string;
+        done(new Error(`Gateway connect error: ${errMsg}`));
       }
     });
 
     ws.on("error", (err) => { console.error(`[ws:${method}] error:`, err.message); done(err); });
-    ws.on("close", () => { clearTimeout(challengeTimer); console.log(`[ws:${method}] closed`); done(new Error("WebSocket closed unexpectedly")); });
+    ws.on("close", (code, reason) => {
+      clearTimeout(challengeTimer);
+      console.log(`[ws:${method}] closed code=${code} reason=${reason}`);
+      done(new Error(`WebSocket closed (code=${code})`));
+    });
   });
 }
 
