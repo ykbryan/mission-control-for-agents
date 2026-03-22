@@ -1,0 +1,85 @@
+import { NextRequest, NextResponse } from "next/server";
+import { routerGet } from "@/lib/router-client";
+import { parseRouters } from "@/lib/router-config";
+
+interface RouterSession {
+  key: string;
+  updatedAt?: number;
+  totalTokens?: number;
+}
+
+export interface SessionGroup {
+  type: string;
+  label: string;
+  icon: string;
+  count: number;
+  lastUpdated: number;
+  totalTokens: number;
+}
+
+function classifySession(key: string): { type: string; label: string; icon: string } {
+  const parts = key.split(":");
+  const kind = parts[2];
+  if (!kind || kind === "main") return { type: "main", label: "Main", icon: "🖥️" };
+  if (kind === "cron")          return { type: "cron", label: "Cron Jobs", icon: "⏰" };
+  if (kind === "subagent")      return { type: "subagent", label: "Subagents", icon: "🤖" };
+  if (kind === "telegram") {
+    const sub = parts[3];
+    if (sub === "direct")       return { type: "tg-direct", label: "Telegram Direct", icon: "💬" };
+    if (sub === "slash")        return { type: "tg-slash", label: "Telegram Commands", icon: "⚡" };
+    if (sub === "group") {
+      if (parts[5] === "topic") return { type: "tg-topic", label: "Telegram Topics", icon: "📢" };
+      return                           { type: "tg-group", label: "Telegram Groups", icon: "👥" };
+    }
+    return                             { type: "telegram", label: "Telegram", icon: "✈️" };
+  }
+  return { type: kind, label: kind, icon: "📋" };
+}
+
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const agentId = searchParams.get("agent");
+  if (!agentId) return NextResponse.json({ error: "Missing agent" }, { status: 400 });
+
+  const routerId = searchParams.get("routerId") ?? "legacy";
+  const routers = parseRouters(req.cookies.get("routers")?.value);
+  let routerUrl: string | undefined;
+  let routerToken: string | undefined;
+
+  if (routers.length > 0) {
+    const router = routers.find(r => r.id === routerId) ?? routers[0];
+    routerUrl = router.url;
+    routerToken = router.token;
+  } else {
+    routerUrl = req.cookies.get("routerUrl")?.value;
+    routerToken = req.cookies.get("routerToken")?.value;
+  }
+
+  if (!routerUrl || !routerToken) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const data = await routerGet<{ sessions: RouterSession[] }>(
+      routerUrl, routerToken, "/sessions", { agentId }
+    );
+
+    const sessions = data.sessions ?? [];
+    const groupMap = new Map<string, SessionGroup>();
+
+    for (const s of sessions) {
+      const { type, label, icon } = classifySession(s.key);
+      const existing = groupMap.get(type) ?? { type, label, icon, count: 0, lastUpdated: 0, totalTokens: 0 };
+      existing.count++;
+      existing.lastUpdated = Math.max(existing.lastUpdated, s.updatedAt ?? 0);
+      existing.totalTokens += s.totalTokens ?? 0;
+      groupMap.set(type, existing);
+    }
+
+    // Sort by lastUpdated desc
+    const groups = Array.from(groupMap.values()).sort((a, b) => b.lastUpdated - a.lastUpdated);
+    return NextResponse.json({ groups, total: sessions.length });
+  } catch {
+    return NextResponse.json({ groups: [], total: 0 });
+  }
+}

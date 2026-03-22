@@ -3,6 +3,7 @@ import MarkdownViewer from "@/components/MarkdownViewer";
 import AgentLogStream from "./AgentLogStream";
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import type { SessionGroup } from "@/app/api/agent-sessions/route";
 
 interface Props {
   agent: Agent;
@@ -52,8 +53,36 @@ function FilePreview({ agentId, file, routerId }: { agentId: string; file: strin
   return <MarkdownViewer content={content} />;
 }
 
+function useSessionGroups(agentId: string, routerId?: string) {
+  const [groups, setGroups] = useState<SessionGroup[]>([]);
+  const [total, setTotal] = useState(0);
+
+  useEffect(() => {
+    const routerParam = routerId ? `&routerId=${encodeURIComponent(routerId)}` : "";
+    fetch(`/api/agent-sessions?agent=${encodeURIComponent(agentId)}${routerParam}`)
+      .then(r => r.json())
+      .then(d => { setGroups(d.groups ?? []); setTotal(d.total ?? 0); })
+      .catch(() => {});
+  }, [agentId, routerId]);
+
+  return { groups, total };
+}
+
+function timeAgo(ms: number): string {
+  if (!ms) return "";
+  const diff = Date.now() - ms;
+  const m = Math.floor(diff / 60000);
+  const h = Math.floor(diff / 3600000);
+  const d = Math.floor(diff / 86400000);
+  if (m < 2) return "just now";
+  if (h < 1) return `${m}m ago`;
+  if (d < 1) return `${h}h ago`;
+  return `${d}d ago`;
+}
+
 export default function InspectorPanel({ agent, activeFile, onSelectFile }: Props) {
   const [activeTab, setActiveTab] = useState<"context" | "logs">("context");
+  const { groups: sessionGroups, total: sessionTotal } = useSessionGroups(agent.id, agent.routerId);
 
   return (
     <aside className="mc-inspector w-[332px] flex flex-col h-full flex-shrink-0 relative overflow-hidden" style={{ display: 'flex', flexDirection: 'column', height: '100%', flexShrink: 0 }}>
@@ -89,6 +118,28 @@ export default function InspectorPanel({ agent, activeFile, onSelectFile }: Prop
               <section className="mc-inspector__section">
                 <div className="mc-section-label">Gateway</div>
                 <p className="text-xs text-zinc-400">{agent.routerLabel}</p>
+              </section>
+            )}
+
+            {sessionGroups.length > 0 && (
+              <section className="mc-inspector__section">
+                <div className="mc-section-label">Sessions · {sessionTotal}</div>
+                <div className="flex flex-col gap-1 mt-1">
+                  {sessionGroups.map(g => (
+                    <div key={g.type} className="flex items-center justify-between px-2 py-1.5 rounded-md bg-[#141414] border border-[#222]">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm">{g.icon}</span>
+                        <div>
+                          <div className="text-xs text-zinc-300 font-medium">{g.label}</div>
+                          {g.lastUpdated > 0 && (
+                            <div className="text-[10px] text-zinc-600">{timeAgo(g.lastUpdated)}</div>
+                          )}
+                        </div>
+                      </div>
+                      <span className="text-xs font-mono text-zinc-500 bg-[#1e1e1e] px-1.5 py-0.5 rounded">{g.count}</span>
+                    </div>
+                  ))}
+                </div>
               </section>
             )}
 
