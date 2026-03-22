@@ -77,67 +77,124 @@ function fmtDate(raw: number | undefined): string {
 }
 
 // ─── orchestrator detection ───────────────────────────────────────────────────
+//
+// MEMORY.md is the authoritative source — it contains real delegation records:
+//   Evelyn:  "Route all X tasks to **Name**"
+//   Brainy:  "→ assign to **Name**" / "assign to **Name**"
+// AGENTS.md is a generic workspace template, not team-structure data.
 
 function detectOrchestrators(
   agents: RouterAgent[],
   analyses: Map<string, AgentAnalysis>,
 ): Map<string, AgentAnalysis> {
-  const allIds = new Set(agents.map(a => a.id));
-  const key = (a: RouterAgent) => `${a.routerId}--${a.id}`;
 
-  // Pass 1: build outgoing (who does this agent manage?) from AGENTS.md
-  for (const [, an] of analyses) {
-    const content = (an.agentsMd ?? "").toLowerCase();
-    for (const otherId of allIds) {
-      if (otherId === an.agentId) continue;
-      if (!content.includes(otherId.toLowerCase())) continue;
-      // Does the content around the mention suggest management?
-      const idx = content.indexOf(otherId.toLowerCase());
-      const window = content.slice(Math.max(0, idx - 80), idx + 80);
-      const isManage  = MANAGE_KEYWORDS.some(k => window.includes(k));
-      const isReportTo = REPORT_KEYWORDS.some(k => window.includes(k));
-      if (isManage && !isReportTo) an.outgoing.add(otherId);
-    }
-
+  // Build a lookup: name/id (lowercase) → agentId
+  const nameToId = new Map<string, string>();
+  for (const a of agents) {
+    nameToId.set(a.id.toLowerCase(), a.id);
+    if (a.name && a.name !== a.id) nameToId.set(a.name.toLowerCase(), a.id);
+  }
+  // Also add static agent names/emojis
+  for (const sa of staticAgents) {
+    if (sa.name) nameToId.set(sa.name.toLowerCase(), sa.id);
   }
 
-  // Pass 2: build incoming (who manages this agent?) as inverse of outgoing
+  // Helper: extract agent IDs mentioned in a text string (matches ID or Name, bold or plain)
+  function extractMentionedAgents(text: string, selfId: string): Set<string> {
+    const found = new Set<string>();
+    // Match **Name**, *Name*, plain Name — all agent names/IDs in the lookup
+    for (const [lookup, agentId] of nameToId) {
+      if (agentId === selfId) continue;
+      if (lookup.length < 2) continue; // skip single-char matches
+      // Check for the name (case-insensitive) as a word boundary match
+      const re = new RegExp(`\\b${lookup.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+      if (re.test(text)) found.add(agentId);
+    }
+    return found;
+  }
+
+  // ── Pass 1: MEMORY.md — primary delegation evidence ──────────────────────
+  // Parse the actual delegation patterns found in the MEMORY.md files.
+  // Evelyn-style:  "Route all X to **Agent**"
+  // Brainy-style:  "→ assign to **Agent**" or "assign to **Agent**"
+  // General:       "delegate to **Agent**", "hand to **Agent**", "ask **Agent**"
+  // Agent names are single words (possibly hyphenated: evelyn-linkedin).
+  // Capture exactly one such token — no spaces — then stop at whitespace or punctuation.
+  const DELEGATION_PATTERNS = [
+    /route\s+.*?\bto\s+\*?\*?(\w[\w-]*)\*?\*?(?:\s+(?:in|at|via|for|and|through|about|from)\b|\s*[-–(,.]|\s*$)/gim,
+    /→\s*assign\s+to\s+\*?\*?(\w[\w-]*)\*?\*?(?:\s*[-–(,.]|\s+|\s*$)/gim,
+    /assign\s+to\s+\*?\*?(\w[\w-]*)\*?\*?(?:\s*[-–(,.]|\s+|\s*$)/gim,
+    /delegate\s+to\s+\*?\*?(\w[\w-]*)\*?\*?(?:\s*[-–(,.]|\s+|\s*$)/gim,
+    /hand(?:s?)\s+(?:off\s+)?to\s+\*?\*?(\w[\w-]*)\*?\*?(?:\s*[-–(,.]|\s+|\s*$)/gim,
+    /\bask\s+\*?\*?(\w[\w-]*)\*?\*?\s+to\b/gim,
+    /escalate\s+to\s+\*?\*?(\w[\w-]*)\*?\*?(?:\s*[-–(,.]|\s+|\s*$)/gim,
+  ];
+
   for (const [, an] of analyses) {
-    for (const managedId of an.outgoing) {
-      const managedKey = [...analyses.entries()].find(([, a]) => a.agentId === managedId)?.[0];
-      if (managedKey) analyses.get(managedKey)?.incoming.add(an.agentId);
+    const mem = an.memoryMd ?? "";
+    for (const pattern of DELEGATION_PATTERNS) {
+      const re = new RegExp(pattern.source, pattern.flags);
+      let match;
+      while ((match = re.exec(mem)) !== null) {
+        const name = match[1]?.trim().toLowerCase();
+        if (!name) continue;
+        const targetId = nameToId.get(name);
+        if (targetId && targetId !== an.agentId) {
+          an.outgoing.add(targetId);
+        }
+      }
     }
   }
 
-  // Pass 3: score — orchestrator = high outgoing, low incoming
-  // Cross-ref weight is kept LOW (×1) so roster entries in AGENTS.md don't dominate.
-  // Role/soul keywords are the primary signal (×20) — "Chief of Staff" etc.
+  // ── Pass 2: inbound — who do agents say they route to / work under? ───────
+  // Each agent's MEMORY.md may cite the orchestrator they report through.
+  // "Evelyn remains the executive router", "report back to Bryan via Evelyn"
+  const inboundScore = new Map<string, number>();
   for (const [, an] of analyses) {
-    let score = an.outgoing.size * 1 - an.incoming.size * 1;
+    const mem = (an.memoryMd ?? "").toLowerCase();
+    // Look for this agent deferring/escalating to another agent
+    const ESCALATION = [
+      /escalat\w*\s+to\s+\*?\*?(\w[\w-]*)\*?\*?(?:\s*[-–(,.]|\s+|\s*$)/gim,
+      /report\s+back\s+to\s+\*?\*?(\w[\w-]*)\*?\*?(?:\s*[-–(,.]|\s+|\s*$)/gim,
+      /via\s+\*?\*?(\w[\w-]*)\*?\*?(?:\s+for\s+cross|\s+for\s+exec)/gim,
+      /(\w[\w-]*)\s+remains\s+the\s+(?:executive|primary|main)\s+router/gim,
+    ];
+    for (const pat of ESCALATION) {
+      const re = new RegExp(pat.source, pat.flags);
+      let m;
+      while ((m = re.exec(mem)) !== null) {
+        const name = m[1]?.trim().toLowerCase();
+        if (!name) continue;
+        const targetId = nameToId.get(name);
+        if (targetId && targetId !== an.agentId) {
+          inboundScore.set(targetId, (inboundScore.get(targetId) ?? 0) + 2);
+        }
+      }
+    }
+  }
 
-    // PRIMARY signal: static agent role/soul contains explicit orchestrator language
+  // ── Pass 4: scoring ────────────────────────────────────────────────────────
+  for (const [, an] of analyses) {
+    // Primary: number of unique agents this one delegates to (×5)
+    let score = an.outgoing.size * 5;
+
+    // Inbound: cited as orchestrator/router by others (×3)
+    score += (inboundScore.get(an.agentId) ?? 0) * 3;
+
+    // Role/soul keyword in static config — high-confidence explicit label (+12)
     const staticAgent = staticAgents.find(s => s.id === an.agentId);
     if (staticAgent) {
       const text = `${staticAgent.role ?? ""} ${staticAgent.soul ?? ""}`.toLowerCase();
-      const orchWords = ["chief of staff", "orchestrat", "head of agents", "director of agents", "lead agent", "chief agent", "manager of agents"];
-      if (orchWords.some(w => text.includes(w))) score += 20;
+      if (["chief of staff", "orchestrat", "project lead", "swarm lead", "lead agent"].some(w => text.includes(w))) {
+        score += 12;
+      }
     }
 
-    // SECONDARY: MEMORY.md shows this agent actually delegating tasks (+3 per unique agent)
-    const mem = (an.memoryMd ?? "").toLowerCase();
-    for (const otherId of allIds) {
-      if (otherId === an.agentId) continue;
-      const delegatePatterns = [
-        new RegExp(`delegated to ${otherId}`),
-        new RegExp(`asked ${otherId}\\b`),
-        new RegExp(`assigned ${otherId}\\b`),
-      ];
-      if (delegatePatterns.some(r => r.test(mem))) score += 3;
+    // MEMORY.md explicitly says this agent IS the orchestrator/lead (+10)
+    const mem = an.memoryMd ?? "";
+    if (/\b(is the|as the|acting as|serves as)\s+(project lead|orchestrator|swarm\s+orchestrator|executive router|lead)\b/i.test(mem)) {
+      score += 10;
     }
-
-    // Penalty: this agent's AGENTS.md says it reports to someone else
-    const ownContent = (an.agentsMd ?? "").toLowerCase();
-    if (REPORT_KEYWORDS.some(k => ownContent.includes(k))) score -= 6;
 
     an.orchScore = score;
   }
@@ -237,16 +294,21 @@ export default function TeamsPage() {
 
   // ── build teams ─────────────────────────────────────────────────────────────
 
-  const { teams, unassigned } = useMemo(() => {
-    if (!analyses.size) return { teams: [], unassigned: agents };
+  const { teams, specialized, unassigned } = useMemo(() => {
+    if (!analyses.size) return { teams: [], specialized: [], unassigned: agents };
 
     // Sort by orchScore desc
     const sorted = [...analyses.values()].sort((a, b) => b.orchScore - a.orchScore);
 
-    // An agent is an orchestrator if:
-    // - score ≥ 15 (requires the role-keyword signal — cross-ref noise alone can't reach this)
-    // - outgoing ≥ 1 (has at least one identified report)
-    const orchestrators = sorted.filter(a => a.orchScore >= 15 && a.outgoing.size >= 1);
+    // Orchestrator = outgoing ≥ 1 AND score is a statistical outlier
+    // Use mean + 0.5 std-dev as the adaptive threshold so we don't need a
+    // magic number — works whether there are 2 or 5 orchestrators in the set.
+    const scores = sorted.map(a => a.orchScore);
+    const mean = scores.reduce((s, v) => s + v, 0) / (scores.length || 1);
+    const variance = scores.reduce((s, v) => s + (v - mean) ** 2, 0) / (scores.length || 1);
+    const stdDev = Math.sqrt(variance);
+    const threshold = Math.max(3, mean + 0.5 * stdDev); // floor at 3 to ignore near-zero noise
+    const orchestrators = sorted.filter(a => a.orchScore >= threshold && a.outgoing.size >= 1);
 
     const assigned = new Set<string>();
     const teams: Team[] = orchestrators.map(orch => {
@@ -271,8 +333,15 @@ export default function TeamsPage() {
       };
     });
 
-    const unassigned = agents.filter(a => !assigned.has(`${a.routerId}--${a.id}`));
-    return { teams, unassigned };
+    const remaining = agents.filter(a => !assigned.has(`${a.routerId}--${a.id}`));
+    // Specialized = remaining agents that have a static profile with meaningful skills
+    const specialized = remaining.filter(a => {
+      const stat = staticAgents.find(s => s.id === a.id);
+      return stat && stat.skills.length >= 1;
+    });
+    const specializedIds = new Set(specialized.map(a => `${a.routerId}--${a.id}`));
+    const unassigned = remaining.filter(a => !specializedIds.has(`${a.routerId}--${a.id}`));
+    return { teams, specialized, unassigned };
   }, [analyses, agents]);
 
   // ── helpers to get static agent info ────────────────────────────────────────
@@ -303,6 +372,43 @@ export default function TeamsPage() {
           </p>
         </div>
         <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: dot, flexShrink: 0 }} />
+      </div>
+    );
+  }
+
+  function SpecialistCard({ agentId, routerId }: { agentId: string; routerId: string }) {
+    const live = getLiveAgent(agentId, routerId);
+    const stat = getStatic(agentId);
+    const dot  = statusColor(live?.lastActiveAt);
+    const skills = stat?.skills ?? [];
+    return (
+      <div style={{
+        background: "#0c0c10", border: "1px solid #1a1a22", borderRadius: "10px",
+        padding: "14px 16px", display: "flex", flexDirection: "column", gap: "10px",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <span style={{ fontSize: "22px", lineHeight: 1 }}>{stat?.emoji ?? "🤖"}</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ margin: 0, fontSize: "13px", fontWeight: 600, color: "#d0d0d0" }}>
+              {stat?.name ?? agentId}
+            </p>
+            <p style={{ margin: 0, fontSize: "11px", color: "#555", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {stat?.role ?? "Agent"}
+            </p>
+          </div>
+          <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: dot, flexShrink: 0 }} />
+        </div>
+        {skills.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
+            {skills.map(sk => (
+              <span key={sk} style={{
+                fontSize: "9px", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase",
+                background: "rgba(255,255,255,0.04)", color: "#555", borderRadius: "4px", padding: "2px 6px",
+                border: "1px solid #1e1e26",
+              }}>{sk}</span>
+            ))}
+          </div>
+        )}
       </div>
     );
   }
@@ -351,7 +457,7 @@ export default function TeamsPage() {
   // ── render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ minHeight: "100vh", background: "#060608", color: "#f0f0f0", fontFamily: "ui-sans-serif, system-ui, sans-serif" }}>
+    <div style={{ height: "100vh", overflowY: "auto", background: "#060608", color: "#f0f0f0", fontFamily: "ui-sans-serif, system-ui, sans-serif" }}>
 
       {/* Top nav */}
       <div style={{ borderBottom: "1px solid #1a1a22", padding: "0 40px", display: "flex", alignItems: "center", height: "52px", gap: "16px" }}>
@@ -457,12 +563,32 @@ export default function TeamsPage() {
           );
         })}
 
+        {/* Specialized Agents */}
+        {!loadingAgents && !loadingFiles && specialized.length > 0 && (
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "14px" }}>
+              <p style={{ fontSize: "10px", fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "#444", margin: 0 }}>
+                Specialized Agents — {specialized.length}
+              </p>
+              <div style={{ flex: 1, height: "1px", background: "#1a1a22" }} />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "8px" }}>
+              {specialized.map(a => (
+                <SpecialistCard key={`${a.routerId}--${a.id}`} agentId={a.id} routerId={a.routerId} />
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Unassigned agents */}
         {!loadingAgents && unassigned.length > 0 && (
           <div>
-            <p style={{ fontSize: "10px", fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "#333", margin: "0 0 14px 0" }}>
-              Unassigned — {unassigned.length} agents
-            </p>
+            <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "14px" }}>
+              <p style={{ fontSize: "10px", fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "#333", margin: 0 }}>
+                Other — {unassigned.length}
+              </p>
+              <div style={{ flex: 1, height: "1px", background: "#1a1a22" }} />
+            </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "8px" }}>
               {unassigned.map(a => (
                 <AgentChip key={`${a.routerId}--${a.id}`} agentId={a.id} routerId={a.routerId} />
