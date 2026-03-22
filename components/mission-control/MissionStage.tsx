@@ -39,63 +39,78 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, o
 
   const { initialNodes, initialEdges } = useMemo(() => {
     // Group agents by routerId
-    const groups = new Map<string, Agent[]>();
+    const agentsByRouter = new Map<string, Agent[]>();
     for (const agent of agents) {
       const rid = agent.routerId ?? "default";
-      if (!groups.has(rid)) groups.set(rid, []);
-      groups.get(rid)!.push(agent);
+      if (!agentsByRouter.has(rid)) agentsByRouter.set(rid, []);
+      agentsByRouter.get(rid)!.push(agent);
     }
 
-    // If no routers at all, fall back to simple grid
-    if (groups.size === 0) {
-      const nodes = agents.map((agent, i) => ({
-        id: agent.id,
-        type: "agentNode" as const,
-        position: { x: (i % AGENTS_PER_ROW) * (AGENT_W + AGENT_COL_GAP) + 60, y: Math.floor(i / AGENTS_PER_ROW) * (AGENT_H + AGENT_ROW_GAP) + 60 },
-        data: { id: agent.id, name: agent.name, emoji: agent.emoji, role: agent.role, status: "online" as const, isSelected: agent.id === selectedAgentId },
-      }));
-      return { initialNodes: nodes, initialEdges: [] };
-    }
+    // Always iterate over routerConfigs so every gateway gets a node,
+    // even if it has no agents or returned an error.
+    const sourceList: Array<{ routerId: string; label: string; url: string; routerAgents: Agent[] }> =
+      routerConfigs.length > 0
+        ? routerConfigs.map(rc => ({
+            routerId: rc.id,
+            label: rc.label || "OpenClaw",
+            url: rc.url,
+            routerAgents: agentsByRouter.get(rc.id) ?? [],
+          }))
+        : // Fallback: no routerConfigs — use whatever groups we have
+          Array.from(agentsByRouter.entries()).map(([rid, ags]) => ({
+            routerId: rid,
+            label: rid === "legacy" ? "OpenClaw" : rid,
+            url: "",
+            routerAgents: ags,
+          }));
 
-    const nodes: ReturnType<typeof buildAgentNode>[] = [];
-    const edges: { id: string; source: string; target: string; style: object; animated: boolean }[] = [];
-
+    const nodes: any[] = [];
+    const edges: any[] = [];
+    const gatewayW = 260;
     let cursorX = 60;
 
-    for (const [routerId, routerAgents] of groups) {
-      const config = routerConfigs.find(r => r.id === routerId);
-      const label = config?.label ?? (routerId === "legacy" ? "OpenClaw" : routerId);
-      const url = config?.url ?? "";
-
-      // Width of this cluster
-      const cols = Math.min(routerAgents.length, AGENTS_PER_ROW);
+    for (const { routerId, label, url, routerAgents } of sourceList) {
+      const cols = Math.min(Math.max(routerAgents.length, 1), AGENTS_PER_ROW);
       const clusterW = cols * AGENT_W + (cols - 1) * AGENT_COL_GAP;
-      const gatewayW = 260;
       const totalW = Math.max(clusterW, gatewayW);
 
-      // Gateway node — centred in the cluster
       const gatewayId = `gateway-${routerId}`;
       const gatewayX = cursorX + totalW / 2 - gatewayW / 2;
+
       nodes.push({
         id: gatewayId,
         type: "gatewayNode",
         position: { x: gatewayX, y: GATEWAY_MARGIN_TOP },
         data: { label, url, agentCount: routerAgents.length },
-      } as any);
+      });
 
-      // Agent nodes in a grid below
+      // Use compound node ID (routerId--agentId) to avoid collisions when
+      // two gateways expose the same agent name.
       routerAgents.forEach((agent, i) => {
         const col = i % AGENTS_PER_ROW;
         const row = Math.floor(i / AGENTS_PER_ROW);
+        const nodeId = `${routerId}--${agent.id}`;
         const agentX = cursorX + col * (AGENT_W + AGENT_COL_GAP);
         const agentY = GATEWAY_MARGIN_TOP + GATEWAY_H + AGENTS_TOP_OFFSET + row * (AGENT_H + AGENT_ROW_GAP);
 
-        nodes.push(buildAgentNode(agent, agentX, agentY, selectedAgentId));
+        nodes.push({
+          id: nodeId,
+          type: "agentNode",
+          position: { x: agentX, y: agentY },
+          data: {
+            id: agent.id,
+            name: agent.name,
+            emoji: agent.emoji,
+            role: agent.role,
+            status: "online" as const,
+            isSelected: agent.id === selectedAgentId && agent.routerId === routerId,
+          },
+        });
 
         edges.push({
-          id: `e-${gatewayId}-${agent.id}`,
+          id: `e-${gatewayId}-${nodeId}`,
           source: gatewayId,
-          target: agent.id,
+          target: nodeId,
           style: { stroke: "#e85d27", strokeWidth: 1, opacity: 0.3 },
           animated: false,
         });
@@ -113,19 +128,20 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, o
   useEffect(() => { setNodes(initialNodes); }, [initialNodes, setNodes]);
   useEffect(() => { setEdges(initialEdges); }, [initialEdges, setEdges]);
 
-  // Sync selection highlight
+  // Sync selection highlight — node IDs are "routerId--agentId"
   useEffect(() => {
     setNodes((nds) =>
       nds.map((node) => ({
         ...node,
-        data: { ...node.data, isSelected: node.id === selectedAgentId },
+        data: { ...node.data, isSelected: node.data.id === selectedAgentId },
       }))
     );
   }, [selectedAgentId, setNodes]);
 
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: any) => {
-      if (!node.id.startsWith("gateway-")) onSelectAgent(node.id);
+      if (node.id.startsWith("gateway-")) return;
+      onSelectAgent(node.data.id); // use real agentId stored in data
     },
     [onSelectAgent]
   );
@@ -133,8 +149,8 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, o
   const handleNodeDoubleClick = useCallback(
     (_: React.MouseEvent, node: any) => {
       if (node.id.startsWith("gateway-")) return;
-      onSelectAgent(node.id);
-      if (onNodeDoubleClick) onNodeDoubleClick(node.id);
+      onSelectAgent(node.data.id);
+      if (onNodeDoubleClick) onNodeDoubleClick(node.data.id);
     },
     [onSelectAgent, onNodeDoubleClick]
   );
@@ -178,18 +194,3 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, o
   );
 }
 
-function buildAgentNode(agent: Agent, x: number, y: number, selectedAgentId: string) {
-  return {
-    id: agent.id,
-    type: "agentNode" as const,
-    position: { x, y },
-    data: {
-      id: agent.id,
-      name: agent.name,
-      emoji: agent.emoji,
-      role: agent.role,
-      status: "online" as const,
-      isSelected: agent.id === selectedAgentId,
-    },
-  };
-}
