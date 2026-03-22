@@ -10,7 +10,7 @@ interface Props {
   onSelectFile: (file: string | null) => void;
 }
 
-const FILE_ICONS: Record<string, string> = {
+const OPENCLAW_FILES: Record<string, string> = {
   "IDENTITY.md": "🪪",
   "SOUL.md": "✨",
   "TOOLS.md": "🔧",
@@ -109,27 +109,42 @@ export default function InspectorPanel({ agent, activeFile, onSelectFile }: Prop
               </div>
             </section>
 
-            <section className="mc-inspector__section mc-inspector__section--files">
-              <div className="mc-section-label">Markdown files</div>
-              <div className="mc-file-list">
-                {agent.files.map((file) => {
-                  const active = file === activeFile;
-                  return (
-                    <button
-                      key={file}
-                      className={`mc-file-row ${active ? "is-active" : ""}`}
-                      onClick={() => onSelectFile(active ? null : file)}
-                    >
-                      <span className="mc-file-row__meta">
-                        <span>{FILE_ICONS[file] || "📄"}</span>
-                        <span>{file}</span>
-                      </span>
-                      <span className="mc-file-row__action">{active ? "Close" : "Open"}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
+            {(() => {
+              const ocFiles = agent.files.filter((f) => f in OPENCLAW_FILES);
+              const customFiles = agent.files.filter((f) => !(f in OPENCLAW_FILES));
+              const renderFileRow = (file: string) => {
+                const active = file === activeFile;
+                return (
+                  <button
+                    key={file}
+                    className={`mc-file-row ${active ? "is-active" : ""}`}
+                    onClick={() => onSelectFile(active ? null : file)}
+                  >
+                    <span className="mc-file-row__meta">
+                      <span>{OPENCLAW_FILES[file] || "📄"}</span>
+                      <span>{file}</span>
+                    </span>
+                    <span className="mc-file-row__action">{active ? "Close" : "Open"}</span>
+                  </button>
+                );
+              };
+              return (
+                <>
+                  {ocFiles.length > 0 && (
+                    <section className="mc-inspector__section mc-inspector__section--files">
+                      <div className="mc-section-label">OpenClaw files</div>
+                      <div className="mc-file-list">{ocFiles.map(renderFileRow)}</div>
+                    </section>
+                  )}
+                  {customFiles.length > 0 && (
+                    <section className="mc-inspector__section mc-inspector__section--files">
+                      <div className="mc-section-label">Custom</div>
+                      <div className="mc-file-list">{customFiles.map(renderFileRow)}</div>
+                    </section>
+                  )}
+                </>
+              );
+            })()}
 
             <section className="mc-inspector__section mc-inspector__section--overview">
               <div className="mc-section-label">Overview</div>

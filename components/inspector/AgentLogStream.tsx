@@ -18,23 +18,32 @@ export default function AgentLogStream({ agentId, routerId }: { agentId: string;
   const [filter, setFilter] = useState<LogType | "all">("all");
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let active = true;
     setLogs([]);
+    setFetchError(null);
     setLoading(true);
 
     async function fetchLogs() {
       try {
         const routerParam = routerId ? `&routerId=${encodeURIComponent(routerId)}` : "";
         const res = await fetch(`/api/agent-session?agent=${encodeURIComponent(agentId)}${routerParam}`);
-        if (!res.ok) return;
-        const data: LogEntry[] = await res.json();
+        const data = await res.json();
         if (!active) return;
-        setLogs(data);
-      } catch {
-        // ignore
+        if (!res.ok) {
+          setFetchError(data?.error ?? `HTTP ${res.status}`);
+          return;
+        }
+        if (data?.error) {
+          setFetchError(data.error);
+          return;
+        }
+        setLogs(Array.isArray(data) ? data : []);
+      } catch (e) {
+        if (active) setFetchError(e instanceof Error ? e.message : "Network error");
       } finally {
         if (active) setLoading(false);
       }
@@ -96,6 +105,11 @@ export default function AgentLogStream({ agentId, routerId }: { agentId: string;
         {loading ? (
           <div className="flex flex-col items-center justify-center h-full py-12 text-center">
             <div className="text-gray-500 text-xs animate-pulse">Loading activity…</div>
+          </div>
+        ) : fetchError ? (
+          <div className="flex flex-col items-center justify-center h-full py-12 text-center px-3">
+            <div className="text-2xl mb-2 opacity-40">⚠️</div>
+            <p className="text-red-400 text-xs font-mono break-all">{fetchError}</p>
           </div>
         ) : filteredLogs.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full py-12 text-center">
