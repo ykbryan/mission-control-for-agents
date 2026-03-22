@@ -142,6 +142,7 @@ export async function gatewayRpc<T = unknown>(
     ws.on("message", async (raw) => {
       let msg: { type?: string; nonce?: string; id?: string; result?: T; error?: string };
       try { msg = JSON.parse(raw.toString()); } catch { return; }
+      console.log(`[ws:${method}] msg type=${msg.type}`, msg.error ?? "");
 
       if (msg.type === "connect.challenge") {
         clearTimeout(challengeTimer);
@@ -166,8 +167,8 @@ export async function gatewayRpc<T = unknown>(
       }
     });
 
-    ws.on("error", (err) => done(err));
-    ws.on("close", () => { clearTimeout(challengeTimer); done(new Error("WebSocket closed unexpectedly")); });
+    ws.on("error", (err) => { console.error(`[ws:${method}] error:`, err.message); done(err); });
+    ws.on("close", () => { clearTimeout(challengeTimer); console.log(`[ws:${method}] closed`); done(new Error("WebSocket closed unexpectedly")); });
   });
 }
 
@@ -270,7 +271,8 @@ export async function getAgentFile(
     );
     if (result.file.missing) return null;
     return result.file.content;
-  } catch {
+  } catch (err) {
+    console.error("[router] getAgentFile failed:", err instanceof Error ? err.message : err);
     return null;
   }
 }
