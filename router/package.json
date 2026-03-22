@@ -1,6 +1,6 @@
 {
   "name": "mission-control-router",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Local router that bridges OpenClaw gateway to a remote Mission Control dashboard",
   "main": "dist/server.js",
   "scripts": {

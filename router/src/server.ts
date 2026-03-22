@@ -447,9 +447,11 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(ROUTER_PORT, () => {
   const b = '\x1b[1m', r = '\x1b[0m', dim = '\x1b[2m', cyan = '\x1b[36m', green = '\x1b[32m', orange = '\x1b[38;5;208m';
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const pkg = require("../package.json") as { version: string };
   const url = `http://localhost:${ROUTER_PORT}`;
   console.log("");
-  console.log(`  ${orange}${b}🛰  Mission Control Router${r}  ${dim}started${r}`);
+  console.log(`  ${orange}${b}🛰  Mission Control Router${r}  ${dim}v${pkg.version}${r}`);
   console.log("");
   console.log(`  ${dim}Listening ${r} ${cyan}${url}${r}`);
   console.log(`  ${dim}OpenClaw  ${r} ${dim}${OPENCLAW_URL}${r}`);
