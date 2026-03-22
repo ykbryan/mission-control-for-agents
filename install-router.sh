@@ -64,27 +64,27 @@ node -e "if(parseInt(process.versions.node)<18)process.exit(1)" 2>/dev/null \
 info "Node $(node --version) · npm $(npm --version) · OS: $OS"
 echo ""
 
-# ── Interactive config (read from /dev/tty so curl|bash works) ──
+# ── Redirect stdin to terminal when piped (curl | bash) ──────
+[ ! -t 0 ] && exec </dev/tty
+
+# ── Interactive config ───────────────────────────────────────
 echo -e "  ${BOLD}OpenClaw connection${RESET}"
 echo ""
 
 if [ -z "$OPENCLAW_URL" ]; then
-  printf "  OpenClaw URL   [http://127.0.0.1:18789]: "
-  read -r INPUT_URL </dev/tty
+  read -rp "  OpenClaw URL   [http://127.0.0.1:18789]: " INPUT_URL
   OPENCLAW_URL="${INPUT_URL:-http://127.0.0.1:18789}"
 fi
 
 if [ -z "$OPENCLAW_TOKEN" ]; then
-  printf "  OpenClaw Token: "
-  read -rs OPENCLAW_TOKEN </dev/tty
+  read -rsp "  OpenClaw Token: " OPENCLAW_TOKEN
   echo ""
 fi
 
 [ -z "$OPENCLAW_TOKEN" ] && error "OpenClaw token is required."
 
 if [ -z "$ROUTER_PORT" ]; then
-  printf "  Router port    [3010]: "
-  read -r INPUT_PORT </dev/tty
+  read -rp "  Router port    [3010]: " INPUT_PORT
   ROUTER_PORT="${INPUT_PORT:-3010}"
 fi
 
