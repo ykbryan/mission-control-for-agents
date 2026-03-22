@@ -23,8 +23,8 @@ export default function TopStatusStrip({
   selectedAgent,
 }: Props) {
   const handleLogout = () => {
-    Cookies.remove("gatewayUrl");
-    Cookies.remove("gatewayToken");
+    Cookies.remove("routerUrl", { path: "/" });
+    Cookies.remove("routerToken", { path: "/" });
     window.location.href = "/login";
   };
 
