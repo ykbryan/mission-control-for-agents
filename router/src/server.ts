@@ -250,15 +250,27 @@ async function handleSession(res: http.ServerResponse, params: URLSearchParams) 
     return p?.[0] === "agent" && p[1] === agentId;
   });
 
+  // Diagnostic: log what we found so empty-data issues can be debugged via pm2 logs
+  if (agentSessions.length === 0) {
+    // Help diagnose key format mismatches — log a sample of actual keys seen
+    const sample = sessions.slice(0, 8).map(s => s.key).join(", ");
+    console.warn(`[router] no sessions found for agent="${agentId}" (${sessions.length} total sessions; sample keys: ${sample})`);
+  }
+
   const allMessages: GatewayMessage[] = [];
+  let noPathCount = 0;
+  let emptyTranscriptCount = 0;
   for (const s of agentSessions) {
-    if (!s.transcriptPath) continue;
+    if (!s.transcriptPath) { noPathCount++; continue; }
     const msgs = readTranscript(s.transcriptPath);
-    if (msgs.length === 0) continue;
+    if (msgs.length === 0) { emptyTranscriptCount++; continue; }
     allMessages.push(...msgs);
   }
 
   if (allMessages.length === 0) {
+    if (agentSessions.length > 0) {
+      console.warn(`[router] agent="${agentId}" has ${agentSessions.length} sessions but 0 messages (noPath=${noPathCount}, emptyTranscript=${emptyTranscriptCount})`);
+    }
     json(res, 200, { agentId, events: [] });
     return;
   }
