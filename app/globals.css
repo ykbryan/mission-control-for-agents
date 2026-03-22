@@ -138,7 +138,7 @@ select {
   flex: 1;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) minmax(280px, 332px);
-  gap: 18px;
+  gap: 0;
   align-items: stretch;
 }
 
@@ -146,10 +146,11 @@ select {
   width: 88px;
   min-height: 0;
   padding: 16px 12px;
-  border-radius: 28px;
+  border-radius: 0;
   background: linear-gradient(180deg, rgba(14, 20, 29, 0.88), rgba(11, 18, 27, 0.72));
-  border: 1px solid var(--mc-stroke-faint);
-  box-shadow: var(--mc-shadow-float);
+  border: none;
+  border-right: 1px solid var(--mc-stroke-faint);
+  box-shadow: none;
   backdrop-filter: var(--mc-shell-blur);
   display: flex;
   flex-direction: column;
@@ -358,16 +359,17 @@ select {
 
 .mc-inspector {
   min-height: 0;
-  border-radius: 30px;
-  padding: 18px;
+  border-radius: 0;
+  padding: 0;
   background: linear-gradient(180deg, rgba(17, 24, 35, 0.84), rgba(14, 20, 30, 0.78));
-  border: 1px solid var(--mc-stroke-faint);
-  box-shadow: var(--mc-shadow-float);
+  border: none;
+  border-left: 1px solid var(--mc-stroke-faint);
+  box-shadow: none;
   backdrop-filter: blur(24px);
   overflow: auto;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 0;
 }
 
 .mc-inspector__hero {

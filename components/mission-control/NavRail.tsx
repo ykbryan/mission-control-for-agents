@@ -21,7 +21,7 @@ export default function NavRail({ activeView, onViewChange }: Props) {
 
       <nav className="flex flex-col gap-1 flex-1 w-full">
         <button className={navBtn(activeView === "mission")} onClick={() => onViewChange("mission")} title="Mission Canvas">
-          {activeView === "mission" && <span className="absolute left-0 top-1 bottom-1 w-[2px] bg-[#e85d27] rounded-r-full" />}
+          {activeView === "mission" && <span className="absolute left-0 top-1 bottom-1 w-[2px] bg-[#e85d27] rounded-none" />}
           <span className="text-xl">🎯</span>
         </button>
         <a
@@ -32,7 +32,7 @@ export default function NavRail({ activeView, onViewChange }: Props) {
           <span className="text-xl">🐝</span>
         </a>
         <button className={navBtn(activeView === "analytics")} onClick={() => onViewChange("analytics")} title="Analytics">
-          {activeView === "analytics" && <span className="absolute left-0 top-1 bottom-1 w-[2px] bg-[#e85d27] rounded-r-full" />}
+          {activeView === "analytics" && <span className="absolute left-0 top-1 bottom-1 w-[2px] bg-[#e85d27] rounded-none" />}
           <span className="text-xl">📊</span>
         </button>
       </nav>
