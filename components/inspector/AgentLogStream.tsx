@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 
-type LogType = "info" | "error" | "memory";
+type LogType = "info" | "error" | "memory" | "chat";
 
 interface LogEntry {
   id: string;
@@ -16,6 +16,14 @@ interface LogEntry {
 const POLL_INTERVAL = 4000;
 
 const TYPE_CFG = {
+  chat: {
+    dot: "bg-sky-500",
+    bar: "border-l-sky-500/40",
+    text: "text-sky-300/90",
+    badge: "bg-sky-500/10 text-sky-400 border-sky-500/20",
+    dot2: "bg-sky-500/50",
+    label: "Chats",
+  },
   info: {
     dot: "bg-emerald-500",
     bar: "border-l-emerald-500/30",
@@ -132,9 +140,10 @@ export default function AgentLogStream({
     filter === "all" ? logs : logs.filter((l) => l.type === filter);
 
   const counts = {
-    info: logs.filter((l) => l.type === "info").length,
+    chat:   logs.filter((l) => l.type === "chat").length,
+    info:   logs.filter((l) => l.type === "info").length,
     memory: logs.filter((l) => l.type === "memory").length,
-    error: logs.filter((l) => l.type === "error").length,
+    error:  logs.filter((l) => l.type === "error").length,
   };
 
   return (
@@ -153,7 +162,7 @@ export default function AgentLogStream({
           activeClass="bg-[#1e1e1e] text-white border border-[#2e2e2e]"
           countClass="bg-[#2a2a2a] text-gray-400"
         />
-        {(["info", "memory", "error"] as LogType[]).map((t) => {
+        {(["chat", "info", "memory", "error"] as LogType[]).map((t) => {
           const cfg = TYPE_CFG[t];
           return (
             <FilterTab

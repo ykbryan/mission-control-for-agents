@@ -29,7 +29,7 @@ const PREVIEW_LEN = 160;
 
 export interface ActivityEvent {
   id: string;
-  type: "info" | "error" | "memory";
+  type: "info" | "error" | "memory" | "chat";
   message: string;       // preview (up to PREVIEW_LEN chars)
   fullMessage?: string;  // full text, only set when truncated
   timestamp: string;
@@ -82,7 +82,7 @@ export function parseMessages(messages: GatewayMessage[]): ActivityEvent[] {
       const text = extractUserText(raw);
       if (text) {
         const p0 = preview(`💬 ${text}`);
-        events.push({ id: `${base}-user`, type: "info", timestamp: ts, ...p0 });
+        events.push({ id: `${base}-user`, type: "chat", timestamp: ts, ...p0 });
       }
     } else if (msg.role === "assistant") {
       const model = msg.model;
