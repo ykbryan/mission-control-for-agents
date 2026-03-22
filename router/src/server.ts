@@ -166,7 +166,8 @@ async function handleAgents(res: http.ServerResponse) {
   }
 
   // Merge gateway agents with session-derived ids
-  const agentMap = new Map<string, { id: string; name: string; configured: boolean; files: string[]; lastActiveAt?: number }>();
+  type AgentEntry = { id: string; name: string; configured: boolean; files: string[]; lastActiveAt?: number; tier?: string };
+  const agentMap = new Map<string, AgentEntry>();
   for (const a of gatewayAgents) {
     const sess = latestSession.get(a.id);
     const files = sess?.transcriptPath ? listAgentFiles(agentDirFromTranscript(sess.transcriptPath)) : [];
@@ -177,6 +178,35 @@ async function handleAgents(res: http.ServerResponse) {
       const files = sess.transcriptPath ? listAgentFiles(agentDirFromTranscript(sess.transcriptPath)) : [];
       agentMap.set(id, { id, name: id, configured: false, files, lastActiveAt: sess?.updatedAt });
     }
+  }
+
+  // Detect orchestrators: the agent whose AGENTS.md mentions the most other
+  // registered agent IDs is the orchestrator (manages the rest of the team).
+  const allIds = new Set(agentMap.keys());
+  const mentionScores = new Map<string, number>();
+  for (const [id] of agentMap) {
+    const sess = latestSession.get(id);
+    if (!sess?.transcriptPath) continue;
+    const content = readAgentFile(agentDirFromTranscript(sess.transcriptPath), "AGENTS.md");
+    if (!content) continue;
+    const lower = content.toLowerCase();
+    let score = 0;
+    for (const otherId of allIds) {
+      if (otherId !== id && lower.includes(otherId.toLowerCase())) score++;
+    }
+    if (score > 0) mentionScores.set(id, score);
+  }
+
+  // The orchestrator has the highest mention count, with at least 2 mentions
+  // to avoid false positives when there are only a few agents.
+  let maxScore = 0;
+  for (const s of mentionScores.values()) if (s > maxScore) maxScore = s;
+  const orchestratorIds = maxScore >= 2
+    ? new Set([...mentionScores.entries()].filter(([, s]) => s === maxScore).map(([id]) => id))
+    : new Set<string>();
+
+  for (const [id, agent] of agentMap) {
+    agent.tier = orchestratorIds.has(id) ? "orchestrator" : "specialist";
   }
 
   json(res, 200, { agents: Array.from(agentMap.values()) });

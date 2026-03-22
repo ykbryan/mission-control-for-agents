@@ -7,6 +7,7 @@ interface RouterAgent {
   configured: boolean;
   files?: string[];
   lastActiveAt?: number;
+  tier?: string;
 }
 
 export async function fetchAgentsFromRouter(
@@ -35,8 +36,10 @@ export async function fetchAgentsFromRouter(
       last > now - 7 * 24 * 60 * 60 * 1000  ? "online"
       : last > now - 30 * 24 * 60 * 60 * 1000 ? "idle"
       : "offline";
-    // Tier: use static definition if known; unknown dynamic agents are specialists
-    const tier: Agent["tier"] = known?.tier ?? "specialist";
+    // Tier: router detection wins (it reads AGENTS.md cross-refs dynamically),
+    // fall back to static config, default to specialist.
+    const routerTier = ra.tier === "orchestrator" || ra.tier === "specialist" ? ra.tier : undefined;
+    const tier: Agent["tier"] = routerTier ?? known?.tier ?? "specialist";
     if (known) return { ...known, files, routerId, routerLabel, status, tier };
     return {
       id: ra.id,
