@@ -337,6 +337,47 @@ async function handleCosts(res: http.ServerResponse) {
   json(res, 200, { costs });
 }
 
+async function handleDebugSession(res: http.ServerResponse, params: URLSearchParams) {
+  const agentId = params.get("agentId") ?? "";
+  const sessions = await listSessions(OPENCLAW_URL, OPENCLAW_TOKEN);
+
+  // Show all session keys so we can see the key format
+  const allKeys = sessions.map((s) => ({ key: s.key, updatedAt: s.updatedAt, hasPath: !!s.transcriptPath }));
+
+  const agentSessions = sessions.filter((s) => {
+    const p = s.key?.split(":");
+    return p?.[0] === "agent" && p[1] === agentId;
+  }).sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+
+  const latest = agentSessions[0];
+  if (!latest?.transcriptPath) {
+    json(res, 200, { agentId, allKeys, agentSessions, error: "No transcriptPath found" });
+    return;
+  }
+
+  // Read first 5 raw lines from the transcript to inspect format
+  const rawLines: string[] = [];
+  if (fs.existsSync(latest.transcriptPath)) {
+    const lines = fs.readFileSync(latest.transcriptPath, "utf8").split("\n").filter(Boolean);
+    rawLines.push(...lines.slice(0, 5));
+  }
+
+  // Try parsing
+  const messages = readTranscript(latest.transcriptPath);
+  const { parseMessages } = await import("./parse-session");
+  const events = parseMessages(messages as Parameters<typeof parseMessages>[0]);
+
+  json(res, 200, {
+    agentId,
+    transcriptPath: latest.transcriptPath,
+    rawLineCount: rawLines.length,
+    rawSample: rawLines.map((l) => { try { return JSON.parse(l); } catch { return l; } }),
+    parsedMessageCount: messages.length,
+    eventCount: events.length,
+    firstMessages: messages.slice(0, 3),
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Server
 // ---------------------------------------------------------------------------
@@ -377,6 +418,7 @@ const server = http.createServer(async (req, res) => {
     if (urlPath === "/file") { await handleFile(res, params); return; }
     if (urlPath === "/costs") { await handleCosts(res); return; }
     if (urlPath === "/debug") { await handleDebug(res); return; }
+    if (urlPath === "/debug-session") { await handleDebugSession(res, params); return; }
     json(res, 404, { error: "Not found" });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
