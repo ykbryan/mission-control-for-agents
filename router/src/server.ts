@@ -459,22 +459,44 @@ async function handleDebug(res: http.ServerResponse) {
 
 async function handleCosts(res: http.ServerResponse) {
   const sessions = await listSessions(OPENCLAW_URL, OPENCLAW_TOKEN);
-  const byAgent = new Map<string, { totalTokens: number }>();
+  const byAgent = new Map<string, number>();           // agentId → totalTokens
+  const byAgentDate = new Map<string, number>();       // "agentId|YYYY-MM-DD" → tokens
+
   for (const s of sessions) {
     const parts = s.key?.split(":");
     const agentId = parts?.[0] === "agent" ? parts[1] : null;
     if (!agentId) continue;
-    const existing = byAgent.get(agentId) ?? { totalTokens: 0 };
-    existing.totalTokens += s.totalTokens ?? 0;
-    byAgent.set(agentId, existing);
+    const tokens = s.totalTokens ?? 0;
+
+    byAgent.set(agentId, (byAgent.get(agentId) ?? 0) + tokens);
+
+    // updatedAt from OpenClaw is in seconds; normalise to ms
+    const raw = s.updatedAt ?? 0;
+    const ts = raw > 0 && raw < 1e12 ? raw * 1000 : raw;
+    const date = ts > 0 ? new Date(ts).toISOString().split("T")[0] : "unknown";
+    const key = `${agentId}|${date}`;
+    byAgentDate.set(key, (byAgentDate.get(key) ?? 0) + tokens);
   }
-  const costs = Array.from(byAgent.entries()).map(([agentId, { totalTokens }]) => ({
+
+  const costs = Array.from(byAgent.entries()).map(([agentId, totalTokens]) => ({
     agentId,
     totalTokens,
-    estimatedCost: parseFloat((totalTokens * 3 / 1_000_000).toFixed(4)),
+    estimatedCost: parseFloat((totalTokens * 3 / 1_000_000).toFixed(6)),
   }));
   costs.sort((a, b) => b.totalTokens - a.totalTokens);
-  json(res, 200, { costs });
+
+  const daily = Array.from(byAgentDate.entries()).map(([key, tokens]) => {
+    const sep = key.indexOf("|");
+    return {
+      agentId: key.slice(0, sep),
+      date: key.slice(sep + 1),
+      tokens,
+      estimatedCost: parseFloat((tokens * 3 / 1_000_000).toFixed(6)),
+    };
+  });
+  daily.sort((a, b) => a.date.localeCompare(b.date) || a.agentId.localeCompare(b.agentId));
+
+  json(res, 200, { costs, daily });
 }
 
 async function handleDebugSession(res: http.ServerResponse, params: URLSearchParams) {
