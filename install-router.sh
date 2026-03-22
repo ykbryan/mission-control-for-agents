@@ -5,7 +5,7 @@ set -e
 #  Mission Control Router — one-command installer
 #  Supports: macOS · Linux (Ubuntu/Debian/RHEL) · WSL
 #
-#  curl -fsSL https://raw.githubusercontent.com/ykbryan/mission-control-for-agents/main/install-router.sh | bash
+#  curl -fsSL https://raw.githubusercontent.com/ykbryan/mission-control-for-agents/main/install-router.sh -o /tmp/install-router.sh && bash /tmp/install-router.sh
 # ─────────────────────────────────────────────────────────────
 
 REPO="https://github.com/ykbryan/mission-control-for-agents.git"
@@ -63,9 +63,6 @@ node -e "if(parseInt(process.versions.node)<18)process.exit(1)" 2>/dev/null \
 
 info "Node $(node --version) · npm $(npm --version) · OS: $OS"
 echo ""
-
-# ── Redirect stdin to terminal when piped (curl | bash) ──────
-[ ! -t 0 ] && exec </dev/tty
 
 # ── Interactive config ───────────────────────────────────────
 echo -e "  ${BOLD}OpenClaw connection${RESET}"
