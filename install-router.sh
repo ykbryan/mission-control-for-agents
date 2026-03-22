@@ -119,7 +119,7 @@ info "Installing TypeScript globally …"
 npm install -g typescript
 
 info "Building …"
-(cd "$INSTALL_DIR" && tsc)
+(cd "$INSTALL_DIR" && ./node_modules/.bin/tsc || tsc)
 
 info "Pruning dev dependencies …"
 (cd "$INSTALL_DIR" && npm prune --omit=dev --silent 2>/dev/null || true)
