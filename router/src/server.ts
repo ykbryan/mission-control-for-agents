@@ -202,33 +202,44 @@ async function handleSession(res: http.ServerResponse, params: URLSearchParams) 
 
   const sessions = await listSessions(OPENCLAW_URL, OPENCLAW_TOKEN);
 
-  // Find target session
-  let targetSession: GatewaySession | undefined;
+  // Single session by key
   if (key) {
-    targetSession = sessions.find((s) => s.key === key);
-  } else if (agentId) {
-    targetSession = sessions
-      .filter((s) => { const p = s.key?.split(":"); return p?.[0] === "agent" && p[1] === agentId; })
-      .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))[0];
-  }
-
-  if (!targetSession) {
-    json(res, 404, { error: "No session found" });
+    const target = sessions.find((s) => s.key === key);
+    if (!target?.transcriptPath) { json(res, 404, { error: "No session found" }); return; }
+    const messages = readTranscript(target.transcriptPath);
+    const events = parseMessages(messages as Parameters<typeof parseMessages>[0]);
+    json(res, 200, { key: target.key, events });
     return;
   }
 
-  // Read transcript directly from disk (router is co-located with OpenClaw)
-  let messages: GatewayMessage[] = [];
-  if (targetSession.transcriptPath) {
-    messages = readTranscript(targetSession.transcriptPath);
-    console.log(`[router] read ${messages.length} messages from ${targetSession.transcriptPath}`);
-  } else {
-    json(res, 502, { error: "No transcriptPath available" });
+  if (!agentId) { json(res, 400, { error: "Missing key or agentId" }); return; }
+
+  // Aggregate across ALL non-empty sessions for this agent, sorted by timestamp
+  const agentSessions = sessions.filter((s) => {
+    const p = s.key?.split(":");
+    return p?.[0] === "agent" && p[1] === agentId;
+  });
+
+  const allMessages: GatewayMessage[] = [];
+  for (const s of agentSessions) {
+    if (!s.transcriptPath) continue;
+    const msgs = readTranscript(s.transcriptPath);
+    if (msgs.length === 0) continue;
+    allMessages.push(...msgs);
+  }
+
+  if (allMessages.length === 0) {
+    json(res, 200, { agentId, events: [] });
     return;
   }
 
-  const events = parseMessages(messages as Parameters<typeof parseMessages>[0]);
-  json(res, 200, { key: targetSession.key, events });
+  // Sort by timestamp ascending so events appear in chronological order
+  allMessages.sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+
+  console.log(`[router] aggregated ${allMessages.length} messages across ${agentSessions.length} sessions for agent=${agentId}`);
+
+  const events = parseMessages(allMessages as Parameters<typeof parseMessages>[0]);
+  json(res, 200, { agentId, events });
 }
 
 async function handleFile(res: http.ServerResponse, params: URLSearchParams) {
