@@ -115,10 +115,8 @@ cp -r "$TMP_DIR/router/." "$INSTALL_DIR/"
 info "Installing dependencies …"
 (cd "$INSTALL_DIR" && npm install 2>&1 | tail -5)
 
-if ! command -v tsc >/dev/null 2>&1; then
-  info "Installing TypeScript globally …"
-  npm install -g typescript
-fi
+info "Installing TypeScript globally …"
+npm install -g typescript
 
 info "Building …"
 (cd "$INSTALL_DIR" && tsc)
