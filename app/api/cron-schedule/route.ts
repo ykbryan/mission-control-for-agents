@@ -5,6 +5,14 @@ import type { ActivityEvent } from "@/lib/parse-session";
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
+// validity:
+//   active       – running on schedule (last run within 1.5× interval)
+//   overdue      – missed ≤2 expected runs (might just be delayed)
+//   stale        – missed 3–10× expected runs (likely paused/stopped)
+//   paused       – missed >10× expected runs (almost certainly removed from scheduler)
+//   unconfirmed  – <3 runs, interval estimate is unreliable
+export type JobValidity = "active" | "overdue" | "stale" | "paused" | "unconfirmed";
+
 export interface ScheduledJob {
   id: string;                 // agentId::timeBucket
   agentId: string;
@@ -20,6 +28,7 @@ export interface ScheduledJob {
   avgTokens: number;
   totalTokens: number;
   isActive: boolean;
+  validity: JobValidity;
   source: "heartbeat" | "inferred";
   sessionKeys: string[];      // all session keys in this job
 }
@@ -101,6 +110,24 @@ function parseHeartbeat(content: string): HeartbeatJob[] {
     if (name) jobs.push({ name, schedule, description });
   }
   return jobs;
+}
+
+// Compute validity based on run count, interval, and overdue amount
+function computeValidity(
+  runCount: number,
+  intervalMs: number | null,
+  nextRunAt: number | null,
+  now: number
+): JobValidity {
+  if (runCount < 3) return "unconfirmed";
+  if (!intervalMs || !nextRunAt) return "unconfirmed";
+  const overdueMs = now - nextRunAt;
+  if (overdueMs <= 0) return "active";           // not yet due
+  const missedRuns = overdueMs / intervalMs;
+  if (missedRuns <= 1.5) return "active";        // within grace period
+  if (missedRuns <= 2)   return "overdue";       // missed 1-2 runs
+  if (missedRuns <= 10)  return "stale";         // missed 3-10 runs
+  return "paused";                               // missed >10 runs → removed
 }
 
 // Convert a heartbeat schedule string to ms (approximate)
@@ -293,6 +320,8 @@ export async function GET(req: NextRequest) {
         ? `Recurring job running around ${timeLabel} UTC. Prompt not available for older sessions.`
         : promptPrefix.replace(/^💬\s*/, "").trim();
 
+      const validity = computeValidity(clusterSessions.length, interval, nextRunAt, now);
+
       jobs.push({
         id: `${agentId}::${Buffer.from(promptPrefix.slice(0, 30)).toString("base64").slice(0, 12)}`,
         agentId,
@@ -308,6 +337,7 @@ export async function GET(req: NextRequest) {
         avgTokens,
         totalTokens,
         isActive: lastSession.isActive || (now - lastSession.updatedAt < ACTIVE_WINDOW_MS),
+        validity,
         source: matchedHb ? "heartbeat" : "inferred",
         sessionKeys: clusterSessions.map(s => s.key),
       });
@@ -333,6 +363,7 @@ export async function GET(req: NextRequest) {
           avgTokens: 0,
           totalTokens: 0,
           isActive: false,
+          validity: "unconfirmed",
           source: "heartbeat",
           sessionKeys: [],
         });

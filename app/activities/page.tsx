@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import NavRail from "@/components/mission-control/NavRail";
 import type { ActivitySession } from "@/app/api/activities/route";
-import type { ScheduledJob } from "@/app/api/cron-schedule/route";
+import type { ScheduledJob, JobValidity } from "@/app/api/cron-schedule/route";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -461,8 +461,8 @@ function fmtNextRun(ms: number | null, now: number): { label: string; urgency: "
   if (diff < 0) {
     const ago = Math.abs(diff);
     const m = Math.floor(ago / 60_000);
-    if (m < 60) return { label: `overdue ${m}m`, urgency: "overdue" };
-    return { label: `overdue ${Math.floor(m / 60)}h`, urgency: "overdue" };
+    if (m < 60) return { label: `${m}m ago`, urgency: "overdue" };
+    return { label: `${Math.floor(m / 60)}h ago`, urgency: "overdue" };
   }
   const m = Math.floor(diff / 60_000);
   if (m < 5) return { label: `in ${m}m`, urgency: "soon" };
@@ -471,6 +471,14 @@ function fmtNextRun(ms: number | null, now: number): { label: string; urgency: "
   if (h < 24) return { label: `in ${h}h ${m % 60}m`, urgency: "upcoming" };
   return { label: `in ${Math.floor(h / 24)}d`, urgency: "upcoming" };
 }
+
+const VALIDITY_CFG: Record<JobValidity, { label: string; color: string; bg: string; tip: string }> = {
+  active:      { label: "Active",       color: "#22c55e", bg: "rgba(34,197,94,0.08)",    tip: "Running on schedule" },
+  overdue:     { label: "Overdue",      color: "#f59e0b", bg: "rgba(245,158,11,0.08)",   tip: "Missed 1–2 expected runs — may be delayed" },
+  stale:       { label: "Stale",        color: "#f97316", bg: "rgba(249,115,22,0.08)",   tip: "Missed 3–10 expected runs — likely paused" },
+  paused:      { label: "Paused",       color: "#6b7280", bg: "rgba(107,114,128,0.08)",  tip: "Missed >10 expected runs — likely removed from scheduler" },
+  unconfirmed: { label: "Unconfirmed",  color: "#6366f1", bg: "rgba(99,102,241,0.08)",   tip: "Fewer than 3 runs — schedule cannot be reliably inferred" },
+};
 
 function ScheduleTab({ agentFilter }: { agentFilter: string }) {
   const [jobs, setJobs] = useState<ScheduledJob[]>([]);
@@ -519,16 +527,18 @@ function ScheduleTab({ agentFilter }: { agentFilter: string }) {
         <div className="w-28 text-right">Next Run</div>
         <div className="w-20 text-right">Avg Tokens</div>
         <div className="w-14 text-right">Runs</div>
-        <div className="w-5" />
+        <div className="w-24 text-right">Status</div>
+        <div className="w-4" />
       </div>
 
       {/* Upcoming jobs */}
       {upcoming.map(job => {
-        const { label: nextLabel, urgency } = fmtNextRun(job.nextRunAt, now);
-        const nextColor = urgency === "overdue" ? "#ef4444" : urgency === "soon" ? "#f59e0b" : "#6366f1";
+        const { label: nextLabel } = fmtNextRun(job.nextRunAt, now);
+        const vcfg = VALIDITY_CFG[job.validity ?? "unconfirmed"];
         const isOpen = expandedJob === job.id;
+        const dimmed = job.validity === "paused" || job.validity === "stale";
         return (
-          <div key={job.id} className="border-b" style={{ borderColor: "#0e0e0e" }}>
+          <div key={job.id} className="border-b" style={{ borderColor: "#0e0e0e", opacity: dimmed ? 0.55 : 1 }}>
             <button
               onClick={() => setExpandedJob(isOpen ? null : job.id)}
               className="group w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-white/[0.02] transition-colors"
@@ -537,7 +547,7 @@ function ScheduleTab({ agentFilter }: { agentFilter: string }) {
               <div className="w-6 flex-shrink-0 flex justify-center">
                 {job.isActive
                   ? <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  : <span className="w-2 h-2 rounded-full bg-zinc-800" />
+                  : <span className="w-2 h-2 rounded-full" style={{ background: vcfg.color, opacity: 0.5 }} />
                 }
               </div>
 
@@ -547,9 +557,7 @@ function ScheduleTab({ agentFilter }: { agentFilter: string }) {
                   <span className="text-sm">{AGENT_EMOJI[job.agentId] ?? "🤖"}</span>
                   <span className="text-xs font-medium text-zinc-200 truncate">{job.name}</span>
                   {job.isActive && (
-                    <span className="text-[9px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 px-1.5 py-px rounded flex-shrink-0">
-                      Running
-                    </span>
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 px-1.5 py-px rounded flex-shrink-0">Running</span>
                   )}
                   {job.source === "heartbeat" && (
                     <span className="text-[9px] text-amber-600/70 bg-amber-500/5 border border-amber-500/10 px-1.5 py-px rounded flex-shrink-0">HEARTBEAT</span>
@@ -570,7 +578,7 @@ function ScheduleTab({ agentFilter }: { agentFilter: string }) {
 
               {/* Next run */}
               <div className="w-28 text-right flex-shrink-0">
-                <span className="text-[11px] font-semibold" style={{ color: nextColor }}>{nextLabel}</span>
+                <span className="text-[11px] font-mono" style={{ color: vcfg.color }}>{nextLabel}</span>
               </div>
 
               {/* Avg tokens */}
@@ -583,13 +591,25 @@ function ScheduleTab({ agentFilter }: { agentFilter: string }) {
                 <span className="text-[11px] text-zinc-600">{job.runCount}</span>
               </div>
 
+              {/* Validity badge */}
+              <div className="w-24 text-right flex-shrink-0">
+                <span className="text-[9px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded"
+                  style={{ color: vcfg.color, background: vcfg.bg }}
+                >{vcfg.label}</span>
+              </div>
+
               {/* Expand chevron */}
-              <div className="w-5 text-right flex-shrink-0 text-zinc-700 text-xs">{isOpen ? "▲" : "▼"}</div>
+              <div className="w-4 text-right flex-shrink-0 text-zinc-700 text-xs">{isOpen ? "▲" : "▼"}</div>
             </button>
 
             {/* Expanded description */}
             {isOpen && (
-              <div className="px-4 pb-4 pt-1" style={{ borderTop: "1px solid #0e0e0e", background: "#06060a" }}>
+              <div className="px-4 pb-4 pt-2 ml-8" style={{ borderTop: "1px solid #0e0e0e", background: "#06060a" }}>
+                {/* Validity explanation */}
+                <div className="flex items-start gap-2 mb-3 p-2 rounded" style={{ background: vcfg.bg, border: `1px solid ${vcfg.color}20` }}>
+                  <span className="text-[10px] font-semibold" style={{ color: vcfg.color }}>{vcfg.label}:</span>
+                  <span className="text-[10px]" style={{ color: vcfg.color + "cc" }}>{vcfg.tip}</span>
+                </div>
                 <p className="text-[11px] text-zinc-500 leading-relaxed mb-3">{job.description || "No description available."}</p>
                 <div className="flex items-center gap-4 flex-wrap">
                   <span className="text-[10px] text-zinc-700">Total tokens: <span className="text-zinc-500 font-mono">{fmtTokens(job.totalTokens)}</span></span>
@@ -599,7 +619,7 @@ function ScheduleTab({ agentFilter }: { agentFilter: string }) {
                     <span className="text-[10px] text-zinc-700">Last: <span className="text-zinc-500">{fmtTs(job.lastRunAt)}</span></span>
                   )}
                   {job.nextRunAt && (
-                    <span className="text-[10px] text-zinc-700">Next: <span className="font-mono" style={{ color: nextColor }}>{new Date(job.nextRunAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span></span>
+                    <span className="text-[10px] text-zinc-700">Projected next: <span className="font-mono" style={{ color: vcfg.color }}>{new Date(job.nextRunAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span></span>
                   )}
                 </div>
               </div>
