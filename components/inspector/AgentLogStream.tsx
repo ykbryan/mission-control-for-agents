@@ -105,7 +105,15 @@ export default function AgentLogStream({
           setFetchError(data.error);
           return;
         }
-        setLogs(Array.isArray(data) ? data : []);
+        // Normalise: old router sends type="info" for chat messages;
+        // reclassify any 💬-prefixed entries as "chat" so the filter works
+        // before the router is updated.
+        const normalised = (Array.isArray(data) ? data : []).map((e: LogEntry) =>
+          e.type === "info" && e.message.startsWith("💬")
+            ? { ...e, type: "chat" as LogType }
+            : e
+        );
+        setLogs(normalised);
       } catch (e) {
         if (active)
           setFetchError(e instanceof Error ? e.message : "Network error");
