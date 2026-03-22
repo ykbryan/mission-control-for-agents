@@ -12,7 +12,7 @@ import AnalyticsStage from "@/components/stage/AnalyticsStage";
 import AgentProfileStage from "@/components/stage/AgentProfileStage";
 import { AnimatePresence, motion } from "framer-motion";
 
-export default function MissionControlScreen({ agents }: MissionControlScreenProps) {
+export default function MissionControlScreen({ agents, routerError }: MissionControlScreenProps) {
   const [selectedAgentId, setSelectedAgentId] = useState(agents[0]?.id ?? "");
   const [drilledDownAgentId, setDrilledDownAgentId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -58,6 +58,13 @@ export default function MissionControlScreen({ agents }: MissionControlScreenPro
         onToggleTheme={() => setDarkMode((value) => !value)}
         selectedAgent={drilledDownAgentId ? profileAgent?.name : selectedAgent?.name}
       />
+
+      {routerError && (
+        <div className="bg-red-950 border-b border-red-800 text-red-300 text-xs px-4 py-2 flex items-center gap-2">
+          <span>⚠️</span>
+          <span><strong>Router unreachable</strong> — showing static agents. {routerError}</span>
+        </div>
+      )}
 
       <div className="flex flex-row overflow-hidden flex-nowrap w-full h-full flex-1 min-h-0">
         <NavRail

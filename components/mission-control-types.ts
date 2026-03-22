@@ -21,4 +21,5 @@ export interface MissionControlUIState {
 
 export interface MissionControlScreenProps {
   agents: Agent[];
+  routerError?: string;
 }

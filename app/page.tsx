@@ -10,13 +10,16 @@ export default async function Home() {
 
   let agents = staticAgents;
 
+  let routerError: string | undefined;
+
   if (routerUrl && routerToken) {
     try {
       agents = await fetchAgentsFromRouter(routerUrl, routerToken);
-    } catch {
-      // Router unreachable — fall back to static agent list
+    } catch (err) {
+      routerError = err instanceof Error ? err.message : String(err);
+      console.error("[page] fetchAgentsFromRouter failed:", routerError);
     }
   }
 
-  return <MissionControlScreen agents={agents} />;
+  return <MissionControlScreen agents={agents} routerError={routerError} />;
 }
