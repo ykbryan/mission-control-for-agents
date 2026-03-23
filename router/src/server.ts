@@ -357,8 +357,11 @@ async function handleAgents(res: http.ServerResponse) {
 
   // Merge gateway agents with session-derived ids
   type AgentEntry = { id: string; name: string; configured: boolean; files: string[]; skills?: string[]; soul?: string; lastActiveAt?: number; tier?: string; nodeHostname?: string };
+  // Filter out backup/deleted agent directories (e.g. "chatty.bak_deleted_20260314")
+  const BAK_RE = /\.bak[_.]|_deleted_|\.deleted\b/i;
   const agentMap = new Map<string, AgentEntry>();
   for (const a of gatewayAgents) {
+    if (BAK_RE.test(a.id)) continue;
     const sess = latestSession.get(a.id);
     const agentDir: string | null =
       typeof a.workspaceDir === "string" ? a.workspaceDir
@@ -433,6 +436,7 @@ async function handleAgents(res: http.ServerResponse) {
     agentMap.set(a.id, { ...a, files, ...(skills ? { skills } : {}), ...(soul ? { soul } : {}), lastActiveAt: sess?.updatedAt, nodeHostname: agentNodeMap.get(a.id) });
   }
   for (const [id, sess] of latestSession) {
+    if (BAK_RE.test(id)) continue;
     if (!agentMap.has(id)) {
       const files = sess.transcriptPath ? listAgentFiles(agentDirFromTranscript(sess.transcriptPath)) : [];
       agentMap.set(id, { id, name: id, configured: false, files, lastActiveAt: sess?.updatedAt, nodeHostname: agentNodeMap.get(id) });
