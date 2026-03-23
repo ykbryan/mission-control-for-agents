@@ -84,6 +84,9 @@ function timeAgo(ms: number): string {
 
 export default function InspectorPanel({ agent, activeFile, onSelectFile }: Props) {
   const [activeTab, setActiveTab] = useState<"context" | "logs">("context");
+  const [activeSkill, setActiveSkill] = useState<string | null>(null);
+  // Clear skill tooltip when switching agents
+  useEffect(() => { setActiveSkill(null); }, [agent.id]);
   const { groups: sessionGroups, total: sessionTotal } = useSessionGroups(agent.id, agent.routerId);
   const [expandedGroup, setExpandedGroup] = useState<SessionGroup | null>(null);
   const [drillSession, setDrillSession] = useState<SessionDetail | null>(null);
@@ -228,12 +231,26 @@ export default function InspectorPanel({ agent, activeFile, onSelectFile }: Prop
               <div className="mc-section-label">Capabilities</div>
               <div className="mc-chip-grid">
                 {agent.skills.map((skill) => (
-                  <div key={skill} className="mc-skill-chip" title={skillDescriptions[skill] || skill}>
-                    <span className="mc-skill-chip__dot" />
+                  <div
+                    key={skill}
+                    className="mc-skill-chip"
+                    style={activeSkill === skill ? { borderColor: "#e85d27", background: "rgba(232,93,39,0.08)" } : {}}
+                    onClick={() => setActiveSkill(s => s === skill ? null : skill)}
+                  >
+                    <span className="mc-skill-chip__dot" style={activeSkill === skill ? { background: "#e85d27" } : {}} />
                     {skill}
                   </div>
                 ))}
               </div>
+              {activeSkill && (
+                <div
+                  className="mt-2 px-3 py-2 rounded-lg text-xs leading-relaxed"
+                  style={{ background: "rgba(232,93,39,0.06)", border: "1px solid rgba(232,93,39,0.2)", color: "#ccc" }}
+                >
+                  <span className="font-semibold text-[#e85d27] mr-1.5">{activeSkill}</span>
+                  {skillDescriptions[activeSkill] || "No description available."}
+                </div>
+              )}
             </section>
 
             {(() => {
