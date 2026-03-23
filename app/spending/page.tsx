@@ -222,7 +222,7 @@ function AgentTable({ rows, totalCost }: { rows: { agentId: string; tokens: numb
           </tr>
         </thead>
         <tbody>
-          {rows.slice(0, 12).map((row, i) => {
+          {rows.slice(0, 10).map((row, i) => {
             const share = totalCost > 0 ? (row.cost / totalCost) * 100 : 0;
             return (
               <tr key={row.agentId}
@@ -411,7 +411,7 @@ export default function SpendingPage() {
   // By Agent — use all-time costs when period=all, else derive from filteredDaily
   const agentRows = useMemo(() => {
     if (!periodCutoff) {
-      return [...(data?.costs ?? [])].sort((a, b) => b.estimatedCost - a.estimatedCost).slice(0, 12)
+      return [...(data?.costs ?? [])].sort((a, b) => b.estimatedCost - a.estimatedCost).slice(0, 10)
         .map(c => ({ agentId: c.agentId, tokens: c.tokens, cost: c.estimatedCost, router: c.routerLabel }));
     }
     const m = new Map<string, { tokens: number; cost: number; router: string }>();
@@ -421,7 +421,7 @@ export default function SpendingPage() {
       else m.set(d.agentId, { tokens: d.tokens, cost: d.estimatedCost, router: d.routerLabel });
     }
     return [...m.entries()].map(([agentId, v]) => ({ agentId, ...v }))
-      .sort((a, b) => b.cost - a.cost).slice(0, 12);
+      .sort((a, b) => b.cost - a.cost).slice(0, 10);
   }, [data, filteredDaily, periodCutoff]);
 
   // By Router — use all-time when period=all, else derive from filteredDaily
@@ -603,7 +603,7 @@ export default function SpendingPage() {
                 </AreaChart>
               </ResponsiveContainer>
             </div>
-            <SectionHead>Top 12 spenders — {period === "all" ? "all time" : PERIODS.find(p => p.id === period)?.label.toLowerCase() + " period"}</SectionHead>
+            <SectionHead>Top 10 spenders — {period === "all" ? "all time" : PERIODS.find(p => p.id === period)?.label.toLowerCase() + " period"}</SectionHead>
             <AgentTable
               rows={agentRows}
               totalCost={totalCost}
