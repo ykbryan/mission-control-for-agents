@@ -646,7 +646,7 @@ function LiveTrendsTab({ data }: { data: AuditEventsResponse }) {
             <YAxis tick={{ fill: "#444", fontSize: 9 }} tickLine={false} axisLine={false}
               tickFormatter={v => v >= 1000000 ? `${(v/1000000).toFixed(1)}M` : v >= 1000 ? `${(v/1000).toFixed(0)}K` : String(v)} />
             <Tooltip contentStyle={chartTooltipStyle}
-              formatter={(v: number) => [fmtTokens(v), "Tokens"]} />
+              formatter={(v) => [fmtTokens(Number(v)), "Tokens"]} />
             <Area type="monotone" dataKey="totalTokens" stroke={ORANGE} fill={`${ORANGE}20`} strokeWidth={2} dot={false} />
           </AreaChart>
         </ResponsiveContainer>
