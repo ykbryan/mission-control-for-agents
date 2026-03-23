@@ -105,11 +105,10 @@ export default function AgentLogStream({
           setFetchError(data.error);
           return;
         }
-        // Normalise: old router sends type="info" for chat messages;
-        // reclassify any 💬-prefixed entries as "chat" so the filter works
-        // before the router is updated.
+        // Normalise: reclassify user messages (💬) and agent replies (🤖)
+        // as "chat" so both sides of the conversation appear in the Chats tab.
         const normalised = (Array.isArray(data) ? data : []).map((e: LogEntry) =>
-          e.type === "info" && e.message.startsWith("💬")
+          e.type === "info" && (e.message.startsWith("💬") || e.message.startsWith("🤖"))
             ? { ...e, type: "chat" as LogType }
             : e
         );

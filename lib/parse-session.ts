@@ -106,10 +106,39 @@ export function parseMessages(messages: GatewayMessage[]): ActivityEvent[] {
         const item = msg.content![j];
 
         if (item.type === "text" && item.text) {
-          const text = item.text.replace(/^\[\[reply_to_current\]\]\s*/, "").trim();
-          if (text) {
-            const p1 = preview(`🤖 ${text}`);
-            events.push({ id: `${base}-text-${j}`, type: "info", timestamp: ts, model: model ?? undefined, ...p1 });
+          const raw = item.text;
+
+          // ── Extract clean reply text ─────────────────────────────────────
+          // OpenClaw agents may wrap responses in <think>...</think> (internal
+          // reasoning) and <final>...</final> (the actual reply sent to user).
+          // Strip <think> blocks entirely; unwrap <final> if present.
+          let replyText: string;
+          const finalMatch = raw.match(/<final>([\s\S]*?)<\/final>/i);
+          if (finalMatch) {
+            // Use only the <final> content
+            replyText = finalMatch[1];
+          } else {
+            // No <final> tag — strip <think>…</think> blocks and use remainder
+            replyText = raw.replace(/<think>[\s\S]*?<\/think>/gi, "");
+          }
+          // Remove [[reply_to_current]] directive and trim
+          replyText = replyText.replace(/\[\[reply_to_current\]\]/gi, "").trim();
+
+          // ── Emit: thinking block (if present) as info, reply as chat ─────
+          const hasThink = /<think>/i.test(raw);
+          if (hasThink) {
+            const thinkContent = (raw.match(/<think>([\s\S]*?)<\/think>/i)?.[1] ?? "").trim();
+            if (thinkContent) {
+              const p0 = preview(`💭 ${thinkContent}`);
+              events.push({ id: `${base}-think-${j}`, type: "info", timestamp: ts, model: model ?? undefined, ...p0 });
+            }
+          }
+
+          if (replyText) {
+            const p1 = preview(`🤖 ${replyText}`);
+            // Assistant replies that reach the user are chat events
+            const isReply = !!finalMatch || (!hasThink && replyText.length > 0);
+            events.push({ id: `${base}-text-${j}`, type: isReply ? "chat" : "info", timestamp: ts, model: model ?? undefined, ...p1 });
           }
         } else if (item.type === "toolCall" && item.name) {
           events.push({

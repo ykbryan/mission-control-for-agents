@@ -100,7 +100,7 @@ export default function InspectorPanel({ agent, activeFile, onSelectFile }: Prop
       .then(r => r.json())
       .then(data => {
         const normalised = (Array.isArray(data) ? data : []).map((e: { type: string; message: string; fullMessage?: string; id: string; timestamp: string; model?: string }) =>
-          e.type === "info" && e.message.startsWith("💬") ? { ...e, type: "chat" } : e
+          e.type === "info" && (e.message.startsWith("💬") || e.message.startsWith("🤖")) ? { ...e, type: "chat" } : e
         );
         setDrillLogs(normalised);
       })
