@@ -439,6 +439,10 @@ async function handleAgents(res: http.ServerResponse) {
     if (BAK_RE.test(id)) continue;
     if (!agentMap.has(id)) {
       const files = sess.transcriptPath ? listAgentFiles(agentDirFromTranscript(sess.transcriptPath)) : [];
+      // Only surface session-derived entries that have a real agent directory
+      // (at least one markdown file). Tool/CLI sessions (claude-code, gemini,
+      // codex, gemini-cli, etc.) leave transcripts but have no agent files.
+      if (files.length === 0) continue;
       agentMap.set(id, { id, name: id, configured: false, files, lastActiveAt: sess?.updatedAt, nodeHostname: agentNodeMap.get(id) });
     }
   }
