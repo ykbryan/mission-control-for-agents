@@ -41,7 +41,7 @@ type Tab = "events" | "infrastructure" | "agents" | "trends";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "events",         label: "Events"          },
-  { id: "infrastructure", label: "Infrastructure"  },
+  { id: "infrastructure", label: "Gateway"  },
   { id: "agents",         label: "Agent Risk"      },
   { id: "trends",         label: "Live Trends"     },
 ];
@@ -215,7 +215,7 @@ function EventsTab({ events }: { events: AuditEvent[] }) {
       {/* Right: detail panel */}
       <div style={{
         background: "#0f0f12", border: "1px solid #1e1e26", borderRadius: "10px",
-        overflow: "hidden", display: "flex", flexDirection: "column",
+        overflow: "hidden", display: "flex", flexDirection: "column", height: "100%",
       }}>
         {!selected ? (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "12px", color: "#333" }}>
