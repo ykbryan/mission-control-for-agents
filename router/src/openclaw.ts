@@ -280,6 +280,43 @@ export async function getSession(
   return result.messages ?? [];
 }
 
+export interface GatewayCronJob {
+  id: string;
+  name?: string;
+  agentId?: string;
+  scheduleExpression?: string;   // cron expression or human label
+  intervalMs?: number;
+  nextRunAt?: number;
+  lastRunAt?: number;
+  enabled?: boolean;
+  description?: string;
+  [key: string]: unknown;        // OpenClaw may add more fields
+}
+
+/**
+ * Query OpenClaw's internal cron scheduler directly.
+ * Falls back gracefully — returns [] if the gateway doesn't support the tool.
+ */
+export async function listCrons(
+  gatewayUrl: string,
+  gatewayToken: string
+): Promise<GatewayCronJob[]> {
+  // Try several tool names OpenClaw may use for its cron list
+  const candidates = ["crons_list", "cron_list", "crons.list", "scheduler_list"];
+  for (const tool of candidates) {
+    try {
+      const data = await httpInvoke<{ crons?: GatewayCronJob[]; jobs?: GatewayCronJob[]; schedules?: GatewayCronJob[] }>(
+        gatewayUrl, gatewayToken, tool, {}
+      );
+      const jobs = data.crons ?? data.jobs ?? data.schedules ?? [];
+      if (jobs.length > 0 || tool === candidates[candidates.length - 1]) return jobs;
+    } catch {
+      // Tool not supported — try next candidate
+    }
+  }
+  return [];
+}
+
 export async function getAgentFile(
   gatewayUrl: string,
   gatewayToken: string,

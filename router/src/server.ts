@@ -22,6 +22,7 @@ import { randomBytes } from "crypto";
 import {
   listSessions,
   listAgents,
+  listCrons,
   GatewaySession,
   GatewayMessage,
 } from "./openclaw";
@@ -566,6 +567,15 @@ async function handleFile(res: http.ServerResponse, params: URLSearchParams) {
   json(res, 200, { content });
 }
 
+async function handleCronsNative(res: http.ServerResponse) {
+  try {
+    const jobs = await listCrons(OPENCLAW_URL, OPENCLAW_TOKEN);
+    json(res, 200, { jobs });
+  } catch (e) {
+    json(res, 200, { jobs: [], error: String(e) });
+  }
+}
+
 async function handleDebug(res: http.ServerResponse) {
   const out: Record<string, unknown> = {
     gatewayUrl: OPENCLAW_URL,
@@ -783,6 +793,7 @@ const server = http.createServer(async (req, res) => {
     if (urlPath === "/file") { await handleFile(res, params); return; }
     if (urlPath === "/costs") { await handleCosts(res); return; }
     if (urlPath === "/all-sessions") { await handleAllSessions(res); return; }
+    if (urlPath === "/crons-native") { await handleCronsNative(res); return; }
     if (urlPath === "/debug") { await handleDebug(res); return; }
     if (urlPath === "/debug-session") { await handleDebugSession(res, params); return; }
     json(res, 404, { error: "Not found" });

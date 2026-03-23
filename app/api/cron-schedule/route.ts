@@ -157,11 +157,19 @@ export async function GET(req: NextRequest) {
 
   const now = Date.now();
 
-  // 1. Fetch all sessions from all routers ──────────────────────────────────
+  // 1. Fetch all sessions AND native cron list from all routers ───────────────
   interface RouterAllSessions { sessions: RawSession[] }
-  const sessionResults = await Promise.allSettled(
-    routers.map(r => routerGet<RouterAllSessions>(r.url, r.token, "/all-sessions"))
-  );
+  interface NativeCronJob {
+    id: string; name?: string; agentId?: string; scheduleExpression?: string;
+    intervalMs?: number; nextRunAt?: number; lastRunAt?: number; enabled?: boolean;
+    description?: string; [k: string]: unknown;
+  }
+  interface RouterNativeCrons { jobs: NativeCronJob[] }
+
+  const [sessionResults, nativeCronResults] = await Promise.all([
+    Promise.allSettled(routers.map(r => routerGet<RouterAllSessions>(r.url, r.token, "/all-sessions"))),
+    Promise.allSettled(routers.map(r => routerGet<RouterNativeCrons>(r.url, r.token, "/crons-native"))),
+  ]);
 
   // Collect cron sessions per (routerId)
   interface SessionWithRouter extends RawSession { routerId: string; routerLabel: string }
@@ -172,6 +180,59 @@ export async function GET(req: NextRequest) {
     if (result.status !== "fulfilled") continue;
     for (const s of result.value.sessions ?? []) {
       if (s.type === "cron") allCrons.push({ ...s, routerId: r.id, routerLabel: r.label });
+    }
+  }
+
+  // Native crons: jobs registered directly in OpenClaw's scheduler
+  // Convert to ScheduledJob entries and add them if not already covered by a session
+  const existingJobIds = new Set<string>();
+  const nativeOnlyJobs: ScheduledJob[] = [];
+
+  for (let i = 0; i < routers.length; i++) {
+    const r = routers[i];
+    const result = nativeCronResults[i];
+    if (result.status !== "fulfilled") continue;
+    for (const nj of result.value.jobs ?? []) {
+      if (!nj.enabled && nj.enabled !== undefined) continue; // skip disabled
+      const agentId = (nj.agentId ?? "main") as string;
+      const syntheticId = `${agentId}::native::${nj.id}`;
+      existingJobIds.add(syntheticId);
+
+      // Determine validity
+      const intervalMs = nj.intervalMs ?? null;
+      const lastRunAt = nj.lastRunAt ? (nj.lastRunAt < 1e12 ? nj.lastRunAt * 1000 : nj.lastRunAt) : 0;
+      const nextRunAt = nj.nextRunAt ? (nj.nextRunAt < 1e12 ? nj.nextRunAt * 1000 : nj.nextRunAt) : null;
+
+      let validity: JobValidity = "unconfirmed";
+      if (lastRunAt > 0 && intervalMs) {
+        const missedRuns = Math.floor((now - lastRunAt) / intervalMs);
+        if (missedRuns <= 1) validity = "active";
+        else if (missedRuns <= 2) validity = "overdue";
+        else if (missedRuns <= 10) validity = "stale";
+        else validity = "paused";
+      } else if (!lastRunAt) {
+        validity = "unconfirmed";
+      }
+
+      nativeOnlyJobs.push({
+        id: syntheticId,
+        agentId,
+        routerId: r.id,
+        routerLabel: r.label,
+        name: (nj.name as string | undefined) ?? nj.id,
+        description: (nj.description as string | undefined) ?? "",
+        scheduleStr: (nj.scheduleExpression as string | undefined) ?? (intervalMs ? `Every ${Math.round(intervalMs / 60000)}m` : "Scheduled"),
+        intervalMs,
+        nextRunAt,
+        lastRunAt,
+        runCount: 0,
+        avgTokens: 0,
+        totalTokens: 0,
+        isActive: validity === "active",
+        validity,
+        source: "heartbeat",
+        sessionKeys: [],
+      });
     }
   }
 
@@ -194,6 +255,9 @@ export async function GET(req: NextRequest) {
   // 3. Fetch first-event prompt for sample sessions (1 per unique job) ───────
   //    We cluster first by agentId+routerId and group sessions into time-buckets
   //    (sessions within 10 min of each other at the same time-of-day = same job)
+
+  // Global job counter for stable unique IDs
+  let jobSeq = 0;
 
   // Group cron sessions by agent+router, sorted newest-first
   const byAgent = new Map<string, SessionWithRouter[]>();
@@ -323,7 +387,7 @@ export async function GET(req: NextRequest) {
       const validity = computeValidity(clusterSessions.length, interval, nextRunAt, now);
 
       jobs.push({
-        id: `${agentId}::${Buffer.from(promptPrefix.slice(0, 30)).toString("base64").slice(0, 12)}`,
+        id: `${agentId}::job::${jobSeq++}`,
         agentId,
         routerId,
         routerLabel: r.label,
@@ -349,7 +413,7 @@ export async function GET(req: NextRequest) {
       if (!alreadyMatched) {
         const hbInterval = heartbeatScheduleToMs(hb.schedule);
         jobs.push({
-          id: `${agentId}::hb::${Buffer.from(hb.name).toString("base64").slice(0, 12)}`,
+          id: `${agentId}::hb::${jobSeq++}`,
           agentId,
           routerId,
           routerLabel: r.label,
@@ -376,6 +440,13 @@ export async function GET(req: NextRequest) {
     const agentsWithCrons = new Set(allCrons.filter(s => s.routerId === r.id).map(s => s.agentId));
     // We'd need to fetch all agents to check — skip for now to avoid N+1 on all agents
     // This is handled by the HEARTBEAT fetch above
+  }
+
+  // Merge native cron jobs (only those not already represented by a session-inferred job)
+  const sessionJobAgentKeys = new Set(jobs.map(j => `${j.agentId}::${j.routerId}::${j.name}`));
+  for (const nj of nativeOnlyJobs) {
+    const key = `${nj.agentId}::${nj.routerId}::${nj.name}`;
+    if (!sessionJobAgentKeys.has(key)) jobs.push(nj);
   }
 
   // Sort: active first, then by nextRunAt ascending (soonest next), then last run desc
