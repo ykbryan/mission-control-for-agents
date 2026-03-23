@@ -356,7 +356,7 @@ async function handleAgents(res: http.ServerResponse) {
   }
 
   // Merge gateway agents with session-derived ids
-  type AgentEntry = { id: string; name: string; configured: boolean; files: string[]; skills?: string[]; lastActiveAt?: number; tier?: string; nodeHostname?: string };
+  type AgentEntry = { id: string; name: string; configured: boolean; files: string[]; skills?: string[]; soul?: string; lastActiveAt?: number; tier?: string; nodeHostname?: string };
   const agentMap = new Map<string, AgentEntry>();
   for (const a of gatewayAgents) {
     const sess = latestSession.get(a.id);
@@ -398,7 +398,17 @@ async function handleAgents(res: http.ServerResponse) {
       }
       return found.length > 0 ? [...new Set(found)] : undefined;
     })() : undefined;
-    agentMap.set(a.id, { ...a, files, ...(skills ? { skills } : {}), lastActiveAt: sess?.updatedAt, nodeHostname: agentNodeMap.get(a.id) });
+    // Extract a one-line soul from SOUL.md (first non-empty, non-heading line)
+    const soul: string | undefined = agentDir ? (() => {
+      const content = readAgentFile(agentDir, "SOUL.md");
+      if (!content) return undefined;
+      for (const line of content.split("\n")) {
+        const trimmed = line.trim();
+        if (trimmed && !trimmed.startsWith("#")) return trimmed;
+      }
+      return undefined;
+    })() : undefined;
+    agentMap.set(a.id, { ...a, files, ...(skills ? { skills } : {}), ...(soul ? { soul } : {}), lastActiveAt: sess?.updatedAt, nodeHostname: agentNodeMap.get(a.id) });
   }
   for (const [id, sess] of latestSession) {
     if (!agentMap.has(id)) {
