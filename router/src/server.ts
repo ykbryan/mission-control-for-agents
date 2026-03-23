@@ -19,6 +19,7 @@ import http from "http";
 import fs from "fs";
 import path from "path";
 import os from "os";
+import { execSync } from "child_process";
 import { randomBytes } from "crypto";
 import {
   listSessions,
@@ -355,12 +356,49 @@ async function handleAgents(res: http.ServerResponse) {
   }
 
   // Merge gateway agents with session-derived ids
-  type AgentEntry = { id: string; name: string; configured: boolean; files: string[]; lastActiveAt?: number; tier?: string; nodeHostname?: string };
+  type AgentEntry = { id: string; name: string; configured: boolean; files: string[]; skills?: string[]; lastActiveAt?: number; tier?: string; nodeHostname?: string };
   const agentMap = new Map<string, AgentEntry>();
   for (const a of gatewayAgents) {
     const sess = latestSession.get(a.id);
-    const files = sess?.transcriptPath ? listAgentFiles(agentDirFromTranscript(sess.transcriptPath)) : [];
-    agentMap.set(a.id, { ...a, files, lastActiveAt: sess?.updatedAt, nodeHostname: agentNodeMap.get(a.id) });
+    const agentDir: string | null =
+      typeof a.workspaceDir === "string" ? a.workspaceDir
+      : sess?.transcriptPath ? agentDirFromTranscript(sess.transcriptPath)
+      : null;
+    const files = agentDir ? listAgentFiles(agentDir) : [];
+    // Extract skills from TOOLS.md for dynamically discovered agents.
+    // Only treat an identifier as a tool name when it is the PRIMARY subject of a
+    // list item — either the sole content ("- web_search") or the value after a
+    // colon ("- Primary capability: web_search").  This avoids picking up tokens
+    // that appear as prose modifiers ("- Anything environment-specific") or inside
+    // fenced code block examples.
+    const skills = agentDir ? (() => {
+      const content = readAgentFile(agentDir, "TOOLS.md");
+      if (!content) return undefined;
+      // Strip fenced code blocks — they often hold template/example content.
+      const stripped = content.replace(/```[\s\S]*?```/g, "");
+      // Matches compound identifiers (web_search, pdf-reader) OR plain lowercase
+      // words of 2+ chars (pdf, bash, git).  Single letters are excluded to avoid
+      // false positives from stray abbreviations.
+      const TOOL_ID = /^[a-z][a-z0-9]*([_-][a-z0-9][a-z0-9_-]*)*$/;
+      const TOOL_MIN_LEN = 2;
+      const isToolId = (s: string) => TOOL_ID.test(s) && s.length >= TOOL_MIN_LEN;
+      const found: string[] = [];
+      for (const line of stripped.split("\n")) {
+        const m = line.match(/^\s*[-*]\s+(.+)/);
+        if (!m) continue;
+        const item = m[1].trim();
+        // Case 1: the entire list item is a tool identifier  ("- web_search", "- pdf")
+        if (isToolId(item)) { found.push(item); continue; }
+        // Case 2: tool identifier follows the last colon    ("- Label: web_search")
+        const colonIdx = item.lastIndexOf(":");
+        if (colonIdx !== -1) {
+          const after = item.slice(colonIdx + 1).trim();
+          if (isToolId(after)) found.push(after);
+        }
+      }
+      return found.length > 0 ? [...new Set(found)] : undefined;
+    })() : undefined;
+    agentMap.set(a.id, { ...a, files, ...(skills ? { skills } : {}), lastActiveAt: sess?.updatedAt, nodeHostname: agentNodeMap.get(a.id) });
   }
   for (const [id, sess] of latestSession) {
     if (!agentMap.has(id)) {
@@ -565,19 +603,28 @@ async function handleFile(res: http.ServerResponse, params: URLSearchParams) {
   const name = params.get("name");
   if (!agentId || !name) { json(res, 400, { error: "Missing agentId or name" }); return; }
 
-  // Find agent dir from latest session transcriptPath
+  // Find agent dir: prefer session transcriptPath, fall back to workspace dir on disk
   const sessions = await getAllSessions();
   const latestSess = sessions
     .filter((s) => { const p = s.key?.split(":"); return p?.[0] === "agent" && p[1] === agentId; })
     .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))[0];
 
-  if (!latestSess?.transcriptPath) {
-    console.warn(`[router] /file: no transcriptPath for agent=${agentId}`);
-    json(res, 404, { error: `No transcript found for agent "${agentId}"` });
-    return;
+  let agentDir: string | null = latestSess?.transcriptPath
+    ? agentDirFromTranscript(latestSess.transcriptPath)
+    : null;
+
+  // If the transcript-derived dir has no .md files, try workspace-{agentId}/
+  // (new OpenClaw layout where markdown files live in workspace-{id}/ not agents/{id}/)
+  if (!agentDir || listAgentFiles(agentDir).length === 0) {
+    const wsDir = path.join(os.homedir(), ".openclaw", `workspace-${agentId}`);
+    if (fs.existsSync(wsDir) && listAgentFiles(wsDir).length > 0) agentDir = wsDir;
   }
 
-  const agentDir = agentDirFromTranscript(latestSess.transcriptPath);
+  if (!agentDir) {
+    console.warn(`[router] /file: no dir found for agent=${agentId}`);
+    json(res, 404, { error: `No files found for agent "${agentId}"` });
+    return;
+  }
   const filesOnDisk = listAgentFiles(agentDir);
   console.log(`[router] /file agent=${agentId} dir=${agentDir} filesOnDisk=${filesOnDisk.join(",") || "none"} requested=${name}`);
 
@@ -616,6 +663,21 @@ async function handleCronsNative(res: http.ServerResponse) {
   json(res, 200, { jobs });
 }
 
+// Cache the OpenClaw version so we only shell out once per process lifetime
+let _openclawVersion: string | null = null;
+function getOpenClawVersion(): string {
+  if (_openclawVersion !== null) return _openclawVersion;
+  try {
+    const out = execSync("openclaw --version 2>/dev/null", { timeout: 3000 }).toString().trim();
+    // "OpenClaw 2026.3.13 (61d171a)"  →  "2026.3.13"
+    const m = out.match(/(\d{4}\.\d+\.\d+)/);
+    _openclawVersion = m ? m[1] : out.split(" ")[1] ?? "unknown";
+  } catch {
+    _openclawVersion = "unknown";
+  }
+  return _openclawVersion;
+}
+
 async function handleInfo(res: http.ServerResponse) {
   const cpus = os.cpus();
   const totalMemGb = Math.round(os.totalmem() / (1024 ** 3) * 10) / 10;
@@ -650,6 +712,7 @@ async function handleInfo(res: http.ServerResponse) {
         return (require("../package.json") as { version: string }).version;
       } catch { return "unknown"; }
     })(),
+    openclawVersion: getOpenClawVersion(),
   });
 }
 
@@ -747,7 +810,6 @@ async function handleCosts(res: http.ServerResponse) {
     agentId,
     totalTokens,
     estimatedCost: estimateCost(totalTokens, agentModel.get(agentId) ?? ""),
-    model: agentModel.get(agentId),
   }));
   costs.sort((a, b) => b.totalTokens - a.totalTokens);
 

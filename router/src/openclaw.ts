@@ -8,6 +8,9 @@ import WebSocket from "ws";
 import { randomUUID } from "crypto";
 import { subtle } from "crypto";
 import type { webcrypto } from "crypto";
+import * as fs from "fs";
+import * as path from "path";
+import * as os from "os";
 
 // ---------------------------------------------------------------------------
 // Ed25519 device identity (cached for process lifetime)
@@ -194,6 +197,8 @@ export async function gatewayRpc<T = unknown>(
 
 // ---------------------------------------------------------------------------
 // HTTP helpers (sessions_list, agents_list via POST /tools/invoke)
+// Some OpenClaw versions (2026.x+) removed /tools/invoke; those use WebSocket
+// RPC exclusively. invoke() tries HTTP first, falls back to WebSocket RPC.
 // ---------------------------------------------------------------------------
 
 async function httpInvoke<T>(
@@ -216,6 +221,30 @@ async function httpInvoke<T>(
   if (!data.ok) throw new Error(`Tool error: ${tool}`);
   const text = data.result?.content?.[0]?.text ?? "{}";
   return JSON.parse(text) as T;
+}
+
+/**
+ * Unified invoke: tries HTTP /tools/invoke first (older OpenClaw).
+ * On 404 falls back to WebSocket RPC using dot-notation method names
+ * (e.g. "sessions_list" → "sessions.list") for OpenClaw 2026.x+.
+ */
+async function invoke<T>(
+  gatewayUrl: string,
+  gatewayToken: string,
+  tool: string,
+  args: Record<string, unknown> = {}
+): Promise<T> {
+  try {
+    return await httpInvoke<T>(gatewayUrl, gatewayToken, tool, args);
+  } catch (err) {
+    if (err instanceof Error && err.message.includes("HTTP 404")) {
+      // /tools/invoke not available — fall back to WebSocket RPC.
+      // Convert snake_case tool name to dot-notation RPC method.
+      const rpcMethod = tool.replace(/_/g, ".");
+      return gatewayRpc<T>(gatewayUrl, gatewayToken, rpcMethod, args);
+    }
+    throw err;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -265,7 +294,7 @@ export async function listNodes(
   const candidates = ["nodes_list", "node_list", "workers_list", "machines_list", "hosts_list"];
   for (const tool of candidates) {
     try {
-      const data = await httpInvoke<{
+      const data = await invoke<{
         nodes?: GatewayNode[];
         workers?: GatewayNode[];
         machines?: GatewayNode[];
@@ -278,24 +307,220 @@ export async function listNodes(
   return [];
 }
 
+// ---------------------------------------------------------------------------
+// Filesystem fallbacks — used when the gateway API is unreachable.
+//
+// Primary agent dirs: ~/.openclaw/agents/{agentId}/
+// Extra dirs at root (e.g. workspace-spin) may contain sessions for a
+// *different* agent ID — we read session keys to find the real agent ID, and
+// only promote the dir to a new agent entry if that ID isn't already covered
+// by ~/.openclaw/agents/.  A workspace dir whose sessions belong to an agent
+// that already exists in agents/ (e.g. workspace/ → main) is silently ignored
+// for agent-listing purposes but still contributes its sessions.
+// ---------------------------------------------------------------------------
+
+const OPENCLAW_ROOT = path.join(os.homedir(), ".openclaw");
+const AGENT_MD_FILES = ["IDENTITY.md", "SOUL.md", "TOOLS.md", "HEARTBEAT.md", "AGENTS.md"];
+
+/** Read the first session key from sessions.json and return the agentId embedded in it.
+ *  Session keys use the format "agent:{agentId}:...". Returns null if unreadable. */
+function agentIdFromSessionsJson(indexPath: string): string | null {
+  try {
+    const index = JSON.parse(fs.readFileSync(indexPath, "utf8")) as Record<string, unknown>;
+    const firstKey = Object.keys(index)[0];
+    if (firstKey) {
+      const parts = firstKey.split(":");
+      if (parts[0] === "agent" && parts[1]) return parts[1];
+    }
+  } catch { /* fall through */ }
+  return null;
+}
+
+function listSessionsFromDisk(): GatewaySession[] {
+  const sessions: GatewaySession[] = [];
+  if (!fs.existsSync(OPENCLAW_ROOT)) return sessions;
+
+  // Build a map of dir → agentId for normalization.
+  // agents/{id}/ → id; workspace-{id}/ → id
+  const dirsToScan: Array<{ dir: string; agentId: string | null }> = [];
+
+  const agentsDir = path.join(OPENCLAW_ROOT, "agents");
+  if (fs.existsSync(agentsDir)) {
+    try {
+      for (const entry of fs.readdirSync(agentsDir)) {
+        const d = path.join(agentsDir, entry);
+        try { if (fs.statSync(d).isDirectory()) dirsToScan.push({ dir: d, agentId: entry }); } catch { /* skip */ }
+      }
+    } catch { /* skip */ }
+  }
+
+  try {
+    for (const entry of fs.readdirSync(OPENCLAW_ROOT)) {
+      const d = path.join(OPENCLAW_ROOT, entry);
+      try {
+        if (!fs.statSync(d).isDirectory()) continue;
+        if (!fs.existsSync(path.join(d, "sessions", "sessions.json"))) continue;
+        if (dirsToScan.some(x => x.dir === d)) continue; // already added
+        // Derive agentId from workspace-{name} pattern; null for other dirs
+        const agentId = entry.startsWith("workspace-") ? entry.slice("workspace-".length) : null;
+        dirsToScan.push({ dir: d, agentId });
+      } catch { /* skip */ }
+    }
+  } catch { /* skip */ }
+
+  for (const { dir, agentId } of dirsToScan) {
+    const sessionsDir = path.join(dir, "sessions");
+    const indexPath = path.join(sessionsDir, "sessions.json");
+    const knownSessionFiles = new Set<string>();
+
+    if (fs.existsSync(indexPath)) {
+      try {
+        type Entry = { sessionFile?: string; updatedAt?: number; totalTokens?: number };
+        const index = JSON.parse(fs.readFileSync(indexPath, "utf8")) as Record<string, Entry>;
+        for (const [key, meta] of Object.entries(index)) {
+          if (!meta.sessionFile) continue;
+          knownSessionFiles.add(meta.sessionFile);
+          let updatedAt = meta.updatedAt;
+          if (!updatedAt) {
+            try { updatedAt = fs.statSync(meta.sessionFile).mtimeMs; } catch { /* skip */ }
+          }
+          // Ensure the key starts with "agent:{agentId}:" so handleAgents can
+          // resolve the transcriptPath → files mapping correctly.
+          const normKey = key.startsWith("agent:") ? key
+            : agentId ? `agent:${agentId}:${key}`
+            : key;
+          sessions.push({ key: normKey, transcriptPath: meta.sessionFile, totalTokens: meta.totalTokens ?? 0, updatedAt });
+        }
+      } catch { /* skip */ }
+    }
+
+    // Also surface soft-deleted / compacted transcripts ({uuid}.jsonl.deleted.{ts}).
+    // OpenClaw renames the active transcript during compaction; these files still
+    // hold the full conversation history and should be shown so the sessions list
+    // is never empty due to compaction.
+    if (!fs.existsSync(sessionsDir)) continue;
+    try {
+      for (const file of fs.readdirSync(sessionsDir)) {
+        const m = file.match(/^([0-9a-f-]{36})\.jsonl\.deleted\./);
+        if (!m) continue;
+        const filePath = path.join(sessionsDir, file);
+        if (knownSessionFiles.has(filePath)) continue;
+        let updatedAt: number;
+        try { updatedAt = fs.statSync(filePath).mtimeMs; } catch { continue; }
+        const uuid = m[1];
+        const key = agentId ? `agent:${agentId}:session:${uuid}` : `session:${uuid}`;
+        sessions.push({ key, transcriptPath: filePath, totalTokens: 0, updatedAt });
+      }
+    } catch { /* skip */ }
+  }
+  return sessions;
+}
+
+function listAgentsFromDisk(): GatewayAgent[] {
+  if (!fs.existsSync(OPENCLAW_ROOT)) return [];
+
+  // Step 1: collect agents from ~/.openclaw/agents/{id}/ (legacy layout).
+  // These dirs may be empty stubs — the actual markdown files live in
+  // workspace-{id}/ in newer OpenClaw installs.
+  const agentMap = new Map<string, GatewayAgent>();
+  const agentsDir = path.join(OPENCLAW_ROOT, "agents");
+  if (fs.existsSync(agentsDir)) {
+    try {
+      for (const entry of fs.readdirSync(agentsDir)) {
+        const dir = path.join(agentsDir, entry);
+        try { if (!fs.statSync(dir).isDirectory()) continue; } catch { continue; }
+        agentMap.set(entry, {
+          id: entry,
+          name: entry,
+          configured: AGENT_MD_FILES.some(f => fs.existsSync(path.join(dir, f))),
+        });
+      }
+    } catch { /* skip */ }
+  }
+
+  // Step 2: scan root-level workspace-{name}/ dirs (new layout).
+  // - If the agent is already known from step 1, enrich it with workspaceDir
+  //   so handleAgents can find the markdown files even if agents/{id}/ is empty.
+  // - If the agent is new, register it as a fresh entry.
+  // Plain "workspace" (no suffix after stripping) is skipped.
+  try {
+    for (const entry of fs.readdirSync(OPENCLAW_ROOT)) {
+      if (!entry.startsWith("workspace-")) continue;
+      const agentId = entry.slice("workspace-".length);
+      if (!agentId) continue;
+
+      const dir = path.join(OPENCLAW_ROOT, entry);
+      try { if (!fs.statSync(dir).isDirectory()) continue; } catch { continue; }
+
+      const hasMdFiles = AGENT_MD_FILES.some(f => fs.existsSync(path.join(dir, f)));
+      const hasSessions = fs.existsSync(path.join(dir, "sessions", "sessions.json"));
+      if (!hasMdFiles && !hasSessions) continue;
+
+      const existing = agentMap.get(agentId);
+      if (existing) {
+        // Enrich known agent with workspaceDir (files are here, not in agents/)
+        agentMap.set(agentId, { ...existing, workspaceDir: dir, configured: hasMdFiles || existing.configured });
+      } else {
+        agentMap.set(agentId, { id: agentId, name: agentId, configured: hasMdFiles, workspaceDir: dir });
+      }
+    }
+  } catch { /* skip */ }
+
+  return Array.from(agentMap.values());
+}
+
 export async function listSessions(
   gatewayUrl: string,
   gatewayToken: string
 ): Promise<GatewaySession[]> {
-  const data = await httpInvoke<{ sessions: GatewaySession[] }>(
-    gatewayUrl, gatewayToken, "sessions_list", { limit: 500 }
-  );
-  return data.sessions ?? [];
+  let apiSessions: GatewaySession[] = [];
+  try {
+    const data = await invoke<{ sessions: GatewaySession[] }>(
+      gatewayUrl, gatewayToken, "sessions_list", { limit: 500 }
+    );
+    apiSessions = data.sessions ?? [];
+  } catch {
+    console.log("[openclaw] sessions API unavailable, falling back to disk scan");
+  }
+
+  // Always supplement with sessions from workspace-{name}/ dirs on disk.
+  // The API may not know about workspace-based agents.
+  const diskSessions = listSessionsFromDisk();
+  const apiKeys = new Set(apiSessions.map(s => s.key));
+  const extra = diskSessions.filter(s => !apiKeys.has(s.key));
+
+  return apiSessions.length > 0 ? [...apiSessions, ...extra] : diskSessions;
 }
 
 export async function listAgents(
   gatewayUrl: string,
   gatewayToken: string
 ): Promise<GatewayAgent[]> {
-  const data = await httpInvoke<{ agents: GatewayAgent[] }>(
-    gatewayUrl, gatewayToken, "agents_list", {}
-  );
-  return data.agents ?? [];
+  let apiAgents: GatewayAgent[] = [];
+  try {
+    const data = await invoke<{ agents: GatewayAgent[] }>(
+      gatewayUrl, gatewayToken, "agents_list", {}
+    );
+    apiAgents = data.agents ?? [];
+  } catch {
+    console.log("[openclaw] agents API unavailable, falling back to disk scan");
+  }
+
+  // Merge API agents with disk agents.
+  // If both sources know about the same agent, enrich the API entry with the
+  // disk workspaceDir so handleAgents can find the markdown files directly,
+  // even when the API's transcript path points to agents/ (no .md files there).
+  const diskAgents = listAgentsFromDisk();
+  const diskMap = new Map(diskAgents.map(a => [a.id, a]));
+  const apiIds = new Set(apiAgents.map(a => a.id));
+
+  const enriched = apiAgents.map(a => {
+    const disk = diskMap.get(a.id);
+    return disk?.workspaceDir ? { ...a, workspaceDir: disk.workspaceDir } : a;
+  });
+  const extra = diskAgents.filter(a => !apiIds.has(a.id));
+
+  return enriched.length > 0 ? [...enriched, ...extra] : diskAgents;
 }
 
 export interface GatewayMessage {

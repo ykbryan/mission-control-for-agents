@@ -39,7 +39,7 @@ export default function LoginPage() {
       const res = await fetch("/api/auth/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ routerUrl: url, routerToken: token }),
+        body: JSON.stringify({ routerUrl: url.trim(), routerToken: token.trim() }),
       });
       if (!res.ok) {
         const data = await res.json();

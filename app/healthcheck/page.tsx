@@ -14,7 +14,8 @@ import type {
   AuditCategory,
   RouterHealthSnapshot,
   AgentRiskEntry,
-} from "@/app/api/audit/events/route";
+} from "@/app/api/healthcheck/events/route";
+import type { SecurityAuditResponse, SecurityCheck } from "@/app/api/healthcheck/audit/route";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -38,13 +39,14 @@ const CAT_COLOR: Record<AuditCategory, string> = {
   access:       "#ef4444",
 };
 
-type Tab = "events" | "infrastructure" | "agents" | "trends";
+type Tab = "events" | "infrastructure" | "agents" | "trends" | "audit";
 
 const TABS: { id: Tab; label: string }[] = [
-  { id: "events",         label: "Events"          },
-  { id: "infrastructure", label: "Gateway"  },
-  { id: "agents",         label: "Agent Risk"      },
-  { id: "trends",         label: "Live Trends"     },
+  { id: "events",         label: "Events"      },
+  { id: "infrastructure", label: "Gateway"     },
+  { id: "agents",         label: "Agent Risk"  },
+  { id: "trends",         label: "Live Trends" },
+  { id: "audit",          label: "Audit"       },
 ];
 
 const SEV_ALL: AuditSeverity[] = ["critical", "high", "medium", "low", "info"];
@@ -133,7 +135,7 @@ function Skeleton() {
   return (
     <div style={{ minHeight: "100vh", background: "#060608", display: "flex", alignItems: "center", justifyContent: "center" }}>
       <p style={{ color: ORANGE, fontFamily: "ui-monospace,monospace", fontSize: "13px", opacity: 0.7 }}>
-        Running security audit…
+        Running healthcheck…
       </p>
     </div>
   );
@@ -151,6 +153,9 @@ function EventsTab({ events, agentRisk }: { events: AuditEvent[]; agentRisk: Age
   const filtered = sevFilter === "all" ? events : events.filter(e => e.severity === sevFilter);
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageEvents = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+
+  // Always show the first event if nothing is explicitly selected
+  const effectiveSelected = selected ?? events[0] ?? null;
 
   const handleFilter = (s: AuditSeverity | "all") => { setSevFilter(s); setPage(0); };
 
@@ -190,8 +195,8 @@ function EventsTab({ events, agentRisk }: { events: AuditEvent[]; agentRisk: Age
               key={evt.id}
               onClick={() => setSelected(evt)}
               style={{
-                background: selected?.id === evt.id ? "#16161f" : "#0f0f12",
-                border: `1px solid ${selected?.id === evt.id ? SEV_COLOR[evt.severity] + "55" : "#1e1e26"}`,
+                background: effectiveSelected?.id === evt.id ? "#16161f" : "#0f0f12",
+                border: `1px solid ${effectiveSelected?.id === evt.id ? SEV_COLOR[evt.severity] + "55" : "#1e1e26"}`,
                 borderLeft: `3px solid ${SEV_COLOR[evt.severity]}`,
                 borderRadius: "8px",
                 padding: "12px 16px",
@@ -254,29 +259,29 @@ function EventsTab({ events, agentRisk }: { events: AuditEvent[]; agentRisk: Age
         overflow: "hidden", display: "flex", flexDirection: "column",
         minHeight: "420px",
       }}>
-        {!selected ? (
+        {!effectiveSelected ? (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "12px", color: "#333", padding: "48px 0" }}>
             <span style={{ fontSize: "32px" }}>🔍</span>
             <p style={{ fontSize: "12px", margin: 0 }}>Select an event to inspect</p>
           </div>
         ) : (() => {
-          const agent = selected.agentId ? agentRisk.find(a => a.agentId === selected.agentId) : null;
+          const agent = effectiveSelected.agentId ? agentRisk.find(a => a.agentId === effectiveSelected.agentId) : null;
           return (
             <div style={{ padding: "20px", overflowY: "auto" }}>
               <div style={{ display: "flex", gap: "8px", marginBottom: "12px", flexWrap: "wrap" }}>
-                <SeverityBadge sev={selected.severity} />
-                <CategoryBadge cat={selected.category} />
+                <SeverityBadge sev={effectiveSelected.severity} />
+                <CategoryBadge cat={effectiveSelected.category} />
               </div>
-              <h3 style={{ margin: "0 0 8px", fontSize: "15px", fontWeight: 700, color: "#f0f0f0", lineHeight: "1.3" }}>{selected.title}</h3>
-              <p style={{ margin: "0 0 16px", fontSize: "12px", color: "#888", lineHeight: "1.6" }}>{selected.detail}</p>
+              <h3 style={{ margin: "0 0 8px", fontSize: "15px", fontWeight: 700, color: "#f0f0f0", lineHeight: "1.3" }}>{effectiveSelected.title}</h3>
+              <p style={{ margin: "0 0 16px", fontSize: "12px", color: "#888", lineHeight: "1.6" }}>{effectiveSelected.detail}</p>
 
               {/* Meta grid */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "16px" }}>
                 {[
-                  ["Router", selected.routerLabel],
-                  ["Agent", selected.agentId ?? "—"],
-                  ["Detected", new Date(selected.detectedAt).toLocaleTimeString()],
-                  ["Event ID", selected.id.slice(0, 22) + "…"],
+                  ["Router", effectiveSelected.routerLabel],
+                  ["Agent", effectiveSelected.agentId ?? "—"],
+                  ["Detected", new Date(effectiveSelected.detectedAt).toLocaleTimeString()],
+                  ["Event ID", effectiveSelected.id.slice(0, 22) + "…"],
                 ].map(([k, v]) => (
                   <div key={k} style={{ background: "#080810", border: "1px solid #1a1a22", borderRadius: "6px", padding: "8px 10px" }}>
                     <p style={{ margin: "0 0 2px", fontSize: "9px", color: "#444", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>{k}</p>
@@ -351,7 +356,7 @@ function EventsTab({ events, agentRisk }: { events: AuditEvent[]; agentRisk: Age
               <div style={{ background: "#080810", border: "1px solid #1a1a22", borderRadius: "6px", overflow: "hidden" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px" }}>
                   <tbody>
-                    {Object.entries(selected.evidence).map(([k, v]) => (
+                    {Object.entries(effectiveSelected.evidence).map(([k, v]) => (
                       <tr key={k} style={{ borderBottom: "1px solid #12121a" }}>
                         <td style={{ padding: "7px 12px", color: "#555", fontWeight: 600, whiteSpace: "nowrap", width: "40%" }}>{k}</td>
                         <td style={{ padding: "7px 12px", color: "#aaa", fontFamily: "ui-monospace,monospace", wordBreak: "break-all" }}>
@@ -366,6 +371,276 @@ function EventsTab({ events, agentRisk }: { events: AuditEvent[]; agentRisk: Age
           );
         })()}
       </div>
+    </div>
+  );
+}
+
+// ── Audit Tab ─────────────────────────────────────────────────────────────────
+
+const CHECK_META = [
+  { id: "main-agent",         icon: "🔑", title: "Main agent usage"          },
+  { id: "skill-count",        icon: "⚡", title: "Over-privileged agents"    },
+  { id: "exec-privilege",     icon: "🖥️", title: "Exec / shell privilege"    },
+  { id: "credentials",        icon: "🔐", title: "Credentials in plaintext"  },
+  { id: "subagent-creation",  icon: "🤖", title: "Subagent creation control" },
+  { id: "suspicious-content", icon: "🔍", title: "Suspicious content scan"   },
+];
+
+function CheckCard({ check, isScanning, scanIndex, myIndex }: {
+  check: SecurityCheck | null;
+  isScanning: boolean;
+  scanIndex: number;
+  myIndex: number;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const meta = CHECK_META[myIndex];
+  const isActive  = isScanning && scanIndex === myIndex;
+  const isPending = isScanning && scanIndex < myIndex;
+  const isDone    = !isScanning && check !== null;
+
+  const statusColor =
+    !check           ? "#333"
+    : check.status === "pass" ? "#22c55e"
+    : check.status === "warn" ? "#f59e0b"
+    : "#ef4444";
+  const statusLabel = !check ? "" : check.status === "pass" ? "PASS" : check.status === "warn" ? "WARN" : "FAIL";
+  const statusIcon  = !check ? "" : check.status === "pass" ? "✓" : check.status === "warn" ? "⚠" : "✗";
+  const hasFindings = isDone && (check?.findings.length ?? 0) > 0;
+
+  return (
+    <div style={{
+      background: "#0f0f12",
+      borderTop:    `1px solid ${isDone ? statusColor + "44" : isActive ? ORANGE + "44" : "#1e1e26"}`,
+      borderRight:  `1px solid ${isDone ? statusColor + "44" : isActive ? ORANGE + "44" : "#1e1e26"}`,
+      borderBottom: `1px solid ${isDone ? statusColor + "44" : isActive ? ORANGE + "44" : "#1e1e26"}`,
+      borderLeft:   `3px solid ${isDone ? statusColor : isActive ? ORANGE : "#1e1e26"}`,
+      borderRadius: "8px", overflow: "hidden",
+      opacity: isPending ? 0.35 : 1,
+      transition: "all 0.3s",
+    }}>
+      <div
+        onClick={() => hasFindings && setExpanded(e => !e)}
+        style={{
+          display: "flex", alignItems: "center", gap: "12px",
+          padding: "14px 16px",
+          cursor: hasFindings ? "pointer" : "default",
+        }}
+      >
+        <span style={{
+          width: "24px", height: "24px", borderRadius: "6px", flexShrink: 0,
+          background: isDone ? statusColor + "22" : "#1a1a22",
+          color: isDone ? statusColor : "#333",
+          fontSize: "11px", fontWeight: 700,
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>{myIndex + 1}</span>
+
+        <span style={{ fontSize: "15px", flexShrink: 0 }}>{meta.icon}</span>
+        <span style={{ fontSize: "13px", fontWeight: 600, flex: 1, color: isDone ? "#e0e0e0" : isPending ? "#333" : "#888" }}>
+          {meta.title}
+        </span>
+
+        {isActive && (
+          <span style={{ fontSize: "11px", color: ORANGE, fontFamily: "ui-monospace,monospace", animation: "pulse 1s infinite" }}>
+            scanning…
+          </span>
+        )}
+        {isDone && (
+          <span style={{
+            fontSize: "10px", fontWeight: 700, padding: "3px 9px", borderRadius: "4px",
+            background: statusColor + "22", color: statusColor,
+            border: `1px solid ${statusColor}44`, letterSpacing: "0.06em",
+          }}>
+            {statusIcon} {statusLabel}
+          </span>
+        )}
+        {hasFindings && (
+          <span style={{
+            fontSize: "10px", fontWeight: 700, padding: "2px 7px",
+            borderRadius: "10px", background: "#1a1a22", color: "#555",
+          }}>
+            {check!.findings.length} {expanded ? "▲" : "▼"}
+          </span>
+        )}
+        {isDone && !hasFindings && (
+          <span style={{ fontSize: "11px", color: "#333", fontFamily: "ui-monospace,monospace" }}>
+            {check!.passLabel}
+          </span>
+        )}
+      </div>
+
+      {expanded && isDone && (
+        <div style={{ borderTop: "1px solid #1a1a22", padding: "12px 16px", display: "flex", flexDirection: "column", gap: "8px" }}>
+          {check!.findings.map((f, idx) => (
+            <div key={idx} style={{ background: "#080810", border: "1px solid #1a1a22", borderRadius: "6px", padding: "10px 12px" }}>
+              <p style={{ margin: "0 0 4px", fontSize: "12px", color: "#ccc", lineHeight: 1.5 }}>{f.detail}</p>
+              {f.snippet && (
+                <code style={{
+                  display: "block", fontSize: "10px", color: "#f97316",
+                  fontFamily: "ui-monospace,monospace",
+                  background: "#0a0a14", padding: "4px 8px", borderRadius: "4px", marginTop: "4px",
+                }}>
+                  {f.snippet}
+                </code>
+              )}
+            </div>
+          ))}
+          <div style={{ padding: "10px 12px", background: "#0a0a14", borderRadius: "6px", border: "1px solid #1a1a22" }}>
+            <p style={{ margin: 0, fontSize: "11px", color: "#555", lineHeight: 1.5 }}>
+              💡 {check!.recommendation}
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AuditTab() {
+  const [phase, setPhase]       = useState<"idle" | "scanning" | "done">("idle");
+  const [scanIndex, setScanIndex] = useState(-1);
+  const [progress, setProgress] = useState(0);
+  const [result, setResult]     = useState<SecurityAuditResponse | null>(null);
+  const [error, setError]       = useState<string | null>(null);
+
+  async function runAudit() {
+    setPhase("scanning");
+    setScanIndex(0);
+    setProgress(0);
+    setResult(null);
+    setError(null);
+
+    const fetchPromise = fetch("/api/healthcheck/audit").then(async r => {
+      if (!r.ok) throw new Error(`Audit failed (${r.status})`);
+      return r.json() as Promise<SecurityAuditResponse>;
+    });
+
+    for (let i = 0; i < 6; i++) {
+      setScanIndex(i);
+      setProgress(Math.round(((i + 0.7) / 6) * 100));
+      await new Promise(res => setTimeout(res, 520));
+    }
+    setProgress(98);
+
+    try {
+      const data = await fetchPromise;
+      setResult(data);
+      setProgress(100);
+      setPhase("done");
+    } catch (e: any) {
+      setError(e.message ?? "Audit failed");
+      setPhase("idle");
+    }
+  }
+
+  const overallColor =
+    !result                           ? ORANGE
+    : result.overallStatus === "pass" ? "#22c55e"
+    : result.overallStatus === "warn" ? "#f59e0b"
+    : "#ef4444";
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+      <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }`}</style>
+
+      {/* Header card */}
+      <div style={{
+        background: "#0f0f12", border: "1px solid #1e1e26", borderRadius: "10px",
+        padding: "22px 28px", display: "flex", alignItems: "center", gap: "24px",
+      }}>
+        <div style={{ flex: 1 }}>
+          {phase === "idle" && (
+            <>
+              <h2 style={{ margin: "0 0 6px", fontSize: "16px", fontWeight: 700, color: "#f0f0f0" }}>
+                🛡️ Security Audit
+              </h2>
+              <p style={{ margin: 0, fontSize: "13px", color: "#555", lineHeight: "1.6" }}>
+                Runs 6 targeted checks across all agents and their config files — covering privilege abuse, plaintext secrets, prompt injection, exec access, and subagent control.
+              </p>
+            </>
+          )}
+          {phase === "scanning" && (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
+                <span style={{ fontSize: "12px", color: "#888" }}>
+                  Running check {Math.min(scanIndex + 1, 6)} of 6…
+                </span>
+                <span style={{ fontSize: "12px", color: ORANGE, fontFamily: "ui-monospace,monospace" }}>{progress}%</span>
+              </div>
+              <div style={{ height: "6px", background: "#1a1a22", borderRadius: "3px", overflow: "hidden" }}>
+                <div style={{
+                  height: "100%", borderRadius: "3px",
+                  background: `linear-gradient(90deg, ${ORANGE}, #f97316)`,
+                  width: `${progress}%`, transition: "width 0.45s ease",
+                }} />
+              </div>
+            </>
+          )}
+          {phase === "done" && result && (
+            <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
+              <div>
+                <h2 style={{ margin: "0 0 4px", fontSize: "16px", fontWeight: 700, color: "#f0f0f0" }}>Audit Complete</h2>
+                <p style={{ margin: 0, fontSize: "12px", color: "#555" }}>
+                  {result.agentsScanned} agents · {result.filesScanned} files · {new Date(result.runAt).toLocaleTimeString()}
+                </p>
+              </div>
+              <div style={{
+                marginLeft: "auto", padding: "8px 18px",
+                background: overallColor + "18", border: `1px solid ${overallColor}44`, borderRadius: "8px",
+              }}>
+                <p style={{ margin: "0 0 1px", fontSize: "9px", color: "#555", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em" }}>Overall</p>
+                <p style={{ margin: 0, fontSize: "18px", fontWeight: 800, color: overallColor }}>
+                  {result.overallStatus.toUpperCase()}
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {phase === "idle" && (
+          <button
+            onClick={runAudit}
+            style={{
+              padding: "10px 24px", background: ORANGE, border: "none",
+              borderRadius: "8px", color: "#fff", fontSize: "13px",
+              fontWeight: 700, cursor: "pointer", flexShrink: 0,
+            }}
+          >
+            Run Audit
+          </button>
+        )}
+        {phase === "done" && (
+          <button
+            onClick={runAudit}
+            style={{
+              padding: "8px 18px", background: "transparent", border: "1px solid #1e1e26",
+              borderRadius: "8px", color: "#555", fontSize: "12px",
+              cursor: "pointer", flexShrink: 0,
+            }}
+          >
+            Re-run
+          </button>
+        )}
+      </div>
+
+      {error && (
+        <div style={{ padding: "12px 16px", background: "#1a0808", border: "1px solid #ef444444", borderRadius: "8px" }}>
+          <p style={{ margin: 0, fontSize: "12px", color: "#ef4444" }}>{error}</p>
+        </div>
+      )}
+
+      {(phase === "scanning" || phase === "done") && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          {CHECK_META.map((meta, idx) => (
+            <CheckCard
+              key={meta.id}
+              myIndex={idx}
+              isScanning={phase === "scanning"}
+              scanIndex={scanIndex}
+              check={result?.checks.find(c => c.id === meta.id) ?? null}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -688,7 +963,7 @@ export default function AuditPage() {
   const fetchData = useCallback(async (silent = false) => {
     if (!silent) setRefreshing(true);
     try {
-      const res = await fetch("/api/audit/events");
+      const res = await fetch("/api/healthcheck/events");
       if (!res.ok) throw new Error(`Audit API error: ${res.status}`);
       const json: AuditEventsResponse = await res.json();
       setData(json);
@@ -778,7 +1053,7 @@ export default function AuditPage() {
 
       {/* Body */}
       <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
-        <NavRail activeView="audit" onViewChange={(v) => {
+        <NavRail activeView="healthcheck" onViewChange={(v) => {
           if (v === "mission") window.location.href = "/";
           if (v === "swarms") window.location.href = "/teams";
           if (v === "activities") window.location.href = "/activities";
@@ -864,6 +1139,7 @@ export default function AuditPage() {
             {tab === "infrastructure" && data && <InfrastructureTab routers={data.routers} />}
             {tab === "agents" && data && <AgentRiskTab agents={data.agentRisk} />}
             {tab === "trends" && data && <LiveTrendsTab data={data} />}
+            {tab === "audit" && <AuditTab />}
 
           </div>
         </div>

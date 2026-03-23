@@ -1,0 +1,375 @@
+import { NextRequest, NextResponse } from "next/server";
+import { routerGet } from "@/lib/router-client";
+import { parseRouters } from "@/lib/router-config";
+
+export const dynamic = "force-dynamic";
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+export interface AuditFinding {
+  agentId: string;
+  agentName: string;
+  detail: string;
+  snippet?: string;
+  file?: string;
+}
+
+export interface SecurityCheck {
+  id: string;
+  number: number;
+  title: string;
+  description: string;
+  status: "pass" | "warn" | "fail";
+  severity: "critical" | "high" | "medium" | "info";
+  findings: AuditFinding[];
+  recommendation: string;
+  passLabel: string;
+}
+
+export interface SecurityAuditResponse {
+  checks: SecurityCheck[];
+  overallStatus: "pass" | "warn" | "fail";
+  runAt: number;
+  agentsScanned: number;
+  filesScanned: number;
+}
+
+interface RouterAgent {
+  id: string;
+  name: string;
+  configured: boolean;
+  files?: string[];
+  skills?: string[];
+  tier?: string;
+  lastActiveAt?: number;
+  routerId: string;
+  routerLabel: string;
+}
+
+// ── Detection patterns ────────────────────────────────────────────────────────
+
+const CREDENTIAL_PATTERNS: Array<{ re: RegExp; label: string }> = [
+  { re: /sk-[A-Za-z0-9]{20,}/g, label: "API key (sk- prefix)" },
+  { re: /AKIA[A-Z0-9]{16}/g, label: "AWS Access Key ID" },
+  { re: /ghp_[A-Za-z0-9]{36}/g, label: "GitHub Personal Access Token" },
+  { re: /-----BEGIN (?:RSA |EC |DSA )?PRIVATE KEY-----/g, label: "Embedded private key" },
+  {
+    re: /(?:password|passwd|pwd)\s*[:=]\s*(?!(?:xxx|your|change|placeholder|example|test|sample|fake|demo|todo|none|null|empty|redact|<|{|\[))\S{6,}/gi,
+    label: "Plaintext password",
+  },
+  {
+    re: /(?:api[_\s-]?key|secret[_\s-]?key|access[_\s-]?key)\s*[:=]\s*(?!(?:xxx|your|change|placeholder|example|test|sample|fake|demo|<|{|\[))\S{8,}/gi,
+    label: "API / Secret key",
+  },
+  {
+    re: /(?:bearer|auth[_\s-]?token)\s*[:=]\s*(?!(?:xxx|your|change|placeholder|example|test|sample|fake|demo|none|null|<|{|\[))\S{12,}/gi,
+    label: "Auth token",
+  },
+];
+
+const SUBAGENT_PATTERNS: RegExp[] = [
+  /(?:can|will|able\s+to|allowed\s+to)\s+(?:create|spawn|make|launch|deploy|start)\s+(?:new\s+)?(?:agents?|subagents?|sub-agents?)/gi,
+  /(?:creates?|spawns?|launches?|deploys?|manages?)\s+(?:new\s+)?(?:agents?|subagents?|sub-agents?)/gi,
+  /(?:add|remove|delete|register)\s+agents?\s+(?:for|on\s+behalf|dynamically)/gi,
+  /agent[-\s]?(?:creator|spawner|factory|orchestrator)\b/gi,
+  /can\s+(?:spin\s+up|bring\s+up)\s+(?:new\s+)?agents?/gi,
+];
+
+const SUSPICIOUS_PATTERNS: Array<{ re: RegExp; label: string; severity: "critical" | "high" | "medium" }> = [
+  { re: /ignore\s+(?:previous|prior|above|all|these)\s+instructions?/gi, label: "Prompt injection", severity: "critical" },
+  { re: /disregard\s+(?:all\s+)?(?:previous|prior|above|these)?\s*(?:instructions?|rules?|guidelines?)/gi, label: "Prompt injection", severity: "critical" },
+  { re: /you\s+are\s+now\s+(?:free|jailbroken|unrestricted|DAN\b)/gi, label: "Jailbreak attempt", severity: "critical" },
+  { re: /rm\s+-[rRfF]{1,3}\s+[\/~]/g, label: "Dangerous rm command", severity: "high" },
+  { re: /(?:chmod|chown)\s+[0-9]*777/g, label: "World-writable permission", severity: "high" },
+  { re: /(?:admin|root):(?!<|{|your|pass)\S{4,}@\S+/g, label: "Credentials in URL", severity: "high" },
+  { re: /\b(?:192\.168|10\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01]))\.\d{1,3}:\d{2,5}\b/g, label: "Hardcoded internal host:port", severity: "medium" },
+];
+
+const FILES_TO_SCAN = ["IDENTITY.md", "AGENTS.md", "TOOLS.md", "USER.md", "MEMORY.md", "SOUL.md", "HEARTBEAT.md"];
+
+// ── Check 1: Main agent usage ─────────────────────────────────────────────────
+
+function checkMainAgentUsage(agents: RouterAgent[]): SecurityCheck {
+  const mainAgents = agents.filter(a => a.id === "main" || a.name?.toLowerCase() === "main");
+  const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
+  const findings: AuditFinding[] = [];
+
+  for (const a of mainAgents) {
+    const recentlyActive = a.lastActiveAt != null && a.lastActiveAt > Date.now() - SEVEN_DAYS;
+    if (recentlyActive) {
+      findings.push({
+        agentId: a.id,
+        agentName: a.name,
+        detail: `"${a.name}" was active within the last 7 days. Like the root AWS account, the main agent should be reserved for setup — not day-to-day tasks.`,
+      });
+    }
+  }
+
+  const status = findings.length > 0 ? "warn" : "pass";
+  return {
+    id: "main-agent", number: 1,
+    title: "Main agent usage",
+    description: "The 'main' agent is like a root account. Using it for daily tasks increases blast radius if it is compromised.",
+    status, severity: "high", findings,
+    recommendation: "Create a named specialist agent for your daily tasks. Reserve 'main' for one-time setup and administration only.",
+    passLabel: "Main agent not recently active",
+  };
+}
+
+// ── Check 2: Over-privileged agents ──────────────────────────────────────────
+
+function checkTooManySkills(agents: RouterAgent[]): SecurityCheck {
+  const MAX = 3;
+  const findings: AuditFinding[] = [];
+
+  for (const a of agents) {
+    const skills = a.skills ?? [];
+    if (skills.length > MAX) {
+      findings.push({
+        agentId: a.id,
+        agentName: a.name,
+        detail: `"${a.name}" has ${skills.length} skills (${skills.join(", ")}). Agents with more than ${MAX} tools have a larger attack surface.`,
+        snippet: skills.join(", "),
+      });
+    }
+  }
+
+  const hasSevere = findings.some(f => {
+    const a = agents.find(x => x.id === f.agentId);
+    return (a?.skills ?? []).length > 6;
+  });
+
+  return {
+    id: "skill-count", number: 2,
+    title: "Over-privileged agents",
+    description: "Agents with more than 3 skills carry a higher security risk and require more extensive auditing.",
+    status: hasSevere ? "fail" : findings.length > 0 ? "warn" : "pass",
+    severity: "medium", findings,
+    recommendation: "Split broad agents into focused specialists. Each agent should have a single well-defined responsibility with the minimum tools required.",
+    passLabel: `All agents are within the ${MAX}-skill limit`,
+  };
+}
+
+// ── Check 3: Exec/shell privilege ─────────────────────────────────────────────
+
+function checkExecPrivilege(agents: RouterAgent[]): SecurityCheck {
+  const EXEC_SKILLS = new Set(["exec", "claude-code", "nodes"]);
+  const findings: AuditFinding[] = [];
+
+  for (const a of agents) {
+    const execSkills = (a.skills ?? []).filter(s => EXEC_SKILLS.has(s));
+    if (execSkills.length > 0) {
+      findings.push({
+        agentId: a.id,
+        agentName: a.name,
+        detail: `"${a.name}" has machine-control access via: ${execSkills.join(", ")}.`,
+        snippet: execSkills.join(", "),
+      });
+    }
+  }
+
+  const status = findings.length > 3 ? "fail" : findings.length > 1 ? "warn" : "pass";
+  return {
+    id: "exec-privilege", number: 3,
+    title: "Exec / shell privilege",
+    description: "Exec-capable agents can control your machine. This powerful access should be tightly restricted.",
+    status, severity: "critical", findings,
+    recommendation: "Limit exec/shell/nodes access to at most 1–2 dedicated agents. Consider using a sandboxed runner agent for all shell operations.",
+    passLabel: "Exec privilege is appropriately limited",
+  };
+}
+
+// ── Check 4: Credentials in plaintext ────────────────────────────────────────
+
+function checkCredentials(agents: RouterAgent[], fileMap: Map<string, Map<string, string>>): SecurityCheck {
+  const findings: AuditFinding[] = [];
+  const seen = new Set<string>();
+
+  for (const agent of agents) {
+    const agentFiles = fileMap.get(agent.id);
+    if (!agentFiles) continue;
+    for (const [filename, content] of agentFiles) {
+      for (const { re, label } of CREDENTIAL_PATTERNS) {
+        const matches = content.match(new RegExp(re.source, re.flags));
+        if (!matches) continue;
+        const key = `${agent.id}:${filename}:${label}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const snippet = matches[0].slice(0, 12) + "…[redacted]";
+        findings.push({
+          agentId: agent.id,
+          agentName: agent.name,
+          detail: `"${agent.name}" — ${filename}: ${label} detected (${matches.length} occurrence${matches.length > 1 ? "s" : ""})`,
+          snippet,
+          file: filename,
+        });
+      }
+    }
+  }
+
+  return {
+    id: "credentials", number: 4,
+    title: "Credentials in plaintext",
+    description: "Scanning all agent markdown files for API keys, passwords, tokens, and other cleartext secrets.",
+    status: findings.length > 0 ? "fail" : "pass",
+    severity: "critical", findings,
+    recommendation: "Never store credentials in agent markdown files. Use environment variables or a secrets manager. Rotate any exposed credentials immediately.",
+    passLabel: "No credentials found in agent files",
+  };
+}
+
+// ── Check 5: Subagent creation control ───────────────────────────────────────
+
+function checkSubagentCreation(agents: RouterAgent[], fileMap: Map<string, Map<string, string>>): SecurityCheck {
+  const findings: AuditFinding[] = [];
+
+  for (const agent of agents) {
+    const agentFiles = fileMap.get(agent.id);
+    const combined = [
+      agentFiles?.get("AGENTS.md") ?? "",
+      agentFiles?.get("IDENTITY.md") ?? "",
+    ].join("\n");
+
+    for (const pattern of SUBAGENT_PATTERNS) {
+      const match = combined.match(new RegExp(pattern.source, pattern.flags));
+      if (match) {
+        findings.push({
+          agentId: agent.id,
+          agentName: agent.name,
+          detail: `"${agent.name}" appears to have subagent creation capability based on its configuration files.`,
+          snippet: match[0].trim().slice(0, 80),
+          file: "AGENTS.md / IDENTITY.md",
+        });
+        break;
+      }
+    }
+  }
+
+  const status = findings.length > 2 ? "fail" : findings.length > 1 ? "warn" : "pass";
+  return {
+    id: "subagent-creation", number: 5,
+    title: "Subagent creation control",
+    description: "Only one designated orchestrator should be allowed to create and remove subagents to prevent runaway agent proliferation.",
+    status, severity: "high", findings,
+    recommendation: "Designate a single orchestrator agent for agent lifecycle management. All other agents should be prohibited from creating or modifying agents.",
+    passLabel: "Subagent creation is properly limited",
+  };
+}
+
+// ── Check 6: General suspicious content ──────────────────────────────────────
+
+function checkSuspiciousContent(agents: RouterAgent[], fileMap: Map<string, Map<string, string>>): SecurityCheck {
+  const findings: AuditFinding[] = [];
+  const seen = new Set<string>();
+
+  for (const agent of agents) {
+    const agentFiles = fileMap.get(agent.id);
+    if (!agentFiles) continue;
+    for (const [filename, content] of agentFiles) {
+      for (const { re, label, severity } of SUSPICIOUS_PATTERNS) {
+        const matches = content.match(new RegExp(re.source, re.flags));
+        if (!matches) continue;
+        const key = `${agent.id}:${filename}:${label}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        findings.push({
+          agentId: agent.id,
+          agentName: agent.name,
+          detail: `[${severity.toUpperCase()}] "${agent.name}" — ${filename}: ${label}`,
+          snippet: matches[0].slice(0, 60),
+          file: filename,
+        });
+      }
+    }
+  }
+
+  const hasCritical = findings.some(f => f.detail.startsWith("[CRITICAL]"));
+  const hasHigh = findings.some(f => f.detail.startsWith("[HIGH]"));
+  const status = hasCritical ? "fail" : hasHigh || findings.length > 3 ? "warn" : findings.length > 0 ? "warn" : "pass";
+
+  return {
+    id: "suspicious-content", number: 6,
+    title: "Suspicious content scan",
+    description: "Deep scan of all agent files for prompt injection attempts, dangerous commands, and security loopholes.",
+    status, severity: "high", findings,
+    recommendation: "Review all flagged items. Prompt injection patterns in agent files can be exploited to bypass safety controls. Remove any dangerous shell commands from configuration files.",
+    passLabel: "No suspicious content detected",
+  };
+}
+
+// ── GET handler ───────────────────────────────────────────────────────────────
+
+export async function GET(req: NextRequest) {
+  const routers = parseRouters(req.cookies.get("routers")?.value);
+  if (routers.length === 0) {
+    const url = req.cookies.get("routerUrl")?.value;
+    const token = req.cookies.get("routerToken")?.value;
+    if (url && token) routers.push({ id: "legacy", label: "Router", url, token });
+  }
+  if (routers.length === 0) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Fetch agent list (includes skills and available files) from all routers
+  const agentResults = await Promise.allSettled(
+    routers.map(r => routerGet<{ agents: Omit<RouterAgent, "routerId" | "routerLabel">[] }>(r.url, r.token, "/agents"))
+  );
+
+  const allAgents: RouterAgent[] = agentResults.flatMap((result, i) => {
+    if (result.status !== "fulfilled") return [];
+    return (result.value.agents ?? []).map(a => ({
+      ...a,
+      routerId: routers[i].id,
+      routerLabel: routers[i].label,
+    }));
+  });
+
+  // Fetch markdown files for every agent (concurrent, failures silently skipped)
+  const fileMap = new Map<string, Map<string, string>>();
+  let filesScanned = 0;
+
+  await Promise.allSettled(
+    allAgents.flatMap(agent => {
+      const router = routers.find(r => r.id === agent.routerId);
+      if (!router) return [];
+      // Only fetch files that the agent is known to have; fall back to all candidates
+      const filesToTry = (agent.files && agent.files.length > 0)
+        ? FILES_TO_SCAN.filter(f => agent.files!.includes(f))
+        : FILES_TO_SCAN;
+
+      return filesToTry.map(async (filename) => {
+        try {
+          const { content } = await routerGet<{ content: string }>(
+            router.url, router.token, "/file", { agentId: agent.id, name: filename }
+          );
+          if (!fileMap.has(agent.id)) fileMap.set(agent.id, new Map());
+          fileMap.get(agent.id)!.set(filename, content);
+          filesScanned++;
+        } catch {
+          // File doesn't exist for this agent — silently skip
+        }
+      });
+    })
+  );
+
+  const checks: SecurityCheck[] = [
+    checkMainAgentUsage(allAgents),
+    checkTooManySkills(allAgents),
+    checkExecPrivilege(allAgents),
+    checkCredentials(allAgents, fileMap),
+    checkSubagentCreation(allAgents, fileMap),
+    checkSuspiciousContent(allAgents, fileMap),
+  ];
+
+  const overallStatus: "pass" | "warn" | "fail" =
+    checks.some(c => c.status === "fail") ? "fail" :
+    checks.some(c => c.status === "warn") ? "warn" : "pass";
+
+  return NextResponse.json({
+    checks,
+    overallStatus,
+    runAt: Date.now(),
+    agentsScanned: allAgents.length,
+    filesScanned,
+  } satisfies SecurityAuditResponse);
+}

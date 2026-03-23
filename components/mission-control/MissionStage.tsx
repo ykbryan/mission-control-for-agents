@@ -51,26 +51,41 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, o
       .catch(() => {});
   }, []);
 
-  // Agent model map: "routerId--agentId" → model name (derived from cost telemetry)
-  // Keyed by compound ID to match canvas node IDs and avoid collisions when the
-  // same agentId exists on multiple routers.
+  // Agent model map: "routerId--agentId" → model name
+  // Built in two passes: cost telemetry first (fast), then live session model overrides (accurate).
   const [agentModelMap, setAgentModelMap] = useState<Map<string, string>>(new Map());
   useEffect(() => {
-    fetch("/api/telemetry/agent-costs")
-      .then(r => r.json())
-      .then((d: { costs?: Array<{ agentId: string; model?: string; routerId?: string }> }) => {
-        const map = new Map<string, string>();
+    let active = true;
+
+    async function buildModelMap() {
+      // Pass 1: cost telemetry — fast baseline
+      const map = new Map<string, string>();
+      try {
+        const r = await fetch("/api/telemetry/agent-costs");
+        const d: { costs?: Array<{ agentId: string; model?: string; routerId?: string }> } = await r.json();
         for (const c of d.costs ?? []) {
           if (c.model) {
-            // Compound key mirrors how canvas node IDs are built: "routerId--agentId"
             if (c.routerId) map.set(`${c.routerId}--${c.agentId}`, c.model);
-            // Also store bare agentId as fallback for single-router setups
             if (!map.has(c.agentId)) map.set(c.agentId, c.model);
           }
         }
-        setAgentModelMap(map);
-      })
-      .catch(() => {});
+      } catch { /* ignore */ }
+      if (active) setAgentModelMap(new Map(map));
+
+      // Pass 2: live session model switches — overrides stale telemetry
+      // Skips cron sessions (e.g. heartbeat) that run a different model than the primary.
+      try {
+        const r = await fetch("/api/agent-live-models");
+        const d: { models?: Record<string, string> } = await r.json();
+        for (const [key, model] of Object.entries(d.models ?? {})) {
+          map.set(key, model);
+        }
+      } catch { /* ignore */ }
+      if (active) setAgentModelMap(new Map(map));
+    }
+
+    buildModelMap();
+    return () => { active = false; };
   }, []);
 
   const { initialNodes, initialEdges } = useMemo(() => {
@@ -117,19 +132,19 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, o
       const gatewayId = `gateway-${routerId}`;
       const gatewayX = cursorX + totalW / 2 - gatewayW / 2;
 
+      const ni = nodeInfoMap.get(routerId);
+
       nodes.push({
         id: gatewayId,
         type: "gatewayNode",
         position: { x: gatewayX, y: GATEWAY_MARGIN_TOP },
-        data: { label, url, agentCount: routerAgents.length },
+        data: { label, url, agentCount: routerAgents.length, routerVersion: ni?.openclawVersion || undefined },
       });
 
       // Place orchestrators centered below the gateway
       const ORCH_Y = GATEWAY_MARGIN_TOP + GATEWAY_H + 40;
       const orchRowW = orchestrators.length * AGENT_W + (orchestrators.length - 1) * AGENT_COL_GAP;
       const orchStartX = cursorX + totalW / 2 - orchRowW / 2;
-
-      const ni = nodeInfoMap.get(routerId);
 
       orchestrators.forEach((agent, i) => {
         const nodeId = `${routerId}--${agent.id}`;

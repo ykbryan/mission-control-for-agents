@@ -24,6 +24,7 @@ interface RouterAgent {
   name: string;
   configured: boolean;
   files?: string[];
+  skills?: string[];
   lastActiveAt?: number;
   tier?: string;
   nodeHostname?: string;
@@ -70,7 +71,7 @@ export async function fetchAgentsFromRouter(
       emoji: "🤖",
       role: "AI Agent",
       soul: "A capable AI agent.",
-      skills: [],
+      skills: ra.skills ?? [],
       files,
       routerId,
       routerLabel,

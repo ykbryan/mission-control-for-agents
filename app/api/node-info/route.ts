@@ -1,6 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
+import { execSync } from "child_process";
 import { routerGet } from "@/lib/router-client";
 import { parseRouters } from "@/lib/router-config";
+
+// Cache the local OpenClaw version so we only shell out once per process lifetime
+let _localOpenClawVersion: string | null = null;
+function localOpenClawVersion(): string {
+  if (_localOpenClawVersion !== null) return _localOpenClawVersion;
+  try {
+    const out = execSync("openclaw --version 2>/dev/null", { timeout: 3000 }).toString().trim();
+    // "OpenClaw 2026.3.13 (61d171a)"  →  "2026.3.13"
+    const m = out.match(/(\d{4}\.\d+\.\d+)/);
+    _localOpenClawVersion = m ? m[1] : (out.split(" ")[1] ?? "unknown");
+  } catch {
+    _localOpenClawVersion = "unknown";
+  }
+  return _localOpenClawVersion;
+}
+
+function isLocalRouter(url: string): boolean {
+  try {
+    const { hostname } = new URL(url);
+    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+  } catch { return false; }
+}
 
 export interface NodeInfo {
   routerId:      string;
@@ -13,8 +36,9 @@ export interface NodeInfo {
   cpuCount:      number;
   totalMemGb:    number;
   uptimeSeconds: number;
-  nodeVersion:   string;
-  routerVersion: string;
+  nodeVersion:      string;
+  routerVersion:    string;
+  openclawVersion:  string;
   // Derived
   platformIcon:  string;   // emoji for quick display
   machineLabel:  string;   // short friendly label, e.g. "MacBook Air" or "ubuntu-gorilla"
@@ -55,8 +79,12 @@ export async function GET(req: NextRequest) {
     const r = routers[i];
     if (res.status === "fulfilled") {
       const raw = res.value;
+      // If the router hasn't been updated yet to report openclawVersion,
+      // and it's a local router, get it directly from the openclaw binary.
+      const openclawVersion = raw.openclawVersion || (isLocalRouter(r.url) ? localOpenClawVersion() : "");
       return {
         ...raw,
+        openclawVersion,
         routerId:     r.id,
         routerLabel:  r.label,
         platformIcon: platformIcon(raw.platform ?? ""),
@@ -75,8 +103,9 @@ export async function GET(req: NextRequest) {
       cpuCount:     0,
       totalMemGb:   0,
       uptimeSeconds: 0,
-      nodeVersion:  "",
-      routerVersion: "",
+      nodeVersion:     "",
+      routerVersion:   "",
+      openclawVersion: "",
       platformIcon: "💻",
       machineLabel: r.label,
     };

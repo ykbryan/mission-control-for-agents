@@ -71,6 +71,57 @@ function useSessionGroups(agentId: string, routerId?: string) {
   return { groups, total };
 }
 
+/** Resolves the active model for each session type (main, cron, subagent, telegram…).
+ *  Fetches the latest session per group in parallel and parses model events. */
+function useSessionTypeModels(agentId: string, routerId: string | undefined, groups: SessionGroup[]) {
+  const [typeModels, setTypeModels] = useState<Map<string, string>>(new Map());
+
+  useEffect(() => {
+    if (groups.length === 0) return;
+    let active = true;
+    const routerParam = routerId ? `&routerId=${encodeURIComponent(routerId)}` : "";
+
+    Promise.allSettled(
+      groups.map(async (g) => {
+        const latest = g.sessions?.[0];
+        if (!latest) return null;
+        try {
+          const r = await fetch(
+            `/api/agent-session?agent=${encodeURIComponent(agentId)}&sessionKey=${encodeURIComponent(latest.key)}${routerParam}`
+          );
+          if (!r.ok) return null;
+          const events: Array<{ message: string }> = await r.json();
+          if (!Array.isArray(events)) return null;
+
+          // Initial model from 🧠 event
+          let model: string | null = null;
+          for (const ev of events) {
+            const m = ev.message?.match(/🧠\s*Model:\s*(.+)/);
+            if (m) { model = m[1].trim(); break; }
+          }
+          // Override with most-recent 🔄 switch destination
+          for (let i = events.length - 1; i >= 0; i--) {
+            const m = events[i].message?.match(/🔄\s*Model:\s*.+?\s*→\s*(.+)/);
+            if (m) { model = m[1].trim(); break; }
+          }
+          return model ? { type: g.type, model } : null;
+        } catch { return null; }
+      })
+    ).then(results => {
+      if (!active) return;
+      const map = new Map<string, string>();
+      for (const r of results) {
+        if (r.status === "fulfilled" && r.value) map.set(r.value.type, r.value.model);
+      }
+      setTypeModels(map);
+    });
+
+    return () => { active = false; };
+  }, [agentId, routerId, groups]);
+
+  return typeModels;
+}
+
 function timeAgo(ms: number): string {
   if (!ms) return "";
   const diff = Date.now() - ms;
@@ -81,6 +132,25 @@ function timeAgo(ms: number): string {
   if (h < 1) return `${m}m ago`;
   if (d < 1) return `${h}h ago`;
   return `${d}d ago`;
+}
+
+const PROVIDER_COLORS: Record<string, string> = {
+  Anthropic: "#c77c3a", OpenAI: "#19c37d", Google: "#4285f4",
+  "xAI": "#1da1f2", MiniMax: "#9b59b6", Alibaba: "#ff6a00",
+  DeepSeek: "#0ea5e9", Mistral: "#f97316", Meta: "#0073e6",
+};
+
+function ModelBadge({ model, size = "sm" }: { model: string; size?: "xs" | "sm" }) {
+  const provider = modelToProvider(model);
+  const color = PROVIDER_COLORS[provider] ?? "#888";
+  const cls = size === "xs"
+    ? "text-[9px] font-mono px-1.5 py-0.5 rounded"
+    : "text-[10px] font-mono px-2 py-0.5 rounded-md";
+  return (
+    <span className={cls} style={{ color, background: `${color}15`, border: `1px solid ${color}28` }}>
+      {model}
+    </span>
+  );
 }
 
 export default function InspectorPanel({ agent, activeFile, onSelectFile }: Props) {
@@ -109,16 +179,67 @@ export default function InspectorPanel({ agent, activeFile, onSelectFile }: Prop
 
   useEffect(() => {
     setAgentModel(null);
-    fetch("/api/telemetry/agent-costs")
-      .then(r => r.json())
-      .then((d: { costs?: Array<{ agentId: string; routerId?: string; model?: string }> }) => {
+    let active = true;
+
+    async function resolveModel() {
+      // Step 1: cost telemetry as a baseline (may be stale)
+      let telemetryModel: string | null = null;
+      try {
+        const r = await fetch("/api/telemetry/agent-costs");
+        const d: { costs?: Array<{ agentId: string; routerId?: string; model?: string }> } = await r.json();
         const costs = d.costs ?? [];
-        // Prefer exact match on both agentId + routerId to handle same-named agents across routers
         const match = costs.find(c => c.agentId === agent.id && c.routerId === agent.routerId)
           ?? costs.find(c => c.agentId === agent.id);
-        if (match?.model) setAgentModel(match.model);
-      })
-      .catch(() => {});
+        if (match?.model) telemetryModel = match.model;
+      } catch { /* ignore */ }
+
+      if (!active) return;
+      if (telemetryModel) setAgentModel(telemetryModel);
+
+      // Step 2: live session events — parse most-recent "🔄 Model: X → Y" to get current model.
+      // Important: skip cron sessions (e.g. heartbeat) — they may use a different model
+      // than the agent's primary model and would produce a misleading result.
+      try {
+        const routerParam = agent.routerId ? `&routerId=${encodeURIComponent(agent.routerId)}` : "";
+
+        // First, list sessions grouped by type so we can pick the right one
+        const listRes = await fetch(`/api/agent-sessions?agent=${encodeURIComponent(agent.id)}${routerParam}`);
+        let sessionKey: string | null = null;
+        if (listRes.ok) {
+          const { groups }: { groups?: Array<{ type: string; lastUpdated: number; sessions: Array<{ key: string }> }> } = await listRes.json();
+          // Find most-recently-updated non-cron session
+          let bestTime = 0;
+          for (const g of groups ?? []) {
+            if (g.type === "cron") continue; // heartbeat / scheduled jobs — skip
+            if (g.lastUpdated > bestTime && g.sessions?.length > 0) {
+              bestTime = g.lastUpdated;
+              sessionKey = g.sessions[0].key; // sessions already sorted newest-first
+            }
+          }
+        }
+
+        // Fall back to latest session if no non-cron session found
+        const keyParam = sessionKey ? `&sessionKey=${encodeURIComponent(sessionKey)}` : "";
+        const r = await fetch(`/api/agent-session?agent=${encodeURIComponent(agent.id)}${routerParam}${keyParam}`);
+        if (r.ok) {
+          const events: Array<{ message: string }> = await r.json();
+          if (Array.isArray(events)) {
+            // Walk events in reverse to find the most recent model switch
+            for (let i = events.length - 1; i >= 0; i--) {
+              const m = events[i].message?.match(/🔄\s*Model:\s*.+?\s*→\s*(.+)/);
+              if (m) {
+                const liveModel = m[1].trim();
+                if (active) setAgentModel(liveModel);
+                break;
+              }
+            }
+          }
+        }
+      } catch { /* ignore */ }
+    }
+
+    resolveModel();
+    return () => { active = false; };
   }, [agent.id, agent.routerId]);
 
   function openSession(s: SessionDetail) {
@@ -209,18 +330,13 @@ export default function InspectorPanel({ agent, activeFile, onSelectFile }: Prop
 
             {agentModel && (() => {
               const provider = modelToProvider(agentModel);
-              const PROVIDER_COLORS: Record<string, string> = {
-                Anthropic: "#c77c3a", OpenAI: "#19c37d", Google: "#4285f4",
-                "xAI": "#1da1f2", MiniMax: "#9b59b6", Alibaba: "#ff6a00",
-                DeepSeek: "#0ea5e9", Mistral: "#f97316", Meta: "#0073e6",
-              };
               const color = PROVIDER_COLORS[provider] ?? "#888";
               return (
                 <section className="mc-inspector__section">
                   <div className="mc-section-label flex items-center gap-1.5">
                     Primary Model
                     <span
-                      title="Derived from session cost telemetry. May lag behind the agent's current configuration until the active session accumulates usage."
+                      title="Live model from latest session switch event. Falls back to cost telemetry if no switch event is found."
                       style={{ fontSize: "10px", color: "#444", cursor: "help" }}
                     >ⓘ</span>
                   </div>

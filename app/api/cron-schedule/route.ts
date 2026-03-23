@@ -283,7 +283,15 @@ export async function GET(req: NextRequest) {
   }
 
   // 2. Fetch HEARTBEAT.md for unique agents that have cron sessions ──────────
-  const agentRouterPairs = [...new Map(allCrons.map(s => [`${s.agentId}::${s.routerId}`, { agentId: s.agentId, routerId: s.routerId }])).values()];
+  //    Also include agents that appear only in native cron jobs (no sessions yet)
+  const sessionAgentPairs = allCrons.map(s => `${s.agentId}::${s.routerId}`);
+  const nativeAgentPairs  = nativeOnlyJobs.map(n => `${n.agentId}::${n.routerId}`);
+  const agentRouterPairs = [...new Map(
+    [...sessionAgentPairs, ...nativeAgentPairs].map(key => {
+      const [agentId, routerId] = key.split("::");
+      return [key, { agentId, routerId }];
+    })
+  ).values()];
 
   const heartbeatMap = new Map<string, HeartbeatJob[]>(); // agentId::routerId → jobs
   await Promise.allSettled(
@@ -488,11 +496,25 @@ export async function GET(req: NextRequest) {
     // This is handled by the HEARTBEAT fetch above
   }
 
-  // Merge native cron jobs (only those not already represented by a session-inferred job)
+  // Merge native cron jobs (only those not already represented by a session-inferred job).
+  // If the native job has no description, try to match it against HEARTBEAT.md entries by name.
   const sessionJobAgentKeys = new Set(jobs.map(j => `${j.agentId}::${j.routerId}::${j.name}`));
   for (const nj of nativeOnlyJobs) {
     const key = `${nj.agentId}::${nj.routerId}::${nj.name}`;
-    if (!sessionJobAgentKeys.has(key)) jobs.push(nj);
+    if (sessionJobAgentKeys.has(key)) continue;
+
+    let enriched = nj;
+    if (!nj.description) {
+      const hbJobs = heartbeatMap.get(`${nj.agentId}::${nj.routerId}`) ?? [];
+      const nameLower = nj.name.toLowerCase();
+      const matched = hbJobs.find(hb => {
+        const hbLower = (hb.name + " " + hb.description).toLowerCase();
+        const nameWords = nameLower.split(/[\s_\-]+/).filter(w => w.length > 3);
+        return nameWords.some(w => hbLower.includes(w)) || hbLower.includes(nameLower);
+      });
+      if (matched?.description) enriched = { ...nj, description: matched.description };
+    }
+    jobs.push(enriched);
   }
 
   // Sort: active first, then by nextRunAt ascending (soonest next), then last run desc

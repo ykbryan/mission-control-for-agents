@@ -67,10 +67,27 @@ export default function MissionControlScreen({ agents, routerConfigs, routerErro
       {errorEntries.map(([routerId, errorMsg]) => {
         const rc = routerConfigs.find(r => r.id === routerId);
         const label = rc?.label ?? routerId;
+        const is404Gateway = errorMsg.includes("HTTP 404 from gateway");
+        const isConnRefused = errorMsg.includes("ECONNREFUSED") || errorMsg.includes("502");
         return (
-          <div key={routerId} className="bg-red-950 border-b border-red-800 text-red-300 text-xs px-4 py-2 flex items-center gap-2">
-            <span>⚠️</span>
-            <span><strong>{label} unreachable</strong> — showing static agents. {errorMsg}</span>
+          <div key={routerId} className="bg-red-950 border-b border-red-800 text-red-300 text-xs px-4 py-2 flex items-start gap-2">
+            <span className="mt-px shrink-0">⚠️</span>
+            <div>
+              <strong>{label} — OpenClaw unreachable.</strong>{" "}
+              {is404Gateway ? (
+                <>
+                  The router cannot find OpenClaw&apos;s API at the configured URL.{" "}
+                  Check <code className="bg-red-900/60 px-1 rounded">OPENCLAW_URL</code> in <code className="bg-red-900/60 px-1 rounded">router/.env</code>{" "}
+                  and confirm OpenClaw is running (<code className="bg-red-900/60 px-1 rounded">openclaw gateway status</code>).
+                </>
+              ) : isConnRefused ? (
+                <>
+                  Router is not responding. Verify the router process is running at <code className="bg-red-900/60 px-1 rounded">{rc?.url}</code>.
+                </>
+              ) : (
+                errorMsg
+              )}
+            </div>
           </div>
         );
       })}
