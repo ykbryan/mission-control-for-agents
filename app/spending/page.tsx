@@ -46,7 +46,7 @@ interface AnalyticsData {
   byModel: ModelEntry[];
 }
 
-type View = "agents" | "daily" | "weekly" | "routers" | "models" | "providers";
+type View = "agents" | "routers" | "models" | "providers";
 
 type Period = "1d" | "7d" | "14d" | "6w" | "all";
 
@@ -424,16 +424,6 @@ export default function SpendingPage() {
       .sort((a, b) => b.cost - a.cost).slice(0, 12);
   }, [data, filteredDaily, periodCutoff]);
 
-  // Weekly bar chart — always derive from filteredDaily
-  const weeklySeries = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const d of filteredDaily) {
-      const w = isoWeek(d.date);
-      m.set(w, (m.get(w) ?? 0) + d.estimatedCost);
-    }
-    return [...m.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([week, cost]) => ({ week, cost }));
-  }, [filteredDaily]);
-
   // By Router — use all-time when period=all, else derive from filteredDaily
   const routerRows = useMemo(() => {
     if (!periodCutoff) return data?.byRouter ?? [];
@@ -492,12 +482,10 @@ export default function SpendingPage() {
   );
 
   const VIEWS: { id: View; label: string }[] = [
-    { id: "agents",    label: "By Agent"     },
-    { id: "daily",     label: "Last 14 Days" },
-    { id: "weekly",    label: "Last 6 Weeks" },
-    { id: "routers",   label: "By Router"    },
-    { id: "models",    label: "By Model"     },
-    { id: "providers", label: "By Provider"  },
+    { id: "agents",    label: "By Agent"    },
+    { id: "routers",   label: "By Router"   },
+    { id: "models",    label: "By Model"    },
+    { id: "providers", label: "By Provider" },
   ];
 
   return (
@@ -598,7 +586,7 @@ export default function SpendingPage() {
         {view === "agents" && (
           <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
             <div style={{ background: "#0f0f12", border: "1px solid #1e1e26", borderRadius: "10px", padding: "24px" }}>
-              <SectionHead>Cost trend — last 14 days</SectionHead>
+              <SectionHead>Cost trend — {period === "all" ? "all time" : PERIODS.find(p => p.id === period)?.label.toLowerCase() + " period"}</SectionHead>
               <ResponsiveContainer width="100%" height={240}>
                 <AreaChart data={areaSeries} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
                   <defs>
@@ -615,62 +603,10 @@ export default function SpendingPage() {
                 </AreaChart>
               </ResponsiveContainer>
             </div>
-            <SectionHead>Top 12 spenders — all time</SectionHead>
+            <SectionHead>Top 12 spenders — {period === "all" ? "all time" : PERIODS.find(p => p.id === period)?.label.toLowerCase() + " period"}</SectionHead>
             <AgentTable
               rows={agentRows}
               totalCost={totalCost}
-            />
-          </div>
-        )}
-
-        {/* ── Daily (last 14 days) ── */}
-        {view === "daily" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-            <div style={{ background: "#0f0f12", border: "1px solid #1e1e26", borderRadius: "10px", padding: "24px" }}>
-              <SectionHead>Daily cost — last 14 days</SectionHead>
-              <ResponsiveContainer width="100%" height={240}>
-                <AreaChart data={areaSeries} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="dGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%"  stopColor={ORANGE} stopOpacity={0.2} />
-                      <stop offset="95%" stopColor={ORANGE} stopOpacity={0}   />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1a1a22" vertical={false} />
-                  <XAxis dataKey="date" stroke="#333" tick={{ fontSize: 11, fill: "#555", fontFamily: "ui-monospace,monospace" }} tickLine={false} axisLine={{ stroke: "#222" }} tickFormatter={fmtDate} />
-                  <YAxis stroke="#333" tick={{ fontSize: 11, fill: "#555", fontFamily: "ui-monospace,monospace" }} tickLine={false} axisLine={false} tickFormatter={v => `$${v.toFixed(3)}`} width={64} />
-                  <Tooltip content={<ChartTooltip />} />
-                  <Area type="monotone" dataKey="cost" stroke={ORANGE} strokeWidth={2} fill="url(#dGrad)" dot={false} activeDot={{ r: 4, fill: ORANGE, stroke: "#0f0f12", strokeWidth: 2 }} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-            <SectionHead>Top 12 spenders — last 14 days</SectionHead>
-            <AgentTable
-              rows={agentRows}
-              totalCost={agentRows.reduce((s, c) => s + c.cost, 0)}
-            />
-          </div>
-        )}
-
-        {/* ── Weekly (last 6 weeks) ── */}
-        {view === "weekly" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-            <div style={{ background: "#0f0f12", border: "1px solid #1e1e26", borderRadius: "10px", padding: "24px" }}>
-              <SectionHead>Weekly cost — last 6 weeks</SectionHead>
-              <ResponsiveContainer width="100%" height={240}>
-                <BarChart data={weeklySeries} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1a1a22" vertical={false} />
-                  <XAxis dataKey="week" stroke="#333" tick={{ fontSize: 11, fill: "#555", fontFamily: "ui-monospace,monospace" }} tickLine={false} axisLine={{ stroke: "#222" }} />
-                  <YAxis stroke="#333" tick={{ fontSize: 11, fill: "#555", fontFamily: "ui-monospace,monospace" }} tickLine={false} axisLine={false} tickFormatter={v => `$${v.toFixed(3)}`} width={64} />
-                  <Tooltip content={<ChartTooltip />} />
-                  <Bar dataKey="cost" fill={ORANGE} radius={[4, 4, 0, 0]} maxBarSize={60} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            <SectionHead>Top 12 spenders — last 6 weeks</SectionHead>
-            <AgentTable
-              rows={agentRows}
-              totalCost={agentRows.reduce((s, c) => s + c.cost, 0)}
             />
           </div>
         )}
