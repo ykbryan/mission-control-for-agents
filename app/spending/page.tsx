@@ -556,41 +556,42 @@ export default function SpendingPage() {
           <KpiCard label="Active Agents"     value={String((data?.costs ?? []).filter(c => c.estimatedCost > 0).length)} sub="with recorded spend" accent="#38bdf8" />
         </div>
 
-        {/* Period picker */}
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <span style={{ fontSize: "11px", color: "#444", letterSpacing: "0.06em", textTransform: "uppercase", fontWeight: 600 }}>Period</span>
-          <div style={{ display: "flex", gap: "2px", background: "#0f0f12", border: "1px solid #1e1e26", borderRadius: "8px", padding: "3px" }}>
-            {PERIODS.map(p => (
+        {/* Tab bar + Period picker on the same row */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", gap: "4px", background: "#0f0f12", border: "1px solid #1e1e26", borderRadius: "8px", padding: "4px" }}>
+            {VIEWS.map(v => (
               <button
-                key={p.id}
-                onClick={() => setPeriod(p.id)}
+                key={v.id}
+                onClick={() => setView(v.id)}
                 style={{
-                  padding: "5px 14px", borderRadius: "5px", border: "none", cursor: "pointer",
-                  fontSize: "12px", fontWeight: 600, letterSpacing: "0.04em",
-                  background: period === p.id ? ORANGE : "transparent",
-                  color: period === p.id ? "#fff" : "#555",
-                  transition: "all 0.12s",
+                  padding: "7px 18px", borderRadius: "6px", border: "none", cursor: "pointer",
+                  fontSize: "12px", fontWeight: 600,
+                  background: view === v.id ? ORANGE : "transparent",
+                  color: view === v.id ? "#fff" : "#555",
+                  transition: "all 0.15s",
                 }}
-              >{p.label}</button>
+              >{v.label}</button>
             ))}
           </div>
-        </div>
 
-        {/* Tab bar */}
-        <div style={{ display: "flex", gap: "4px", background: "#0f0f12", border: "1px solid #1e1e26", borderRadius: "8px", padding: "4px", width: "fit-content" }}>
-          {VIEWS.map(v => (
-            <button
-              key={v.id}
-              onClick={() => setView(v.id)}
-              style={{
-                padding: "7px 18px", borderRadius: "6px", border: "none", cursor: "pointer",
-                fontSize: "12px", fontWeight: 600,
-                background: view === v.id ? ORANGE : "transparent",
-                color: view === v.id ? "#fff" : "#555",
-                transition: "all 0.15s",
-              }}
-            >{v.label}</button>
-          ))}
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <span style={{ fontSize: "11px", color: "#444", letterSpacing: "0.06em", textTransform: "uppercase", fontWeight: 600 }}>Period</span>
+            <div style={{ display: "flex", gap: "2px", background: "#0f0f12", border: "1px solid #1e1e26", borderRadius: "8px", padding: "3px" }}>
+              {PERIODS.map(p => (
+                <button
+                  key={p.id}
+                  onClick={() => setPeriod(p.id)}
+                  style={{
+                    padding: "5px 14px", borderRadius: "5px", border: "none", cursor: "pointer",
+                    fontSize: "12px", fontWeight: 600, letterSpacing: "0.04em",
+                    background: period === p.id ? ORANGE : "transparent",
+                    color: period === p.id ? "#fff" : "#555",
+                    transition: "all 0.12s",
+                  }}
+                >{p.label}</button>
+              ))}
+            </div>
+          </div>
         </div>
 
         {/* ── By Agent ── */}
