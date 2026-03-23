@@ -1,5 +1,14 @@
 import { Handle, Position } from "@xyflow/react";
 
+/** Derive OS icon from a hostname string. */
+function hostnameIcon(h: string): string {
+  const l = h.toLowerCase();
+  if (l.includes("mac") || l.includes("apple") || l.endsWith(".lan") || l.includes("mbp") || l.includes("macbook")) return "🍎";
+  if (l.includes("ubuntu") || l.includes("linux") || l.includes("debian") || l.includes("fedora") || l.includes("nix")) return "🐧";
+  if (l.includes("win") || l.includes("windows")) return "🪟";
+  return "🖥️";
+}
+
 /** Compact display label for a model name. */
 function shortModel(m: string): string {
   const l = m.toLowerCase();
@@ -126,7 +135,7 @@ export default function AgentNode({ data }: AgentNodeProps) {
             </span>
             {data.nodeHostname ? (
               <>
-                <span className="text-[9px] shrink-0">🖥️</span>
+                <span className="text-[9px] shrink-0">{hostnameIcon(data.nodeHostname)}</span>
                 <span className="text-[9px] truncate" style={{ color: "#666680" }}>{data.nodeHostname}</span>
               </>
             ) : (
