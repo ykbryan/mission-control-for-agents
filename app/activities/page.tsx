@@ -403,6 +403,301 @@ function SessionRow({ s, onClick }: { s: ActivitySession; onClick: () => void })
   );
 }
 
+// ── swarm trace view ──────────────────────────────────────────────────────────
+
+interface ActivityEvent {
+  id: string;
+  type: "info" | "error" | "memory" | "chat";
+  message: string;
+  fullMessage?: string;
+  timestamp: string;
+  model?: string;
+}
+
+interface SwarmChainStep {
+  sessions: ActivitySession[];
+  timestamp: number;
+  label: string;
+}
+
+interface SwarmChain {
+  root: ActivitySession;
+  steps: SwarmChainStep[];
+}
+
+function extractSpawnedAgentIds(events: ActivityEvent[]): string[] {
+  const spawned: string[] = [];
+  for (const e of events) {
+    const msg = e.fullMessage ?? e.message ?? '';
+    if (!msg.includes('sessions_spawn')) continue;
+    const match = msg.match(/sessions_spawn\((\{[\s\S]*?\})\)/);
+    if (match) {
+      try {
+        const args = JSON.parse(match[1]);
+        if (args.agentId) spawned.push(args.agentId);
+      } catch { /* ignore parse errors */ }
+    }
+  }
+  return spawned;
+}
+
+function SwarmTraceView({
+  activeSessions,
+  allSessions,
+  onOpen,
+}: {
+  activeSessions: ActivitySession[];
+  allSessions: ActivitySession[];
+  onOpen: (s: ActivitySession) => void;
+}) {
+  const [chains, setChains] = useState<SwarmChain[]>([]);
+  const [orphans, setOrphans] = useState<ActivitySession[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const roots = activeSessions.filter(
+      s => s.type === "telegram" || s.type === "main"
+    );
+
+    if (roots.length === 0) {
+      setChains([]);
+      setOrphans(activeSessions);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+
+    async function buildChains() {
+      const builtChains: SwarmChain[] = [];
+      const claimedKeys = new Set<string>();
+
+      for (const root of roots) {
+        claimedKeys.add(root.key);
+        try {
+          const params = new URLSearchParams({
+            agent: root.agentId,
+            routerId: root.routerId,
+            sessionKey: root.key,
+          });
+          const res = await fetch(`/api/agent-session?${params}`);
+          const events: ActivityEvent[] = await res.json();
+          const spawnedIds = extractSpawnedAgentIds(events);
+
+          // Deduplicate spawned agent IDs (preserve order)
+          const seenIds = new Set<string>();
+          const uniqueSpawnedIds: string[] = [];
+          for (const id of spawnedIds) {
+            if (!seenIds.has(id)) {
+              seenIds.add(id);
+              uniqueSpawnedIds.push(id);
+            }
+          }
+
+          if (uniqueSpawnedIds.length === 0) {
+            builtChains.push({ root, steps: [] });
+            continue;
+          }
+
+          // Time window: root.updatedAt - 2h to now
+          const windowStart = root.updatedAt - 2 * 60 * 60 * 1000;
+          const windowEnd = Date.now();
+
+          // Group spawned sessions by agentId in order
+          const stepMap = new Map<string, ActivitySession[]>();
+          for (const agentId of uniqueSpawnedIds) {
+            const matched = allSessions.filter(
+              s =>
+                s.agentId === agentId &&
+                s.updatedAt >= windowStart &&
+                s.updatedAt <= windowEnd
+            ).sort((a, b) => a.updatedAt - b.updatedAt);
+            if (matched.length > 0) {
+              stepMap.set(agentId, matched);
+              for (const m of matched) claimedKeys.add(m.key);
+            }
+          }
+
+          const steps: SwarmChainStep[] = uniqueSpawnedIds
+            .filter(id => stepMap.has(id))
+            .map(id => {
+              const sessions = stepMap.get(id)!;
+              return {
+                sessions,
+                timestamp: sessions[0].updatedAt,
+                label: id,
+              };
+            });
+
+          builtChains.push({ root, steps });
+        } catch {
+          builtChains.push({ root, steps: [] });
+        }
+      }
+
+      // Sessions not part of any chain
+      const remainingOrphans = activeSessions.filter(s => !claimedKeys.has(s.key));
+
+      setChains(builtChains);
+      setOrphans(remainingOrphans);
+      setLoading(false);
+    }
+
+    buildChains();
+  }, [activeSessions, allSessions]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center gap-3 py-16">
+        <div
+          className="w-4 h-4 rounded-full border-2 animate-spin"
+          style={{ borderColor: "#222", borderTopColor: "#e85d27" }}
+        />
+        <span className="text-xs text-zinc-600">Building swarm traces…</span>
+      </div>
+    );
+  }
+
+  if (chains.length === 0 && orphans.length === 0) {
+    return <Empty label="No active sessions to trace" />;
+  }
+
+  return (
+    <div className="p-4 flex flex-col gap-4">
+      {chains.map(chain => {
+        const rootActive = Date.now() - chain.root.updatedAt < ACTIVE_MS;
+        const ts = typeStyle(chain.root.type);
+        return (
+          <div
+            key={chain.root.key}
+            className="rounded-lg border overflow-hidden"
+            style={{ background: "#0c0c0e", borderColor: "#1e1e28" }}
+          >
+            {/* Root header */}
+            <button
+              onClick={() => onOpen(chain.root)}
+              className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-white/[0.02] transition-colors"
+              style={{ borderBottom: chain.steps.length > 0 ? "1px solid #1a1a22" : undefined }}
+            >
+              <span className="text-lg flex-shrink-0">{chain.root.icon}</span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-bold" style={{ color: "#e85d27" }}>
+                    {chain.root.agentId}
+                  </span>
+                  <span className="text-zinc-700 text-xs">·</span>
+                  <span className={`text-[10px] font-medium px-2 py-0.5 rounded ${ts.bg} ${ts.text}`}>
+                    {chain.root.type}
+                  </span>
+                  {rootActive ? (
+                    <span className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 px-1.5 py-px rounded">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      Active
+                    </span>
+                  ) : (
+                    <span className="text-[9px] text-zinc-600 uppercase tracking-wider">Done</span>
+                  )}
+                  <span className="text-[10px] text-zinc-600">{timeAgo(chain.root.updatedAt)}</span>
+                </div>
+                <div className="text-[10px] text-zinc-600 mt-0.5 truncate">{chain.root.label}</div>
+              </div>
+              <span className="text-[10px] text-zinc-700 flex-shrink-0">↗</span>
+            </button>
+
+            {/* Steps */}
+            {chain.steps.length > 0 && (
+              <div className="px-4 py-3 flex flex-col gap-3">
+                {chain.steps.map((step, stepIdx) => {
+                  const isParallel = step.sessions.length > 1;
+                  return (
+                    <div key={step.label}>
+                      {/* Step connector line */}
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="w-px h-3 ml-2" style={{ background: "#2a2a36" }} />
+                        <div className="flex items-center gap-2">
+                          <span className="text-[9px] font-semibold uppercase tracking-wider text-zinc-700">
+                            Step {stepIdx + 1}
+                          </span>
+                          {isParallel && (
+                            <span className="text-[9px] text-zinc-800 uppercase tracking-wider">
+                              · parallel
+                            </span>
+                          )}
+                          <div className="flex-1 h-px" style={{ background: "#1e1e28", minWidth: "40px" }} />
+                        </div>
+                      </div>
+
+                      {/* Step sessions */}
+                      <div
+                        className="rounded-md overflow-hidden"
+                        style={{ background: stepIdx % 2 === 0 ? "#0f0f14" : "#0d0d12", border: "1px solid #1a1a22" }}
+                      >
+                        {step.sessions.map((s, si) => {
+                          const sActive = Date.now() - s.updatedAt < ACTIVE_MS;
+                          return (
+                            <button
+                              key={s.key}
+                              onClick={() => onOpen(s)}
+                              className="group w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-white/[0.03] transition-colors"
+                              style={{
+                                borderBottom: si < step.sessions.length - 1 ? "1px solid #141418" : undefined,
+                              }}
+                            >
+                              <span className="text-sm flex-shrink-0">{s.icon}</span>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-semibold text-zinc-200">{s.agentId}</span>
+                                  {sActive ? (
+                                    <span className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-emerald-400">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                      Active
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] text-zinc-600">✓ Done</span>
+                                  )}
+                                  <span className="text-[10px] text-zinc-700">{timeAgo(s.updatedAt)}</span>
+                                </div>
+                                {s.label && (
+                                  <div className="text-[10px] text-zinc-700 truncate mt-0.5">{s.label}</div>
+                                )}
+                              </div>
+                              <span className="text-[10px] text-zinc-800 opacity-0 group-hover:opacity-100 transition-opacity">↗</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {chain.steps.length === 0 && (
+              <div className="px-4 py-2 text-[10px] text-zinc-800 italic">
+                No spawned subagents detected
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {/* Orphan sessions not part of any chain */}
+      {orphans.length > 0 && (
+        <>
+          <div
+            className="text-[10px] font-semibold uppercase tracking-wider text-zinc-800 px-1"
+          >
+            Other active sessions
+          </div>
+          {orphans.map(s => (
+            <SessionRow key={s.key} s={s} onClick={() => onOpen(s)} />
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── cron group card ───────────────────────────────────────────────────────────
 
 interface CronGroup {
@@ -1447,6 +1742,7 @@ export default function ActivitiesPage() {
   const [tab, setTab] = useState<Tab>("scheduled");
   const [agentFilter, setAgentFilter] = useState<string>("all");
   const [detailSession, setDetailSession] = useState<ActivitySession | null>(null);
+  const [swarmTrace, setSwarmTrace] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -1570,6 +1866,20 @@ export default function ActivitiesPage() {
                   </button>
                 ))}
               </div>
+              {/* Swarm Trace toggle (Active Now only) */}
+              {tab === "active" && (
+                <button
+                  onClick={() => setSwarmTrace(v => !v)}
+                  className={`text-xs px-2.5 py-1 rounded border transition-all ${
+                    swarmTrace
+                      ? "bg-orange-500/15 border-orange-500/30 text-orange-400 font-medium"
+                      : "bg-[#111] border-[#1e1e1e] text-zinc-600 hover:text-zinc-400"
+                  }`}
+                >
+                  🔗 Trace
+                </button>
+              )}
+
               {/* Agent filter */}
               <select
                 value={agentFilter}
@@ -1593,10 +1903,18 @@ export default function ActivitiesPage() {
                   {/* Active Now */}
                   {tab === "active" && (
                     <div>
-                      {filtered(active).length === 0 ? (
-                        <Empty label="No active sessions in the last 10 minutes" />
+                      {swarmTrace ? (
+                        <SwarmTraceView
+                          activeSessions={filtered(active)}
+                          allSessions={sessions}
+                          onOpen={setDetailSession}
+                        />
                       ) : (
-                        filtered(active).map(s => <SessionRow key={s.key} s={s} onClick={() => setDetailSession(s)} />)
+                        filtered(active).length === 0 ? (
+                          <Empty label="No active sessions in the last 10 minutes" />
+                        ) : (
+                          filtered(active).map(s => <SessionRow key={s.key} s={s} onClick={() => setDetailSession(s)} />)
+                        )
                       )}
                     </div>
                   )}
