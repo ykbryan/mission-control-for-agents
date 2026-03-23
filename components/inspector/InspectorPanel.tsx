@@ -1,4 +1,5 @@
 import { Agent, skillDescriptions } from "@/lib/agents";
+import { modelToProvider } from "@/lib/model-pricing";
 import MarkdownViewer from "@/components/MarkdownViewer";
 import AgentLogStream from "./AgentLogStream";
 import { useEffect, useState } from "react";
@@ -94,6 +95,7 @@ export default function InspectorPanel({ agent, activeFile, onSelectFile }: Prop
   const [drillLoading, setDrillLoading] = useState(false);
   const [drillFilter, setDrillFilter] = useState<"all" | "chat" | "info" | "memory" | "error">("all");
   const [nodeInfo, setNodeInfo] = useState<NodeInfo | null>(null);
+  const [agentModel, setAgentModel] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/node-info")
@@ -104,6 +106,17 @@ export default function InspectorPanel({ agent, activeFile, onSelectFile }: Prop
       })
       .catch(() => {});
   }, [agent.routerId]);
+
+  useEffect(() => {
+    setAgentModel(null);
+    fetch("/api/telemetry/agent-costs")
+      .then(r => r.json())
+      .then((d: { costs?: Array<{ agentId: string; model?: string }> }) => {
+        const match = (d.costs ?? []).find(c => c.agentId === agent.id);
+        if (match?.model) setAgentModel(match.model);
+      })
+      .catch(() => {});
+  }, [agent.id]);
 
   function openSession(s: SessionDetail) {
     setDrillSession(s);
@@ -190,6 +203,30 @@ export default function InspectorPanel({ agent, activeFile, onSelectFile }: Prop
                 )}
               </section>
             )}
+
+            {agentModel && (() => {
+              const provider = modelToProvider(agentModel);
+              const PROVIDER_COLORS: Record<string, string> = {
+                Anthropic: "#c77c3a", OpenAI: "#19c37d", Google: "#4285f4",
+                "xAI": "#1da1f2", MiniMax: "#9b59b6", Alibaba: "#ff6a00",
+                DeepSeek: "#0ea5e9", Mistral: "#f97316", Meta: "#0073e6",
+              };
+              const color = PROVIDER_COLORS[provider] ?? "#888";
+              return (
+                <section className="mc-inspector__section">
+                  <div className="mc-section-label">Primary Model</div>
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <span
+                      className="text-xs font-mono font-semibold px-2.5 py-1 rounded-lg"
+                      style={{ color, background: `${color}15`, border: `1px solid ${color}30` }}
+                    >
+                      ⚡ {agentModel}
+                    </span>
+                    <span className="text-[11px]" style={{ color: "#555" }}>{provider}</span>
+                  </div>
+                </section>
+              );
+            })()}
 
             {sessionGroups.length > 0 && (
               <section className="mc-inspector__section">

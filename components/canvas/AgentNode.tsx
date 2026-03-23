@@ -81,7 +81,7 @@ export default function AgentNode({ data }: AgentNodeProps) {
 
   return (
     <div
-      className={`relative flex items-center gap-3 px-4 py-3 rounded-xl border shadow-lg transition-colors min-w-[200px] ${bgClass} ${borderClass}`}
+      className={`relative flex items-center gap-3 px-4 py-3 rounded-xl border shadow-lg transition-colors w-[240px] ${bgClass} ${borderClass}`}
     >
       <Handle type="target" position={Position.Top} className="w-2 h-2 !bg-[#555] border-none" />
 

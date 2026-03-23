@@ -26,15 +26,15 @@ const nodeTypes = {
   gatewayNode: GatewayNode,
 };
 
-const AGENT_W = 240;
-const AGENT_H = 72;
-const AGENT_COL_GAP = 40;
-const AGENT_ROW_GAP = 24;
+const AGENT_W = 240;  // must match card w-[240px] in AgentNode
+const AGENT_H = 116;  // name + role + model badge + router/node row + padding
+const AGENT_COL_GAP = 20;
+const AGENT_ROW_GAP = 16;
 const AGENTS_PER_ROW = 4;
 const GATEWAY_H = 64;
 const GATEWAY_MARGIN_TOP = 60;
 const CLUSTER_GAP = 120;     // horizontal gap between gateway clusters
-const AGENTS_TOP_OFFSET = 120; // vertical space below gateway node
+const AGENTS_TOP_OFFSET = 128; // vertical space below gateway node
 
 export default function MissionStage({ agents, selectedAgentId, onSelectAgent, onNodeDoubleClick, mode, darkMode, onModeChange, routerConfigs }: Props) {
 
@@ -160,7 +160,7 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, o
 
       // Vertical offset for specialists: below orchestrators (or directly below gateway if none)
       const specialistTopY = orchestrators.length > 0
-        ? ORCH_Y + AGENT_H + 56
+        ? ORCH_Y + AGENT_H + 40
         : GATEWAY_MARGIN_TOP + GATEWAY_H + AGENTS_TOP_OFFSET;
 
       // Determine the "parent" node for specialist edges
