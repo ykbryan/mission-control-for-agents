@@ -290,13 +290,6 @@ export default function InspectorPanel({ agent, activeFile, onSelectFile }: Prop
               );
             })()}
 
-            <section className="mc-inspector__section mc-inspector__section--overview">
-              <div className="mc-section-label">Overview</div>
-              <div className="mc-overview-card">
-                <strong>Quiet by default</strong>
-                <p>Select a file to bring detail forward. The stage remains primary until you ask for depth.</p>
-              </div>
-            </section>
           </div>
         )}
 
