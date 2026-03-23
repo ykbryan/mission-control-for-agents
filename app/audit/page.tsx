@@ -149,7 +149,7 @@ function EventsTab({ events }: { events: AuditEvent[] }) {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 420px", gap: "20px", minHeight: 0, height: "calc(100vh - 260px)" }}>
       {/* Left: event feed */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "0", minHeight: 0 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "0", minHeight: 0, minWidth: 0 }}>
         {/* Filter pills */}
         <div style={{ display: "flex", gap: "6px", marginBottom: "14px", flexWrap: "wrap" }}>
           {(["all", ...SEV_ALL] as const).map(s => {
