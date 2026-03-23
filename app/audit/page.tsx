@@ -6,6 +6,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
 } from "recharts";
 import NavRail from "@/components/mission-control/NavRail";
+import { skillDescriptions } from "@/lib/agents";
 import type {
   AuditEventsResponse,
   AuditEvent,
@@ -140,16 +141,23 @@ function Skeleton() {
 
 // ── Events Tab ────────────────────────────────────────────────────────────────
 
-function EventsTab({ events }: { events: AuditEvent[] }) {
+const PAGE_SIZE = 8;
+
+function EventsTab({ events, agentRisk }: { events: AuditEvent[]; agentRisk: AgentRiskEntry[] }) {
   const [selected, setSelected] = useState<AuditEvent | null>(null);
   const [sevFilter, setSevFilter] = useState<AuditSeverity | "all">("all");
+  const [page, setPage] = useState(0);
 
   const filtered = sevFilter === "all" ? events : events.filter(e => e.severity === sevFilter);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageEvents = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+
+  const handleFilter = (s: AuditSeverity | "all") => { setSevFilter(s); setPage(0); };
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 420px", gap: "20px", minHeight: 0, height: "calc(100vh - 260px)" }}>
-      {/* Left: event feed */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "0", minHeight: 0, minWidth: 0 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 420px", gap: "20px", alignItems: "start" }}>
+      {/* Left: event feed + pagination */}
+      <div style={{ display: "flex", flexDirection: "column", gap: "0", minWidth: 0 }}>
         {/* Filter pills */}
         <div style={{ display: "flex", gap: "6px", marginBottom: "14px", flexWrap: "wrap" }}>
           {(["all", ...SEV_ALL] as const).map(s => {
@@ -157,7 +165,7 @@ function EventsTab({ events }: { events: AuditEvent[] }) {
             const color = s === "all" ? "#555" : SEV_COLOR[s];
             const count = s === "all" ? events.length : events.filter(e => e.severity === s).length;
             return (
-              <button key={s} onClick={() => setSevFilter(s)} style={{
+              <button key={s} onClick={() => handleFilter(s)} style={{
                 padding: "5px 13px", borderRadius: "20px", border: `1px solid ${active ? color : "#1e1e26"}`,
                 background: active ? `${color}22` : "transparent",
                 color: active ? color : "#555",
@@ -170,14 +178,14 @@ function EventsTab({ events }: { events: AuditEvent[] }) {
           })}
         </div>
 
-        {/* Scrollable feed */}
-        <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "4px" }}>
+        {/* Event list — no scroll, fixed PAGE_SIZE items */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
           {filtered.length === 0 && (
             <div style={{ textAlign: "center", padding: "48px 0", color: "#333", fontSize: "13px" }}>
               No events for this filter
             </div>
           )}
-          {filtered.map(evt => (
+          {pageEvents.map(evt => (
             <div
               key={evt.id}
               onClick={() => setSelected(evt)}
@@ -210,58 +218,153 @@ function EventsTab({ events }: { events: AuditEvent[] }) {
             </div>
           ))}
         </div>
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "14px", padding: "0 2px" }}>
+            <button
+              onClick={() => setPage(p => Math.max(0, p - 1))}
+              disabled={page === 0}
+              style={{
+                padding: "5px 14px", borderRadius: "6px", border: "1px solid #1e1e26",
+                background: "transparent", color: page === 0 ? "#333" : "#888",
+                fontSize: "12px", fontWeight: 600, cursor: page === 0 ? "default" : "pointer",
+              }}
+            >← Prev</button>
+            <span style={{ fontSize: "11px", color: "#444", fontFamily: "ui-monospace,monospace" }}>
+              Page {page + 1} of {totalPages} · {filtered.length} events
+            </span>
+            <button
+              onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+              disabled={page >= totalPages - 1}
+              style={{
+                padding: "5px 14px", borderRadius: "6px", border: "1px solid #1e1e26",
+                background: "transparent", color: page >= totalPages - 1 ? "#333" : "#888",
+                fontSize: "12px", fontWeight: 600, cursor: page >= totalPages - 1 ? "default" : "pointer",
+              }}
+            >Next →</button>
+          </div>
+        )}
       </div>
 
-      {/* Right: detail panel */}
+      {/* Right: detail panel — sticky so it stays in view while left column paginates */}
       <div style={{
+        position: "sticky", top: "20px",
         background: "#0f0f12", border: "1px solid #1e1e26", borderRadius: "10px",
-        overflow: "hidden", display: "flex", flexDirection: "column", height: "100%",
+        overflow: "hidden", display: "flex", flexDirection: "column",
+        minHeight: "420px",
       }}>
         {!selected ? (
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "12px", color: "#333" }}>
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "12px", color: "#333", padding: "48px 0" }}>
             <span style={{ fontSize: "32px" }}>🔍</span>
             <p style={{ fontSize: "12px", margin: 0 }}>Select an event to inspect</p>
           </div>
-        ) : (
-          <div style={{ flex: 1, overflowY: "auto", padding: "20px" }}>
-            <div style={{ display: "flex", gap: "8px", marginBottom: "12px", flexWrap: "wrap" }}>
-              <SeverityBadge sev={selected.severity} />
-              <CategoryBadge cat={selected.category} />
-            </div>
-            <h3 style={{ margin: "0 0 8px", fontSize: "15px", fontWeight: 700, color: "#f0f0f0", lineHeight: "1.3" }}>{selected.title}</h3>
-            <p style={{ margin: "0 0 16px", fontSize: "12px", color: "#888", lineHeight: "1.6" }}>{selected.detail}</p>
+        ) : (() => {
+          const agent = selected.agentId ? agentRisk.find(a => a.agentId === selected.agentId) : null;
+          return (
+            <div style={{ padding: "20px", overflowY: "auto" }}>
+              <div style={{ display: "flex", gap: "8px", marginBottom: "12px", flexWrap: "wrap" }}>
+                <SeverityBadge sev={selected.severity} />
+                <CategoryBadge cat={selected.category} />
+              </div>
+              <h3 style={{ margin: "0 0 8px", fontSize: "15px", fontWeight: 700, color: "#f0f0f0", lineHeight: "1.3" }}>{selected.title}</h3>
+              <p style={{ margin: "0 0 16px", fontSize: "12px", color: "#888", lineHeight: "1.6" }}>{selected.detail}</p>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "16px" }}>
-              {[
-                ["Router", selected.routerLabel],
-                ["Agent", selected.agentId ?? "—"],
-                ["Detected", new Date(selected.detectedAt).toLocaleTimeString()],
-                ["Event ID", selected.id.slice(0, 28) + "…"],
-              ].map(([k, v]) => (
-                <div key={k} style={{ background: "#080810", border: "1px solid #1a1a22", borderRadius: "6px", padding: "8px 10px" }}>
-                  <p style={{ margin: "0 0 2px", fontSize: "9px", color: "#444", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>{k}</p>
-                  <p style={{ margin: 0, fontSize: "11px", color: "#ccc", fontFamily: "ui-monospace,monospace", wordBreak: "break-all" }}>{v}</p>
-                </div>
-              ))}
-            </div>
+              {/* Meta grid */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "16px" }}>
+                {[
+                  ["Router", selected.routerLabel],
+                  ["Agent", selected.agentId ?? "—"],
+                  ["Detected", new Date(selected.detectedAt).toLocaleTimeString()],
+                  ["Event ID", selected.id.slice(0, 22) + "…"],
+                ].map(([k, v]) => (
+                  <div key={k} style={{ background: "#080810", border: "1px solid #1a1a22", borderRadius: "6px", padding: "8px 10px" }}>
+                    <p style={{ margin: "0 0 2px", fontSize: "9px", color: "#444", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>{k}</p>
+                    <p style={{ margin: 0, fontSize: "11px", color: "#ccc", fontFamily: "ui-monospace,monospace", wordBreak: "break-all" }}>{v}</p>
+                  </div>
+                ))}
+              </div>
 
-            <p style={{ margin: "0 0 8px", fontSize: "10px", fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "#444" }}>Evidence</p>
-            <div style={{ background: "#080810", border: "1px solid #1a1a22", borderRadius: "6px", overflow: "hidden" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px" }}>
-                <tbody>
-                  {Object.entries(selected.evidence).map(([k, v]) => (
-                    <tr key={k} style={{ borderBottom: "1px solid #12121a" }}>
-                      <td style={{ padding: "7px 12px", color: "#555", fontWeight: 600, whiteSpace: "nowrap", width: "40%" }}>{k}</td>
-                      <td style={{ padding: "7px 12px", color: "#aaa", fontFamily: "ui-monospace,monospace", wordBreak: "break-all" }}>
-                        {Array.isArray(v) ? v.join(", ") : String(v)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              {/* Model */}
+              {agent?.model && (
+                <>
+                  <p style={{ margin: "0 0 8px", fontSize: "10px", fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "#444" }}>AI Model</p>
+                  <div style={{ marginBottom: "16px", display: "flex", alignItems: "center", gap: "8px", background: "#080810", border: "1px solid #1a1a22", borderRadius: "6px", padding: "10px 12px" }}>
+                    <span style={{ fontSize: "14px" }}>⚡</span>
+                    <span style={{ fontSize: "12px", color: "#c77c3a", fontFamily: "ui-monospace,monospace", fontWeight: 600 }}>{agent.model}</span>
+                  </div>
+                </>
+              )}
+
+              {/* Skills / Tools */}
+              {agent && agent.allSkills.length > 0 && (
+                <>
+                  <p style={{ margin: "0 0 8px", fontSize: "10px", fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "#444" }}>Skills & Tools</p>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "16px" }}>
+                    {agent.allSkills.map(sk => {
+                      const isPriv = agent.privilegedSkills.includes(sk);
+                      return (
+                        <span
+                          key={sk}
+                          title={skillDescriptions[sk] ?? sk}
+                          style={{
+                            fontSize: "10px", fontWeight: 600, padding: "3px 9px",
+                            borderRadius: "20px",
+                            background: isPriv ? "rgba(249,115,22,0.1)" : "rgba(255,255,255,0.04)",
+                            color: isPriv ? "#f97316" : "#666",
+                            border: `1px solid ${isPriv ? "rgba(249,115,22,0.3)" : "#1e1e26"}`,
+                            cursor: "default",
+                          }}
+                        >
+                          {isPriv ? "⚠ " : ""}{sk}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+
+              {/* Agent profile summary */}
+              {agent && (
+                <>
+                  <p style={{ margin: "0 0 8px", fontSize: "10px", fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "#444" }}>Agent Profile</p>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px", marginBottom: "16px" }}>
+                    {[
+                      ["Tier", agent.tier],
+                      ["Configured", agent.configured ? "✓ yes" : "✗ no"],
+                      ["Sessions", String(agent.activeSessions)],
+                      ["Risk Score", String(agent.riskScore)],
+                      ["Tokens", agent.totalTokens > 1000 ? `${(agent.totalTokens/1000).toFixed(1)}K` : String(agent.totalTokens)],
+                      ["Cost", `$${agent.estimatedCost.toFixed(4)}`],
+                    ].map(([k, v]) => (
+                      <div key={k} style={{ background: "#080810", border: "1px solid #1a1a22", borderRadius: "6px", padding: "7px 10px" }}>
+                        <p style={{ margin: "0 0 2px", fontSize: "9px", color: "#444", textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600 }}>{k}</p>
+                        <p style={{ margin: 0, fontSize: "11px", color: k === "Configured" ? (agent.configured ? "#22c55e" : "#ef4444") : "#ccc", fontFamily: "ui-monospace,monospace" }}>{v}</p>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {/* Evidence */}
+              <p style={{ margin: "0 0 8px", fontSize: "10px", fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "#444" }}>Evidence</p>
+              <div style={{ background: "#080810", border: "1px solid #1a1a22", borderRadius: "6px", overflow: "hidden" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px" }}>
+                  <tbody>
+                    {Object.entries(selected.evidence).map(([k, v]) => (
+                      <tr key={k} style={{ borderBottom: "1px solid #12121a" }}>
+                        <td style={{ padding: "7px 12px", color: "#555", fontWeight: 600, whiteSpace: "nowrap", width: "40%" }}>{k}</td>
+                        <td style={{ padding: "7px 12px", color: "#aaa", fontFamily: "ui-monospace,monospace", wordBreak: "break-all" }}>
+                          {Array.isArray(v) ? v.join(", ") : String(v)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
       </div>
     </div>
   );
@@ -757,7 +860,7 @@ export default function AuditPage() {
             </div>
 
             {/* Tab content */}
-            {tab === "events" && data && <EventsTab events={data.events} />}
+            {tab === "events" && data && <EventsTab events={data.events} agentRisk={data.agentRisk} />}
             {tab === "infrastructure" && data && <InfrastructureTab routers={data.routers} />}
             {tab === "agents" && data && <AgentRiskTab agents={data.agentRisk} />}
             {tab === "trends" && data && <LiveTrendsTab data={data} />}

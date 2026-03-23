@@ -53,6 +53,8 @@ export interface AgentRiskEntry {
   riskScore: number;
   riskFactors: string[];
   privilegedSkills: string[];
+  model?: string;
+  allSkills: string[];
 }
 
 export interface AuditSummary {
@@ -722,6 +724,8 @@ export async function GET(req: NextRequest) {
         riskScore: score,
         riskFactors: factors,
         privilegedSkills,
+        model: costEntry?.model,
+        allSkills: registered?.skills ?? [],
       });
     }
   }
