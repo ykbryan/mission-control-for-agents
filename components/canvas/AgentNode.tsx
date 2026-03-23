@@ -118,24 +118,24 @@ export default function AgentNode({ data }: AgentNodeProps) {
         )}
 
         {data.routerLabel && (
-          <div className="flex items-center gap-1 mt-1 flex-wrap">
-            <span className="text-[9px]">🛰️</span>
-            <span className="text-[9px] font-medium tracking-wide truncate"
+          <div className="flex items-center gap-1 mt-1 overflow-hidden">
+            <span className="text-[9px] shrink-0">🛰️</span>
+            <span className="text-[9px] font-medium tracking-wide shrink-0"
               style={{ color: isOrch ? "#7c3aed99" : "#55556688" }}>
               {data.routerLabel}
             </span>
             {data.nodeHostname ? (
               <>
-                <span className="text-[9px]">🖥️</span>
-                <span className="text-[9px] truncate" style={{ color: "#666680", maxWidth: "80px" }}>{data.nodeHostname}</span>
+                <span className="text-[9px] shrink-0">🖥️</span>
+                <span className="text-[9px] truncate" style={{ color: "#666680" }}>{data.nodeHostname}</span>
               </>
             ) : (
               <>
                 {data.platformIcon && (
-                  <span className="text-[9px]" title={data.machineLabel}>{data.platformIcon}</span>
+                  <span className="text-[9px] shrink-0" title={data.machineLabel}>{data.platformIcon}</span>
                 )}
                 {data.machineLabel && (
-                  <span className="text-[9px] truncate" style={{ color: "#666680", maxWidth: "80px" }}>{data.machineLabel}</span>
+                  <span className="text-[9px] truncate" style={{ color: "#666680" }}>{data.machineLabel}</span>
                 )}
               </>
             )}
