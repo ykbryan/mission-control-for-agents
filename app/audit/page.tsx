@@ -778,7 +778,7 @@ export default function AuditPage() {
 
       {/* Body */}
       <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
-        <NavRail activeView="audit" onViewChange={(v) => {
+        <NavRail activeView="healthcheck" onViewChange={(v) => {
           if (v === "mission") window.location.href = "/";
           if (v === "swarms") window.location.href = "/teams";
           if (v === "activities") window.location.href = "/activities";
