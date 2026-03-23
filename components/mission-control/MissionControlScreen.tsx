@@ -22,7 +22,7 @@ export default function MissionControlScreen({ agents, routerConfigs, routerErro
   const [activeFile, setActiveFile] = useState<string | null>(null);
   const [mode, setMode] = useState<"graph" | "workflow">("graph");
   const [darkMode, setDarkMode] = useState(true);
-  const [activeView, setActiveView] = useState<"mission" | "swarms" | "analytics">("mission");
+  const [activeView, setActiveView] = useState<"mission" | "swarms" | "activities" | "spending" | "healthcheck">("mission");
 
   const filteredAgents = useMemo(() => filterAgents(agents, searchQuery), [agents, searchQuery]);
   const selectedAgent = getSelectedAgent(filteredAgents.length ? filteredAgents : agents, selectedAgentId);
