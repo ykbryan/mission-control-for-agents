@@ -91,5 +91,5 @@ export async function fetchAgentsFromRouter(
     return a.name.localeCompare(b.name);
   });
 
-  return merged.length > 0 ? merged : staticAgents.map(a => ({ ...a, routerId, routerLabel }));
+  return merged;
 }
