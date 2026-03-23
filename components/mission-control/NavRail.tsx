@@ -27,7 +27,7 @@ export default function NavRail({ activeView, onViewChange }: Props) {
       </div>
 
       <nav className="flex flex-col gap-1 flex-1 w-full">
-        <button className={navBtn(activeView === "mission")} onClick={() => onViewChange("mission")} title="Mission Canvas">
+        <button className={navBtn(activeView === "mission")} onClick={() => onViewChange("mission")} title="Agent Canvas">
           {activeView === "mission" && <span className="absolute left-0 top-1 bottom-1 w-[2px] bg-[#e85d27] rounded-none" />}
           <span className="text-xl">🎯</span>
         </button>
