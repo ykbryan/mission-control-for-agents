@@ -34,8 +34,10 @@ export default function AnimatedMetricCard({
     <div
       style={{
         backgroundColor: "#0f0f12",
-        border: "1px solid #1e1e26",
         borderTop: `2px solid ${accentColor}`,
+        borderRight: "1px solid #1e1e26",
+        borderBottom: "1px solid #1e1e26",
+        borderLeft: "1px solid #1e1e26",
         borderRadius: "10px",
         padding: "20px 24px",
         display: "flex",

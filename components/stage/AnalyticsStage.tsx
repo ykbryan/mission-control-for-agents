@@ -338,15 +338,17 @@ function DailyTab({ daily14, allDaily }: { daily14: DailyEntry[]; allDaily: Dail
   }, [daily14]);
 
   const agentTable = useMemo(() => {
+    // Key by routerId--agentId so "main" on two different routers don't collide
     const map = new Map<string, { tokens: number; cost: number; router: string; lastDate: string }>();
     for (const d of allDaily) {
-      const existing = map.get(d.agentId);
+      const key = d.routerId ? `${d.routerId}--${d.agentId}` : d.agentId;
+      const existing = map.get(key);
       if (existing) {
         existing.tokens += d.tokens;
         existing.cost += d.estimatedCost;
         if (d.date > existing.lastDate) existing.lastDate = d.date;
       } else {
-        map.set(d.agentId, { tokens: d.tokens, cost: d.estimatedCost, router: d.routerLabel, lastDate: d.date });
+        map.set(key, { tokens: d.tokens, cost: d.estimatedCost, router: d.routerLabel, lastDate: d.date });
       }
     }
     return [...map.entries()]
