@@ -432,6 +432,14 @@ select {
   color: var(--mc-accent-strong);
   border: 1px solid rgba(240, 120, 73, 0.14);
   font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  user-select: none;
+}
+
+.mc-skill-chip:hover {
+  background: rgba(240, 120, 73, 0.15);
+  border-color: rgba(240, 120, 73, 0.35);
 }
 
 .mc-skill-chip__dot {
@@ -440,6 +448,11 @@ select {
   border-radius: 999px;
   background: currentColor;
   opacity: 0.75;
+  transition: opacity 0.15s;
+}
+
+.mc-skill-chip:hover .mc-skill-chip__dot {
+  opacity: 1;
 }
 
 .mc-file-list {
