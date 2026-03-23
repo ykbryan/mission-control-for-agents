@@ -368,9 +368,11 @@ async function handleAgents(res: http.ServerResponse) {
       : sess?.transcriptPath ? agentDirFromTranscript(sess.transcriptPath)
       : null;
     const files = agentDir ? listAgentFiles(agentDir) : [];
-    // Skip CLI tools / non-agent sessions (claude-code, gemini, codex, etc.)
-    // that OpenClaw registers but have no agent markdown files and are unconfigured.
-    if (files.length === 0 && !a.configured) continue;
+    // Skip known CLI tools that OpenClaw registers as sessions but aren't real agents.
+    // Use an explicit blocklist rather than a blanket configured+files check so that
+    // legitimate unconfigured agents (e.g. a bare "main" agent) are not hidden.
+    const CLI_TOOLS = new Set(["claude-code", "gemini", "codex", "gemini-cli", "codex-cli", "aider", "cursor"]);
+    if (CLI_TOOLS.has(a.id) && files.length === 0 && !a.configured) continue;
     // Extract skills from TOOLS.md for dynamically discovered agents.
     // Only treat an identifier as a tool name when it is the PRIMARY subject of a
     // list item — either the sole content ("- web_search") or the value after a
