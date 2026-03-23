@@ -851,6 +851,7 @@ async function handleCosts(res: http.ServerResponse) {
   // Per-agent costs — use model-accurate pricing where available
   const costs = Array.from(byAgent.entries()).map(([agentId, totalTokens]) => ({
     agentId,
+    model: agentModel.get(agentId),
     totalTokens,
     estimatedCost: estimateCost(totalTokens, agentModel.get(agentId) ?? ""),
   }));
