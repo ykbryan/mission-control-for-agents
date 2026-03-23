@@ -204,7 +204,7 @@ function SectionHead({ children }: { children: React.ReactNode }) {
 
 // ─── agent table ──────────────────────────────────────────────────────────────
 
-function AgentTable({ rows, totalCost }: { rows: { agentId: string; tokens: number; cost: number; router: string; lastDate?: string }[]; totalCost: number }) {
+function AgentTable({ rows, totalCost }: { rows: { agentId: string; routerId?: string; tokens: number; cost: number; router: string; lastDate?: string }[]; totalCost: number }) {
   const [hovered, setHovered] = useState<string | null>(null);
   return (
     <div style={{ background: "#0f0f12", border: "1px solid #1e1e26", borderRadius: "10px", overflow: "hidden" }}>
@@ -224,11 +224,12 @@ function AgentTable({ rows, totalCost }: { rows: { agentId: string; tokens: numb
         <tbody>
           {rows.slice(0, 10).map((row, i) => {
             const share = totalCost > 0 ? (row.cost / totalCost) * 100 : 0;
+            const rowKey = row.routerId ? `${row.routerId}--${row.agentId}` : row.agentId;
             return (
-              <tr key={row.agentId}
-                onMouseEnter={() => setHovered(row.agentId)}
+              <tr key={rowKey}
+                onMouseEnter={() => setHovered(rowKey)}
                 onMouseLeave={() => setHovered(null)}
-                style={{ borderBottom: "1px solid #13131a", backgroundColor: hovered === row.agentId ? "#131318" : "transparent", transition: "background 0.12s" }}
+                style={{ borderBottom: "1px solid #13131a", backgroundColor: hovered === rowKey ? "#131318" : "transparent", transition: "background 0.12s" }}
               >
                 <td style={{ padding: "9px 10px 9px 20px", color: "#333", fontFamily: "ui-monospace,monospace", fontSize: "11px" }}>{i + 1}</td>
                 <td style={{ padding: "9px 10px", color: "#d0d0d0", maxWidth: "140px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.agentId}</td>
@@ -412,15 +413,17 @@ export default function SpendingPage() {
   const agentRows = useMemo(() => {
     if (!periodCutoff) {
       return [...(data?.costs ?? [])].sort((a, b) => b.estimatedCost - a.estimatedCost).slice(0, 10)
-        .map(c => ({ agentId: c.agentId, tokens: c.tokens, cost: c.estimatedCost, router: c.routerLabel }));
+        .map(c => ({ agentId: c.agentId, routerId: c.routerId, tokens: c.tokens, cost: c.estimatedCost, router: c.routerLabel }));
     }
-    const m = new Map<string, { tokens: number; cost: number; router: string }>();
+    // Key by routerId--agentId so same-named agents on different routers don't merge
+    const m = new Map<string, { agentId: string; routerId: string; tokens: number; cost: number; router: string }>();
     for (const d of filteredDaily) {
-      const e = m.get(d.agentId);
+      const key = `${d.routerId}--${d.agentId}`;
+      const e = m.get(key);
       if (e) { e.tokens += d.tokens; e.cost += d.estimatedCost; }
-      else m.set(d.agentId, { tokens: d.tokens, cost: d.estimatedCost, router: d.routerLabel });
+      else m.set(key, { agentId: d.agentId, routerId: d.routerId, tokens: d.tokens, cost: d.estimatedCost, router: d.routerLabel });
     }
-    return [...m.entries()].map(([agentId, v]) => ({ agentId, ...v }))
+    return [...m.values()]
       .sort((a, b) => b.cost - a.cost).slice(0, 10);
   }, [data, filteredDaily, periodCutoff]);
 
