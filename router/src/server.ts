@@ -18,6 +18,7 @@
 import http from "http";
 import fs from "fs";
 import path from "path";
+import os from "os";
 import { randomBytes } from "crypto";
 import {
   listSessions,
@@ -567,13 +568,31 @@ async function handleFile(res: http.ServerResponse, params: URLSearchParams) {
   json(res, 200, { content });
 }
 
-async function handleCronsNative(res: http.ServerResponse) {
-  try {
-    const jobs = await listCrons(OPENCLAW_URL, OPENCLAW_TOKEN);
-    json(res, 200, { jobs });
-  } catch (e) {
-    json(res, 200, { jobs: [], error: String(e) });
+function readCronsFromDisk(): unknown[] {
+  // OpenClaw stores registered cron jobs in ~/.openclaw/cron/jobs.json
+  const candidates = [
+    path.join(os.homedir(), ".openclaw", "cron", "jobs.json"),
+    "/opt/openclaw/cron/jobs.json",
+    "/etc/openclaw/cron/jobs.json",
+  ];
+  for (const p of candidates) {
+    if (!fs.existsSync(p)) continue;
+    try {
+      const raw = JSON.parse(fs.readFileSync(p, "utf8")) as { jobs?: unknown[] } | unknown[];
+      const jobs = Array.isArray(raw) ? raw : ((raw as { jobs?: unknown[] }).jobs ?? []);
+      console.log(`[router] /crons-native: read ${jobs.length} jobs from ${p}`);
+      return jobs;
+    } catch (e) {
+      console.warn(`[router] /crons-native: failed to read ${p}:`, e);
+    }
   }
+  console.warn("[router] /crons-native: no cron jobs.json found in any candidate path");
+  return [];
+}
+
+async function handleCronsNative(res: http.ServerResponse) {
+  const jobs = readCronsFromDisk();
+  json(res, 200, { jobs });
 }
 
 async function handleDebug(res: http.ServerResponse) {

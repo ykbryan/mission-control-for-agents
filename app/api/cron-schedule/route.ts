@@ -183,35 +183,81 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Native crons: jobs registered directly in OpenClaw's scheduler
-  // Convert to ScheduledJob entries and add them if not already covered by a session
-  const existingJobIds = new Set<string>();
+  // ── Parse OpenClaw cron jobs.json format ─────────────────────────────────
+  // Real format (from ~/.openclaw/cron/jobs.json):
+  //   { id, agentId, name, enabled, schedule: { kind, tz, expr }, payload: { message },
+  //     state: { nextRunAtMs, lastRunAtMs, lastRunStatus, consecutiveErrors } }
+  interface OpenClawSchedule { kind: string; tz?: string; expr?: string; intervalMs?: number }
+  interface OpenClawState { nextRunAtMs?: number; lastRunAtMs?: number; lastRunStatus?: string; consecutiveErrors?: number }
+  interface OpenClawPayload { message?: string }
+  interface OpenClawCronJob {
+    id: string; agentId?: string; name?: string; enabled?: boolean;
+    schedule?: OpenClawSchedule; payload?: OpenClawPayload; state?: OpenClawState;
+    [k: string]: unknown;
+  }
+
+  function cronExprToStr(expr: string, tz?: string): string {
+    // Convert common cron expressions to human-readable strings
+    const tzLabel = tz && tz !== "UTC" ? ` ${tz.split("/").pop()}` : " UTC";
+    const parts = expr.trim().split(/\s+/);
+    if (parts.length < 5) return expr;
+    const [min, hour, dom, , dow] = parts;
+    if (expr === "* * * * *") return "Every minute";
+    if (min.startsWith("*/")) return `Every ${min.slice(2)}m`;
+    if (expr === `0 * * * *`) return "Hourly";
+    if (dom === "*" && dow === "*") return `Daily ${hour.padStart(2,"0")}:${min.padStart(2,"0")}${tzLabel}`;
+    const days = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+    if (dow !== "*" && dom === "*") {
+      const day = days[parseInt(dow)] ?? `Day${dow}`;
+      return `Weekly ${day} ${hour.padStart(2,"0")}:${min.padStart(2,"0")}${tzLabel}`;
+    }
+    return expr;
+  }
+
+  function intervalMsFromExpr(expr: string): number | null {
+    const parts = expr.trim().split(/\s+/);
+    if (parts[0].startsWith("*/")) return parseInt(parts[0].slice(2)) * 60_000;
+    if (expr === "0 * * * *") return 60 * 60_000;
+    if (expr === "* * * * *") return 60_000;
+    // Daily
+    if (parts[1] !== "*" && parts[2] === "*" && parts[4] === "*") return 24 * 60 * 60_000;
+    // Weekly
+    if (parts[4] !== "*") return 7 * 24 * 60 * 60_000;
+    return null;
+  }
+
   const nativeOnlyJobs: ScheduledJob[] = [];
 
   for (let i = 0; i < routers.length; i++) {
     const r = routers[i];
     const result = nativeCronResults[i];
     if (result.status !== "fulfilled") continue;
-    for (const nj of result.value.jobs ?? []) {
-      if (!nj.enabled && nj.enabled !== undefined) continue; // skip disabled
-      const agentId = (nj.agentId ?? "main") as string;
-      const syntheticId = `${agentId}::native::${nj.id}`;
-      existingJobIds.add(syntheticId);
+    const rawJobs = (result.value.jobs ?? []) as OpenClawCronJob[];
 
-      // Determine validity
-      const intervalMs = nj.intervalMs ?? null;
-      const lastRunAt = nj.lastRunAt ? (nj.lastRunAt < 1e12 ? nj.lastRunAt * 1000 : nj.lastRunAt) : 0;
-      const nextRunAt = nj.nextRunAt ? (nj.nextRunAt < 1e12 ? nj.nextRunAt * 1000 : nj.nextRunAt) : null;
+    for (const nj of rawJobs) {
+      if (nj.enabled === false) continue; // skip explicitly disabled jobs
+
+      const agentId = nj.agentId ?? "main";
+      const syntheticId = `${agentId}::native::${nj.id}`;
+
+      const expr = nj.schedule?.expr ?? "";
+      const tz   = nj.schedule?.tz;
+      const scheduleStr = expr ? cronExprToStr(expr, tz) : (nj.schedule?.kind ?? "Scheduled");
+      const intervalMs  = expr ? intervalMsFromExpr(expr) : (nj.schedule?.intervalMs ?? null);
+
+      const lastRunAt  = nj.state?.lastRunAtMs  ?? 0;
+      const nextRunAt  = nj.state?.nextRunAtMs  ?? null;
+      const errCount   = nj.state?.consecutiveErrors ?? 0;
 
       let validity: JobValidity = "unconfirmed";
       if (lastRunAt > 0 && intervalMs) {
         const missedRuns = Math.floor((now - lastRunAt) / intervalMs);
-        if (missedRuns <= 1) validity = "active";
+        if (missedRuns <= 1) validity = errCount > 3 ? "overdue" : "active";
         else if (missedRuns <= 2) validity = "overdue";
         else if (missedRuns <= 10) validity = "stale";
         else validity = "paused";
-      } else if (!lastRunAt) {
-        validity = "unconfirmed";
+      } else if (nextRunAt && nextRunAt > now) {
+        validity = "active"; // scheduled but hasn't run yet
       }
 
       nativeOnlyJobs.push({
@@ -219,11 +265,11 @@ export async function GET(req: NextRequest) {
         agentId,
         routerId: r.id,
         routerLabel: r.label,
-        name: (nj.name as string | undefined) ?? nj.id,
-        description: (nj.description as string | undefined) ?? "",
-        scheduleStr: (nj.scheduleExpression as string | undefined) ?? (intervalMs ? `Every ${Math.round(intervalMs / 60000)}m` : "Scheduled"),
+        name: nj.name ?? nj.id,
+        description: nj.payload?.message ?? "",
+        scheduleStr,
         intervalMs,
-        nextRunAt,
+        nextRunAt: nextRunAt ?? null,
         lastRunAt,
         runCount: 0,
         avgTokens: 0,
