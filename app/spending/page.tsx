@@ -48,6 +48,16 @@ interface AnalyticsData {
 
 type View = "agents" | "daily" | "weekly" | "routers" | "models" | "providers";
 
+type Period = "1d" | "7d" | "14d" | "6w" | "all";
+
+const PERIODS: { id: Period; label: string; days: number | null }[] = [
+  { id: "1d",  label: "1D",  days: 1  },
+  { id: "7d",  label: "7D",  days: 7  },
+  { id: "14d", label: "14D", days: 14 },
+  { id: "6w",  label: "6W",  days: 42 },
+  { id: "all", label: "All", days: null },
+];
+
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
 const ORANGE = "#e85d27";
@@ -313,6 +323,7 @@ export default function SpendingPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState<string | null>(null);
   const [view, setView]       = useState<View>("agents");
+  const [period, setPeriod]   = useState<Period>("all");
   const [refreshing, setRefreshing] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
 
@@ -339,21 +350,34 @@ export default function SpendingPage() {
 
   // ── derived values ──────────────────────────────────────────────────────────
 
-  const totalCost   = useMemo(() => (data?.costs ?? []).reduce((s, c) => s + c.estimatedCost, 0), [data]);
-  const totalTokens = useMemo(() => (data?.costs ?? []).reduce((s, c) => s + c.tokens, 0), [data]);
+  const periodCutoff = useMemo(() => {
+    const p = PERIODS.find(p => p.id === period);
+    if (!p?.days) return null;
+    return daysAgo(p.days);
+  }, [period]);
 
-  // Daily 14-day window
-  const daily14 = useMemo(() => {
-    const cutoff = daysAgo(14);
-    return (data?.daily ?? []).filter(d => d.date >= cutoff);
-  }, [data]);
+  // Period-filtered daily entries
+  const filteredDaily = useMemo(() => {
+    if (!periodCutoff) return data?.daily ?? [];
+    return (data?.daily ?? []).filter(d => d.date >= periodCutoff);
+  }, [data, periodCutoff]);
 
-  // Daily area series
+  const totalCost = useMemo(() => {
+    if (!periodCutoff) return (data?.costs ?? []).reduce((s, c) => s + c.estimatedCost, 0);
+    return filteredDaily.reduce((s, d) => s + d.estimatedCost, 0);
+  }, [data, filteredDaily, periodCutoff]);
+
+  const totalTokens = useMemo(() => {
+    if (!periodCutoff) return (data?.costs ?? []).reduce((s, c) => s + c.tokens, 0);
+    return filteredDaily.reduce((s, d) => s + d.tokens, 0);
+  }, [data, filteredDaily, periodCutoff]);
+
+  // Period chart series (by day)
   const areaSeries = useMemo(() => {
     const m = new Map<string, number>();
-    for (const d of daily14) m.set(d.date, (m.get(d.date) ?? 0) + d.estimatedCost);
+    for (const d of filteredDaily) m.set(d.date, (m.get(d.date) ?? 0) + d.estimatedCost);
     return [...m.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, cost]) => ({ date, cost }));
-  }, [daily14]);
+  }, [filteredDaily]);
 
   // Trend: last 7 vs prior 7 days
   const trend7 = useMemo(() => {
@@ -384,53 +408,46 @@ export default function SpendingPage() {
     return recent.reduce((s, d) => s + d.estimatedCost, 0) / days;
   }, [data]);
 
-  // Top 12 agents
-  const top12 = useMemo(() =>
-    [...(data?.costs ?? [])].sort((a, b) => b.estimatedCost - a.estimatedCost).slice(0, 12),
-  [data]);
-
-  // Top 12 for daily tab (last 14 days)
-  const top12Daily = useMemo(() => {
-    const m = new Map<string, { tokens: number; cost: number; router: string; lastDate: string }>();
-    for (const d of daily14) {
-      const e = m.get(d.agentId);
-      if (e) { e.tokens += d.tokens; e.cost += d.estimatedCost; if (d.date > e.lastDate) e.lastDate = d.date; }
-      else m.set(d.agentId, { tokens: d.tokens, cost: d.estimatedCost, router: d.routerLabel, lastDate: d.date });
+  // By Agent — use all-time costs when period=all, else derive from filteredDaily
+  const agentRows = useMemo(() => {
+    if (!periodCutoff) {
+      return [...(data?.costs ?? [])].sort((a, b) => b.estimatedCost - a.estimatedCost).slice(0, 12)
+        .map(c => ({ agentId: c.agentId, tokens: c.tokens, cost: c.estimatedCost, router: c.routerLabel }));
     }
-    return [...m.entries()]
-      .map(([agentId, v]) => ({ agentId, ...v }))
-      .sort((a, b) => b.cost - a.cost)
-      .slice(0, 12);
-  }, [daily14]);
-
-  // Weekly (6 weeks)
-  const weekly6 = useMemo(() => {
-    const cutoff = daysAgo(42);
-    const filtered = (data?.daily ?? []).filter(d => d.date >= cutoff);
-    const m = new Map<string, number>();
-    for (const d of filtered) {
-      const w = isoWeek(d.date);
-      m.set(w, (m.get(w) ?? 0) + d.estimatedCost);
-    }
-    return [...m.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([week, cost]) => ({ week, cost }));
-  }, [data]);
-
-  // Top 12 for weekly tab
-  const top12Weekly = useMemo(() => {
-    const cutoff = daysAgo(42);
-    const filtered = (data?.daily ?? []).filter(d => d.date >= cutoff);
     const m = new Map<string, { tokens: number; cost: number; router: string }>();
-    for (const d of filtered) {
+    for (const d of filteredDaily) {
       const e = m.get(d.agentId);
       if (e) { e.tokens += d.tokens; e.cost += d.estimatedCost; }
       else m.set(d.agentId, { tokens: d.tokens, cost: d.estimatedCost, router: d.routerLabel });
     }
-    return [...m.entries()].map(([agentId, v]) => ({ agentId, ...v })).sort((a, b) => b.cost - a.cost).slice(0, 12);
-  }, [data]);
+    return [...m.entries()].map(([agentId, v]) => ({ agentId, ...v }))
+      .sort((a, b) => b.cost - a.cost).slice(0, 12);
+  }, [data, filteredDaily, periodCutoff]);
 
-  // Router data
-  const byRouter = data?.byRouter ?? [];
-  const routerTotal = byRouter.reduce((s, r) => s + r.estimatedCost, 0);
+  // Weekly bar chart — always derive from filteredDaily
+  const weeklySeries = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const d of filteredDaily) {
+      const w = isoWeek(d.date);
+      m.set(w, (m.get(w) ?? 0) + d.estimatedCost);
+    }
+    return [...m.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([week, cost]) => ({ week, cost }));
+  }, [filteredDaily]);
+
+  // By Router — use all-time when period=all, else derive from filteredDaily
+  const routerRows = useMemo(() => {
+    if (!periodCutoff) return data?.byRouter ?? [];
+    const m = new Map<string, { label: string; tokens: number; cost: number }>();
+    for (const d of filteredDaily) {
+      const e = m.get(d.routerId);
+      if (e) { e.tokens += d.tokens; e.cost += d.estimatedCost; }
+      else m.set(d.routerId, { label: d.routerLabel, tokens: d.tokens, cost: d.estimatedCost });
+    }
+    return [...m.entries()]
+      .map(([routerId, v]) => ({ routerId, routerLabel: v.label, totalTokens: v.tokens, estimatedCost: v.cost }))
+      .sort((a, b) => b.estimatedCost - a.estimatedCost);
+  }, [data, filteredDaily, periodCutoff]);
+  const routerTotal = routerRows.reduce((s, r) => s + r.estimatedCost, 0);
 
   // By Model
   const byModel = data?.byModel ?? [];
@@ -533,10 +550,30 @@ export default function SpendingPage() {
 
         {/* KPI row */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px" }}>
-          <KpiCard label="All-Time Spend"    value={fmtCost(totalCost)}      sub={`${fmtTokens(totalTokens)} tokens total`} accent={ORANGE} trend={trend7} />
+          <KpiCard label={period === "all" ? "All-Time Spend" : `${PERIODS.find(p=>p.id===period)?.label} Spend`} value={fmtCost(totalCost)} sub={`${fmtTokens(totalTokens)} tokens total`} accent={ORANGE} trend={trend7} />
           <KpiCard label="30-Day Run Rate"   value={fmtCost(runRate)}         sub="projected / month"                        accent={GREEN} />
           <KpiCard label="Daily Burn"        value={fmtCost(dailyBurn)}       sub="avg last 7 days"                          accent="#8b5cf6" />
           <KpiCard label="Active Agents"     value={String((data?.costs ?? []).filter(c => c.estimatedCost > 0).length)} sub="with recorded spend" accent="#38bdf8" />
+        </div>
+
+        {/* Period picker */}
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <span style={{ fontSize: "11px", color: "#444", letterSpacing: "0.06em", textTransform: "uppercase", fontWeight: 600 }}>Period</span>
+          <div style={{ display: "flex", gap: "2px", background: "#0f0f12", border: "1px solid #1e1e26", borderRadius: "8px", padding: "3px" }}>
+            {PERIODS.map(p => (
+              <button
+                key={p.id}
+                onClick={() => setPeriod(p.id)}
+                style={{
+                  padding: "5px 14px", borderRadius: "5px", border: "none", cursor: "pointer",
+                  fontSize: "12px", fontWeight: 600, letterSpacing: "0.04em",
+                  background: period === p.id ? ORANGE : "transparent",
+                  color: period === p.id ? "#fff" : "#555",
+                  transition: "all 0.12s",
+                }}
+              >{p.label}</button>
+            ))}
+          </div>
         </div>
 
         {/* Tab bar */}
@@ -579,7 +616,7 @@ export default function SpendingPage() {
             </div>
             <SectionHead>Top 12 spenders — all time</SectionHead>
             <AgentTable
-              rows={top12.map(c => ({ agentId: c.agentId, tokens: c.tokens, cost: c.estimatedCost, router: c.routerLabel }))}
+              rows={agentRows}
               totalCost={totalCost}
             />
           </div>
@@ -608,8 +645,8 @@ export default function SpendingPage() {
             </div>
             <SectionHead>Top 12 spenders — last 14 days</SectionHead>
             <AgentTable
-              rows={top12Daily.map(c => ({ agentId: c.agentId, tokens: c.tokens, cost: c.cost, router: c.router, lastDate: c.lastDate }))}
-              totalCost={top12Daily.reduce((s, c) => s + c.cost, 0)}
+              rows={agentRows}
+              totalCost={agentRows.reduce((s, c) => s + c.cost, 0)}
             />
           </div>
         )}
@@ -620,7 +657,7 @@ export default function SpendingPage() {
             <div style={{ background: "#0f0f12", border: "1px solid #1e1e26", borderRadius: "10px", padding: "24px" }}>
               <SectionHead>Weekly cost — last 6 weeks</SectionHead>
               <ResponsiveContainer width="100%" height={240}>
-                <BarChart data={weekly6} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                <BarChart data={weeklySeries} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#1a1a22" vertical={false} />
                   <XAxis dataKey="week" stroke="#333" tick={{ fontSize: 11, fill: "#555", fontFamily: "ui-monospace,monospace" }} tickLine={false} axisLine={{ stroke: "#222" }} />
                   <YAxis stroke="#333" tick={{ fontSize: 11, fill: "#555", fontFamily: "ui-monospace,monospace" }} tickLine={false} axisLine={false} tickFormatter={v => `$${v.toFixed(3)}`} width={64} />
@@ -631,8 +668,8 @@ export default function SpendingPage() {
             </div>
             <SectionHead>Top 12 spenders — last 6 weeks</SectionHead>
             <AgentTable
-              rows={top12Weekly.map(c => ({ agentId: c.agentId, tokens: c.tokens, cost: c.cost, router: c.router }))}
-              totalCost={top12Weekly.reduce((s, c) => s + c.cost, 0)}
+              rows={agentRows}
+              totalCost={agentRows.reduce((s, c) => s + c.cost, 0)}
             />
           </div>
         )}
@@ -640,7 +677,7 @@ export default function SpendingPage() {
         {/* ── By Router ── */}
         {view === "routers" && (
           <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-            {byRouter.length <= 1 ? (
+            {routerRows.length <= 1 ? (
               <div style={{ background: "#0f0f12", border: "1px solid #1e1e26", borderRadius: "10px", padding: "48px", textAlign: "center" }}>
                 <p style={{ color: "#333", fontSize: "13px", margin: "0 0 6px 0" }}>Only one router connected</p>
                 <p style={{ color: "#222", fontSize: "12px", margin: 0 }}>Add more routers from the Connections Manager to compare gateway spend.</p>
@@ -650,7 +687,7 @@ export default function SpendingPage() {
                 <div style={{ background: "#0f0f12", border: "1px solid #1e1e26", borderRadius: "10px", padding: "24px" }}>
                   <SectionHead>Cost per router — all time</SectionHead>
                   <ResponsiveContainer width="100%" height={240}>
-                    <BarChart data={byRouter.map(r => ({ name: r.routerLabel, cost: r.estimatedCost }))} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                    <BarChart data={routerRows.map(r => ({ name: r.routerLabel, cost: r.estimatedCost }))} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#1a1a22" vertical={false} />
                       <XAxis dataKey="name" stroke="#333" tick={{ fontSize: 12, fill: "#555" }} tickLine={false} axisLine={{ stroke: "#222" }} />
                       <YAxis stroke="#333" tick={{ fontSize: 11, fill: "#555", fontFamily: "ui-monospace,monospace" }} tickLine={false} axisLine={false} tickFormatter={v => `$${v.toFixed(3)}`} width={64} />
@@ -660,7 +697,7 @@ export default function SpendingPage() {
                   </ResponsiveContainer>
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "16px" }}>
-                  {byRouter.map((r, i) => {
+                  {routerRows.map((r, i) => {
                     const share = routerTotal > 0 ? (r.estimatedCost / routerTotal) * 100 : 0;
                     return (
                       <div key={r.routerId} style={{ background: "#0f0f12", border: "1px solid #1e1e26", borderTop: `2px solid ${COLORS[i % COLORS.length]}`, borderRadius: "10px", padding: "20px 22px" }}>
@@ -682,6 +719,11 @@ export default function SpendingPage() {
         {/* ── By Model ── */}
         {view === "models" && (
           <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+            {(view === "models" || view === "providers") && period !== "all" && (
+              <p style={{ fontSize: "11px", color: "#444", margin: "0 0 16px 0" }}>
+                ℹ Model and provider breakdowns reflect all-time usage — per-day model tracking coming soon.
+              </p>
+            )}
             {byModel.length > 0 && (
               <div style={{ background: "#0f0f12", border: "1px solid #1e1e26", borderRadius: "10px", padding: "24px" }}>
                 <SectionHead>Token usage by model — all time</SectionHead>
@@ -709,6 +751,11 @@ export default function SpendingPage() {
         {/* ── By Provider ── */}
         {view === "providers" && (
           <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+            {period !== "all" && (
+              <p style={{ fontSize: "11px", color: "#444", margin: "0 0 16px 0" }}>
+                ℹ Model and provider breakdowns reflect all-time usage — per-day model tracking coming soon.
+              </p>
+            )}
             {providerRows.length > 0 ? (
               <>
                 <div style={{ background: "#0f0f12", border: "1px solid #1e1e26", borderRadius: "10px", padding: "24px" }}>
