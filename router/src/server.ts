@@ -747,6 +747,7 @@ async function handleCosts(res: http.ServerResponse) {
     agentId,
     totalTokens,
     estimatedCost: estimateCost(totalTokens, agentModel.get(agentId) ?? ""),
+    model: agentModel.get(agentId),
   }));
   costs.sort((a, b) => b.totalTokens - a.totalTokens);
 

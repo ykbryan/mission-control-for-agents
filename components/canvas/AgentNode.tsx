@@ -1,5 +1,56 @@
 import { Handle, Position } from "@xyflow/react";
 
+/** Compact display label for a model name. */
+function shortModel(m: string): string {
+  const l = m.toLowerCase();
+  if (l.includes("claude")) {
+    const match = m.match(/claude[- _.](sonnet|opus|haiku)[- _.]?(\d+[-.]?\d*)/i);
+    if (match) return `claude-${match[1][0].toLowerCase()}${match[2]}`;
+    return "claude";
+  }
+  if (l.includes("gpt")) {
+    const match = m.match(/gpt[-_.]?(\d+\.?\d*)/i);
+    if (match) return `gpt-${match[1]}`;
+    return "gpt";
+  }
+  if (l.includes("gemini")) {
+    const match = m.match(/gemini[-_.]?(\d+\.?\d*)/i);
+    if (match) return `gemini-${match[1]}`;
+    return "gemini";
+  }
+  if (l.includes("grok")) {
+    const match = m.match(/grok[-_.]?(\d+\.?\d*)/i);
+    if (match) return `grok-${match[1]}`;
+    return "grok";
+  }
+  if (l.includes("minimax")) return "minimax";
+  if (l.includes("qwen")) {
+    const match = m.match(/qwen(\d+\.?\d*)/i);
+    if (match) return `qwen${match[1]}`;
+    return "qwen";
+  }
+  if (l.includes("deepseek")) return "deepseek";
+  if (l.includes("llama")) return "llama";
+  if (l.includes("mistral")) return "mistral";
+  // Fallback: first segment before special chars, max 12 chars
+  return m.split(/[-_:/]/)[0].slice(0, 12);
+}
+
+/** Provider-based accent colour for the model badge. */
+function modelColor(m: string): string {
+  const l = m.toLowerCase();
+  if (l.includes("claude"))                          return "#c77c3a";  // Anthropic amber
+  if (l.includes("gpt") || /\bo[134]\b/.test(l))    return "#19c37d";  // OpenAI green
+  if (l.includes("gemini") || l.includes("google")) return "#4285f4";  // Google blue
+  if (l.includes("grok"))                            return "#1da1f2";  // xAI blue
+  if (l.includes("minimax"))                         return "#9b59b6";  // MiniMax purple
+  if (l.includes("qwen"))                            return "#ff6a00";  // Alibaba orange
+  if (l.includes("deepseek"))                        return "#0ea5e9";  // DeepSeek sky
+  if (l.includes("mistral"))                         return "#f97316";  // Mistral orange
+  if (l.includes("llama"))                           return "#0073e6";  // Meta blue
+  return "#666";
+}
+
 interface AgentNodeProps {
   data: {
     id: string;
@@ -13,6 +64,7 @@ interface AgentNodeProps {
     platformIcon?: string;   // 🍎 | 🐧 | 🪟 | …
     machineLabel?: string;   // e.g. "Bryans MacBook Air" | "gorilla-ubuntu"
     nodeHostname?: string;   // specific OpenClaw worker node (e.g. "develop-ubuntu")
+    model?: string;          // primary AI model from session telemetry
   };
 }
 
@@ -47,6 +99,24 @@ export default function AgentNode({ data }: AgentNodeProps) {
           )}
         </div>
         <div className="text-xs text-[#888] truncate">{data.role}</div>
+
+        {/* Model badge */}
+        {data.model && (
+          <div className="mt-1">
+            <span
+              className="text-[9px] font-mono font-semibold px-1.5 py-0.5 rounded"
+              style={{
+                color: modelColor(data.model),
+                backgroundColor: `${modelColor(data.model)}18`,
+                border: `1px solid ${modelColor(data.model)}30`,
+              }}
+              title={data.model}
+            >
+              ⚡ {shortModel(data.model)}
+            </span>
+          </div>
+        )}
+
         {data.routerLabel && (
           <div className="flex items-center gap-1 mt-1 flex-wrap">
             <span className="text-[9px]">🛰️</span>

@@ -3,7 +3,7 @@ import { routerGet } from "@/lib/router-client";
 import { parseRouters } from "@/lib/router-config";
 
 interface RouterCostsResponse {
-  costs: { agentId: string; totalTokens: number; estimatedCost: number }[];
+  costs: { agentId: string; totalTokens: number; estimatedCost: number; model?: string }[];
   daily?: { agentId: string; date: string; tokens: number; estimatedCost: number }[];
   models?: { model: string; totalTokens: number; estimatedCost: number }[];
 }
@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
     routers.map((r) => routerGet<RouterCostsResponse>(r.url, r.token, "/costs"))
   );
 
-  type CostEntry   = { agentId: string; tokens: number; estimatedCost: number; routerId: string; routerLabel: string };
+  type CostEntry   = { agentId: string; tokens: number; estimatedCost: number; model?: string; routerId: string; routerLabel: string };
   type DailyEntry  = { agentId: string; date: string; tokens: number; estimatedCost: number; routerId: string; routerLabel: string };
   type RouterEntry = { routerId: string; routerLabel: string; totalTokens: number; estimatedCost: number };
   type ModelEntry  = { model: string; totalTokens: number; estimatedCost: number };
@@ -48,6 +48,7 @@ export async function GET(req: NextRequest) {
         agentId: c.agentId,
         tokens: c.totalTokens,
         estimatedCost: c.estimatedCost,
+        model: c.model,
         routerId: r.id,
         routerLabel: r.label,
       });

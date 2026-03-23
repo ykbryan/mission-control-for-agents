@@ -51,6 +51,21 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, o
       .catch(() => {});
   }, []);
 
+  // Agent model map: agentId → model name (derived from cost telemetry)
+  const [agentModelMap, setAgentModelMap] = useState<Map<string, string>>(new Map());
+  useEffect(() => {
+    fetch("/api/telemetry/agent-costs")
+      .then(r => r.json())
+      .then((d: { costs?: Array<{ agentId: string; model?: string }> }) => {
+        const map = new Map<string, string>();
+        for (const c of d.costs ?? []) {
+          if (c.model) map.set(c.agentId, c.model);
+        }
+        setAgentModelMap(map);
+      })
+      .catch(() => {});
+  }, []);
+
   const { initialNodes, initialEdges } = useMemo(() => {
     // Group agents by routerId
     const agentsByRouter = new Map<string, Agent[]>();
@@ -129,6 +144,7 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, o
             nodeHostname: agent.nodeHostname,
             platformIcon: ni?.platformIcon,
             machineLabel: ni?.machineLabel,
+            model: agentModelMap.get(agent.id),
           },
         });
 
@@ -179,6 +195,7 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, o
             nodeHostname: agent.nodeHostname,
             platformIcon: ni?.platformIcon,
             machineLabel: ni?.machineLabel,
+            model: agentModelMap.get(agent.id),
           },
         });
 
@@ -196,7 +213,7 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, o
     }
 
     return { initialNodes: nodes, initialEdges: edges };
-  }, [agents, selectedAgentId, routerConfigs, nodeInfoMap]);
+  }, [agents, selectedAgentId, routerConfigs, nodeInfoMap, agentModelMap]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
