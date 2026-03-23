@@ -51,15 +51,22 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, o
       .catch(() => {});
   }, []);
 
-  // Agent model map: agentId → model name (derived from cost telemetry)
+  // Agent model map: "routerId--agentId" → model name (derived from cost telemetry)
+  // Keyed by compound ID to match canvas node IDs and avoid collisions when the
+  // same agentId exists on multiple routers.
   const [agentModelMap, setAgentModelMap] = useState<Map<string, string>>(new Map());
   useEffect(() => {
     fetch("/api/telemetry/agent-costs")
       .then(r => r.json())
-      .then((d: { costs?: Array<{ agentId: string; model?: string }> }) => {
+      .then((d: { costs?: Array<{ agentId: string; model?: string; routerId?: string }> }) => {
         const map = new Map<string, string>();
         for (const c of d.costs ?? []) {
-          if (c.model) map.set(c.agentId, c.model);
+          if (c.model) {
+            // Compound key mirrors how canvas node IDs are built: "routerId--agentId"
+            if (c.routerId) map.set(`${c.routerId}--${c.agentId}`, c.model);
+            // Also store bare agentId as fallback for single-router setups
+            if (!map.has(c.agentId)) map.set(c.agentId, c.model);
+          }
         }
         setAgentModelMap(map);
       })
@@ -144,7 +151,7 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, o
             nodeHostname: agent.nodeHostname,
             platformIcon: ni?.platformIcon,
             machineLabel: ni?.machineLabel,
-            model: agentModelMap.get(agent.id),
+            model: agentModelMap.get(`${routerId}--${agent.id}`) ?? agentModelMap.get(agent.id),
           },
         });
 
@@ -195,7 +202,7 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, o
             nodeHostname: agent.nodeHostname,
             platformIcon: ni?.platformIcon,
             machineLabel: ni?.machineLabel,
-            model: agentModelMap.get(agent.id),
+            model: agentModelMap.get(`${routerId}--${agent.id}`) ?? agentModelMap.get(agent.id),
           },
         });
 
