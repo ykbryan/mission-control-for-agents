@@ -217,7 +217,13 @@ export default function InspectorPanel({ agent, activeFile, onSelectFile }: Prop
               const color = PROVIDER_COLORS[provider] ?? "#888";
               return (
                 <section className="mc-inspector__section">
-                  <div className="mc-section-label">Primary Model</div>
+                  <div className="mc-section-label flex items-center gap-1.5">
+                    Primary Model
+                    <span
+                      title="Derived from session cost telemetry. May lag behind the agent's current configuration until the active session accumulates usage."
+                      style={{ fontSize: "10px", color: "#444", cursor: "help" }}
+                    >ⓘ</span>
+                  </div>
                   <div className="flex items-center gap-2 mt-1.5">
                     <span
                       className="text-xs font-mono font-semibold px-2.5 py-1 rounded-lg"
