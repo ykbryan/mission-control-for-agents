@@ -5,6 +5,7 @@ import { parseRouters } from "@/lib/router-config";
 interface RouterCostsResponse {
   costs: { agentId: string; totalTokens: number; estimatedCost: number }[];
   daily?: { agentId: string; date: string; tokens: number; estimatedCost: number }[];
+  models?: { model: string; totalTokens: number; estimatedCost: number }[];
 }
 
 export async function GET(req: NextRequest) {
@@ -28,10 +29,12 @@ export async function GET(req: NextRequest) {
   type CostEntry   = { agentId: string; tokens: number; estimatedCost: number; routerId: string; routerLabel: string };
   type DailyEntry  = { agentId: string; date: string; tokens: number; estimatedCost: number; routerId: string; routerLabel: string };
   type RouterEntry = { routerId: string; routerLabel: string; totalTokens: number; estimatedCost: number };
+  type ModelEntry  = { model: string; totalTokens: number; estimatedCost: number };
 
   const allCosts:  CostEntry[]   = [];
   const allDaily:  DailyEntry[]  = [];
   const byRouter:  RouterEntry[] = [];
+  const modelMap   = new Map<string, { tokens: number; cost: number }>();
 
   for (let i = 0; i < routers.length; i++) {
     const r = routers[i];
@@ -53,6 +56,15 @@ export async function GET(req: NextRequest) {
     for (const d of data.daily ?? []) {
       allDaily.push({ ...d, routerId: r.id, routerLabel: r.label });
     }
+    for (const m of data.models ?? []) {
+      const existing = modelMap.get(m.model);
+      if (existing) {
+        existing.tokens += m.totalTokens;
+        existing.cost   += m.estimatedCost;
+      } else {
+        modelMap.set(m.model, { tokens: m.totalTokens, cost: m.estimatedCost });
+      }
+    }
     byRouter.push({
       routerId: r.id,
       routerLabel: r.label,
@@ -61,5 +73,9 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  return NextResponse.json({ costs: allCosts, daily: allDaily, byRouter });
+  const byModel: ModelEntry[] = [...modelMap.entries()]
+    .map(([model, v]) => ({ model, totalTokens: v.tokens, estimatedCost: parseFloat(v.cost.toFixed(6)) }))
+    .sort((a, b) => b.totalTokens - a.totalTokens);
+
+  return NextResponse.json({ costs: allCosts, daily: allDaily, byRouter, byModel });
 }

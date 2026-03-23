@@ -160,10 +160,18 @@ export default function InspectorPanel({ agent, activeFile, onSelectFile }: Prop
                     style={{ background: "rgba(99,102,241,0.1)", color: "#818cf8", border: "1px solid rgba(99,102,241,0.2)" }}>
                     {agent.routerLabel}
                   </span>
-                  {nodeInfo && (
+                  {agent.nodeHostname ? (
                     <span
                       className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full"
-                      style={{ background: "rgba(255,255,255,0.03)", color: "#5a5a72", border: "1px solid rgba(255,255,255,0.06)" }}
+                      style={{ background: "rgba(255,255,255,0.05)", color: "#8888a8", border: "1px solid rgba(255,255,255,0.1)" }}
+                      title="OpenClaw worker node">
+                      <span>🖥️</span>
+                      <span>{agent.nodeHostname}</span>
+                    </span>
+                  ) : nodeInfo && (
+                    <span
+                      className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full"
+                      style={{ background: "rgba(255,255,255,0.05)", color: "#8888a8", border: "1px solid rgba(255,255,255,0.1)" }}
                       title={`${nodeInfo.osLabel} · ${nodeInfo.arch} · ${nodeInfo.cpuCount} CPU · ${nodeInfo.totalMemGb}GB RAM`}>
                       <span>{nodeInfo.platformIcon}</span>
                       <span>{nodeInfo.machineLabel}</span>
@@ -172,9 +180,9 @@ export default function InspectorPanel({ agent, activeFile, onSelectFile }: Prop
                 </div>
                 {nodeInfo && (
                   <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1.5">
-                    <span className="text-[10px]" style={{ color: "#38384a" }}>{nodeInfo.osLabel}</span>
-                    <span className="text-[10px]" style={{ color: "#2e2e3e" }}>{nodeInfo.arch} · {nodeInfo.cpuCount} CPU</span>
-                    <span className="text-[10px]" style={{ color: "#2e2e3e" }}>{nodeInfo.totalMemGb}GB RAM</span>
+                    <span className="text-[10px]" style={{ color: "#606078" }}>{nodeInfo.osLabel}</span>
+                    <span className="text-[10px]" style={{ color: "#50505e" }}>{nodeInfo.arch} · {nodeInfo.cpuCount} CPU</span>
+                    <span className="text-[10px]" style={{ color: "#50505e" }}>{nodeInfo.totalMemGb}GB RAM</span>
                   </div>
                 )}
               </section>

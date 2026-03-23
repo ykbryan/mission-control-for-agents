@@ -9,6 +9,7 @@ interface RouterAgent {
   files?: string[];
   lastActiveAt?: number;
   tier?: string;
+  nodeHostname?: string;  // physical machine this agent runs on
 }
 
 export async function GET(req: NextRequest) {

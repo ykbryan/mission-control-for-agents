@@ -47,7 +47,7 @@ export default function TopStatusStrip({
         <input
           id="search-input"
           type="text"
-          placeholder="Global command search..."
+          placeholder="Search for your agents..."
           value={searchQuery}
           onChange={(e) => onSearchChange(e.target.value)}
           className="block w-full pl-10 pr-12 py-1.5 bg-zinc-900/50 border border-zinc-700/50 rounded-md text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-orange-500/50 focus:border-orange-500/50 transition-all"

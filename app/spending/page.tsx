@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis,
-  CartesianGrid, Tooltip, ResponsiveContainer,
+  CartesianGrid, Tooltip, ResponsiveContainer, Cell,
 } from "recharts";
 import NavRail from "@/components/mission-control/NavRail";
 
@@ -33,13 +33,20 @@ interface RouterEntry {
   estimatedCost: number;
 }
 
+interface ModelEntry {
+  model: string;
+  totalTokens: number;
+  estimatedCost: number;
+}
+
 interface AnalyticsData {
   costs: CostEntry[];
   daily: DailyEntry[];
   byRouter: RouterEntry[];
+  byModel: ModelEntry[];
 }
 
-type View = "agents" | "daily" | "weekly" | "routers";
+type View = "agents" | "daily" | "weekly" | "routers" | "models" | "providers";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -47,6 +54,38 @@ const ORANGE = "#e85d27";
 const GREEN  = "#22c55e";
 const RED    = "#ef4444";
 const COLORS = [ORANGE, "#8b5cf6", "#38bdf8", "#f59e0b", "#ec4899", "#14b8a6", "#a3e635", "#fb923c"];
+
+// Derive provider from model name
+function modelToProvider(model: string): string {
+  const m = model.toLowerCase();
+  if (m.includes("claude"))  return "Anthropic";
+  if (m.includes("gpt") || m.includes("o1") || m.includes("o3") || m.includes("o4")) return "OpenAI";
+  if (m.includes("gemini"))  return "Google";
+  if (m.includes("mistral") || m.includes("mixtral")) return "Mistral";
+  if (m.includes("llama") || m.includes("meta"))      return "Meta";
+  if (m.includes("deepseek")) return "DeepSeek";
+  if (m.includes("grok"))    return "xAI";
+  return "Other";
+}
+
+const PROVIDER_COLORS: Record<string, string> = {
+  Anthropic: "#e85d27",
+  OpenAI:    "#10b981",
+  Google:    "#38bdf8",
+  Mistral:   "#8b5cf6",
+  Meta:      "#f59e0b",
+  DeepSeek:  "#ec4899",
+  xAI:       "#a3e635",
+  Other:     "#555",
+};
+
+function modelLabel(model: string): string {
+  return model
+    .replace(/^anthropic\//i, "")
+    .replace(/^openai\//i, "")
+    .replace(/^google\//i, "")
+    .replace(/^mistral\//i, "");
+}
 
 function fmtCost(n: number): string {
   if (n === 0) return "$0.0000";
@@ -206,6 +245,67 @@ function AgentTable({ rows, totalCost }: { rows: { agentId: string; tokens: numb
   );
 }
 
+// ─── model / provider table ───────────────────────────────────────────────────
+
+function ModelTable({ rows, totalCost, colorKey }: {
+  rows: { label: string; tokens: number; cost: number; color: string; sub?: string }[];
+  totalCost: number;
+  colorKey?: string;
+}) {
+  const [hovered, setHovered] = useState<string | null>(null);
+  return (
+    <div style={{ background: "#0f0f12", border: "1px solid #1e1e26", borderRadius: "10px", overflow: "hidden" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+        <thead>
+          <tr style={{ borderBottom: "1px solid #1e1e26" }}>
+            {["#", colorKey ?? "Model", "Tokens", "Cost", "Share"].map((h, i) => (
+              <th key={h} style={{
+                padding: i === 0 ? "9px 10px 9px 20px" : i === 4 ? "9px 20px 9px 10px" : "9px 10px",
+                textAlign: i >= 2 ? "right" : "left",
+                color: "#444", fontWeight: 600, fontSize: "10px",
+                letterSpacing: "0.08em", textTransform: "uppercase",
+              }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, i) => {
+            const share = totalCost > 0 ? (row.cost / totalCost) * 100 : 0;
+            return (
+              <tr key={row.label}
+                onMouseEnter={() => setHovered(row.label)}
+                onMouseLeave={() => setHovered(null)}
+                style={{ borderBottom: "1px solid #13131a", backgroundColor: hovered === row.label ? "#131318" : "transparent", transition: "background 0.12s" }}
+              >
+                <td style={{ padding: "9px 10px 9px 20px", color: "#333", fontFamily: "ui-monospace,monospace", fontSize: "11px" }}>{i + 1}</td>
+                <td style={{ padding: "9px 10px" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "1px" }}>
+                    <span style={{ color: row.color, fontSize: "12px", fontWeight: 500 }}>{row.label}</span>
+                    {row.sub && <span style={{ color: "#444", fontSize: "10px" }}>{row.sub}</span>}
+                  </div>
+                </td>
+                <td style={{ padding: "9px 10px", textAlign: "right", color: "#666", fontFamily: "ui-monospace,monospace", fontSize: "11px" }}>{fmtTokens(row.tokens)}</td>
+                <td style={{ padding: "9px 10px", textAlign: "right", color: ORANGE, fontFamily: "ui-monospace,monospace", fontSize: "12px", fontWeight: 600 }}>{fmtCost(row.cost)}</td>
+                <td style={{ padding: "9px 20px 9px 10px", textAlign: "right" }}>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "3px" }}>
+                    <span style={{ color: "#555", fontFamily: "ui-monospace,monospace", fontSize: "11px" }}>{share.toFixed(1)}%</span>
+                    <div style={{ width: "52px", height: "3px", background: "#1e1e26", borderRadius: "2px", overflow: "hidden" }}>
+                      <div style={{ width: `${Math.min(share, 100)}%`, height: "100%", background: row.color, borderRadius: "2px" }} />
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+          {rows.length === 0 && (
+            <tr><td colSpan={5} style={{ padding: "32px", textAlign: "center", color: "#333" }}>No model data yet — update routers to v1.1+</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // ─── main page ────────────────────────────────────────────────────────────────
 
 export default function SpendingPage() {
@@ -332,6 +432,34 @@ export default function SpendingPage() {
   const byRouter = data?.byRouter ?? [];
   const routerTotal = byRouter.reduce((s, r) => s + r.estimatedCost, 0);
 
+  // By Model
+  const byModel = data?.byModel ?? [];
+  const modelTotal = byModel.reduce((s, m) => s + m.estimatedCost, 0);
+  const modelRows = useMemo(() =>
+    byModel.map((m, i) => ({
+      label: modelLabel(m.model),
+      tokens: m.totalTokens,
+      cost: m.estimatedCost,
+      color: COLORS[i % COLORS.length],
+      sub: modelToProvider(m.model),
+    })),
+  [byModel]);
+
+  // By Provider — aggregate models into providers
+  const providerRows = useMemo(() => {
+    const map = new Map<string, { tokens: number; cost: number }>();
+    for (const m of byModel) {
+      const p = modelToProvider(m.model);
+      const e = map.get(p);
+      if (e) { e.tokens += m.totalTokens; e.cost += m.estimatedCost; }
+      else map.set(p, { tokens: m.totalTokens, cost: m.estimatedCost });
+    }
+    return [...map.entries()]
+      .map(([label, v]) => ({ label, tokens: v.tokens, cost: v.cost, color: PROVIDER_COLORS[label] ?? "#555" }))
+      .sort((a, b) => b.cost - a.cost);
+  }, [byModel]);
+  const providerTotal = providerRows.reduce((s, p) => s + p.cost, 0);
+
   // ── render ──────────────────────────────────────────────────────────────────
 
   if (loading) return (
@@ -347,10 +475,12 @@ export default function SpendingPage() {
   );
 
   const VIEWS: { id: View; label: string }[] = [
-    { id: "agents",  label: "By Agent"  },
-    { id: "daily",   label: "Last 14 Days" },
-    { id: "weekly",  label: "Last 6 Weeks" },
-    { id: "routers", label: "By Router"  },
+    { id: "agents",    label: "By Agent"     },
+    { id: "daily",     label: "Last 14 Days" },
+    { id: "weekly",    label: "Last 6 Weeks" },
+    { id: "routers",   label: "By Router"    },
+    { id: "models",    label: "By Model"     },
+    { id: "providers", label: "By Provider"  },
   ];
 
   return (
@@ -549,6 +679,93 @@ export default function SpendingPage() {
             )}
           </div>
         )}
+        {/* ── By Model ── */}
+        {view === "models" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+            {byModel.length > 0 && (
+              <div style={{ background: "#0f0f12", border: "1px solid #1e1e26", borderRadius: "10px", padding: "24px" }}>
+                <SectionHead>Token usage by model — all time</SectionHead>
+                <ResponsiveContainer width="100%" height={240}>
+                  <BarChart
+                    data={byModel.map((m, i) => ({ name: modelLabel(m.model), cost: m.estimatedCost, idx: i }))}
+                    margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1a1a22" vertical={false} />
+                    <XAxis dataKey="name" stroke="#333" tick={{ fontSize: 11, fill: "#555", fontFamily: "ui-monospace,monospace" }} tickLine={false} axisLine={{ stroke: "#222" }} />
+                    <YAxis stroke="#333" tick={{ fontSize: 11, fill: "#555", fontFamily: "ui-monospace,monospace" }} tickLine={false} axisLine={false} tickFormatter={v => `$${v.toFixed(3)}`} width={64} />
+                    <Tooltip content={<ChartTooltip />} />
+                    <Bar dataKey="cost" radius={[4, 4, 0, 0]} maxBarSize={80}>
+                      {byModel.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+            <SectionHead>All models — ranked by spend</SectionHead>
+            <ModelTable rows={modelRows} totalCost={modelTotal} colorKey="Model" />
+          </div>
+        )}
+
+        {/* ── By Provider ── */}
+        {view === "providers" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+            {providerRows.length > 0 ? (
+              <>
+                <div style={{ background: "#0f0f12", border: "1px solid #1e1e26", borderRadius: "10px", padding: "24px" }}>
+                  <SectionHead>Spend by AI provider — all time</SectionHead>
+                  <ResponsiveContainer width="100%" height={240}>
+                    <BarChart
+                      data={providerRows.map(p => ({ name: p.label, cost: p.cost }))}
+                      margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1a1a22" vertical={false} />
+                      <XAxis dataKey="name" stroke="#333" tick={{ fontSize: 12, fill: "#555" }} tickLine={false} axisLine={{ stroke: "#222" }} />
+                      <YAxis stroke="#333" tick={{ fontSize: 11, fill: "#555", fontFamily: "ui-monospace,monospace" }} tickLine={false} axisLine={false} tickFormatter={v => `$${v.toFixed(3)}`} width={64} />
+                      <Tooltip content={<ChartTooltip />} />
+                      <Bar dataKey="cost" radius={[4, 4, 0, 0]} maxBarSize={100}>
+                        {providerRows.map((p, i) => <Cell key={i} fill={p.color} />)}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "16px" }}>
+                  {providerRows.map(p => {
+                    const share = providerTotal > 0 ? (p.cost / providerTotal) * 100 : 0;
+                    const modelsForProvider = byModel.filter(m => modelToProvider(m.model) === p.label);
+                    return (
+                      <div key={p.label} style={{ background: "#0f0f12", border: "1px solid #1e1e26", borderTop: `2px solid ${p.color}`, borderRadius: "10px", padding: "20px 22px" }}>
+                        <p style={{ fontSize: "10px", fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "#444", margin: "0 0 10px 0" }}>{p.label}</p>
+                        <p style={{ fontSize: "28px", fontWeight: 700, fontFamily: "ui-monospace,monospace", color: "#f0f0f0", margin: "0 0 4px 0" }}>{fmtCost(p.cost)}</p>
+                        <p style={{ fontSize: "11px", color: "#555", margin: "0 0 8px 0" }}>{fmtTokens(p.tokens)} tokens</p>
+                        {modelsForProvider.length > 0 && (
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", margin: "0 0 12px 0" }}>
+                            {modelsForProvider.map(m => (
+                              <span key={m.model} style={{ fontSize: "10px", padding: "2px 7px", borderRadius: "20px", background: "rgba(255,255,255,0.04)", color: "#555", border: "1px solid #1e1e26" }}>
+                                {modelLabel(m.model)}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        <div style={{ width: "100%", height: "3px", background: "#1e1e26", borderRadius: "2px", overflow: "hidden" }}>
+                          <div style={{ width: `${Math.min(share, 100)}%`, height: "100%", background: p.color, borderRadius: "2px" }} />
+                        </div>
+                        <p style={{ fontSize: "11px", color: "#444", margin: "6px 0 0 0", fontFamily: "ui-monospace,monospace" }}>{share.toFixed(1)}% of total spend</p>
+                      </div>
+                    );
+                  })}
+                </div>
+                <SectionHead>All providers — ranked by spend</SectionHead>
+                <ModelTable rows={providerRows} totalCost={providerTotal} colorKey="Provider" />
+              </>
+            ) : (
+              <div style={{ background: "#0f0f12", border: "1px solid #1e1e26", borderRadius: "10px", padding: "48px", textAlign: "center" }}>
+                <p style={{ color: "#333", fontSize: "13px", margin: "0 0 6px 0" }}>No provider data yet</p>
+                <p style={{ color: "#222", fontSize: "12px", margin: 0 }}>Update your routers to v1.1+ to enable model tracking.</p>
+              </div>
+            )}
+          </div>
+        )}
+
           </div>
         </div>
       </div>

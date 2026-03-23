@@ -29,11 +29,11 @@ function platformIcon(platform: string): string {
 
 function machineLabel(platform: string, hostname: string, osLabel: string): string {
   if (platform === "darwin") {
-    // macOS hostname is often "Bryans-MacBook-Air.local" — strip .local and tidy
-    return hostname.replace(/\.local$/i, "").replace(/-/g, " ");
+    // Strip .local / .lan suffixes and tidy dashes
+    return hostname.replace(/\.(local|lan)$/i, "").replace(/-/g, " ");
   }
-  // Linux: prefer hostname, strip .local if present
-  return hostname.replace(/\.local$/i, "");
+  // Linux: prefer hostname, strip .local/.lan if present
+  return hostname.replace(/\.(local|lan)$/i, "");
 }
 
 export async function GET(req: NextRequest) {
@@ -51,17 +51,35 @@ export async function GET(req: NextRequest) {
     routers.map(r => routerGet<Omit<NodeInfo, "routerId"|"routerLabel"|"platformIcon"|"machineLabel">>(r.url, r.token, "/info"))
   );
 
-  const nodes: NodeInfo[] = results.flatMap((res, i) => {
-    if (res.status !== "fulfilled") return [];
-    const raw = res.value;
-    const r   = routers[i];
-    return [{
-      ...raw,
-      routerId:    r.id,
-      routerLabel: r.label,
-      platformIcon: platformIcon(raw.platform ?? ""),
-      machineLabel: machineLabel(raw.platform ?? "", raw.hostname ?? r.label, raw.osLabel ?? ""),
-    }];
+  const nodes: NodeInfo[] = results.map((res, i) => {
+    const r = routers[i];
+    if (res.status === "fulfilled") {
+      const raw = res.value;
+      return {
+        ...raw,
+        routerId:     r.id,
+        routerLabel:  r.label,
+        platformIcon: platformIcon(raw.platform ?? ""),
+        machineLabel: machineLabel(raw.platform ?? "", raw.hostname ?? r.label, raw.osLabel ?? ""),
+      };
+    }
+    // Router didn't support /info yet — return a stub so the UI still shows it
+    return {
+      routerId:     r.id,
+      routerLabel:  r.label,
+      hostname:     r.label,
+      platform:     "unknown",
+      arch:         "unknown",
+      osLabel:      "Router not updated",
+      cpuModel:     "",
+      cpuCount:     0,
+      totalMemGb:   0,
+      uptimeSeconds: 0,
+      nodeVersion:  "",
+      routerVersion: "",
+      platformIcon: "💻",
+      machineLabel: r.label,
+    };
   });
 
   return NextResponse.json({ nodes });

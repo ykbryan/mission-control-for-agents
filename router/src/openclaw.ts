@@ -236,6 +236,46 @@ export interface GatewayAgent {
   id: string;
   name: string;
   configured: boolean;
+  // OpenClaw may return node/host info per agent
+  host?: string;
+  node?: string;
+  hostname?: string;
+  nodeId?: string;
+  [key: string]: unknown;
+}
+
+export interface GatewayNode {
+  id?: string;
+  hostname?: string;
+  host?: string;
+  name?: string;
+  status?: string;
+  agents?: string[];   // agent IDs on this node
+  [key: string]: unknown;
+}
+
+/**
+ * Try to list physical nodes/workers from OpenClaw.
+ * Falls back gracefully if the gateway doesn't expose a nodes tool.
+ */
+export async function listNodes(
+  gatewayUrl: string,
+  gatewayToken: string
+): Promise<GatewayNode[]> {
+  const candidates = ["nodes_list", "node_list", "workers_list", "machines_list", "hosts_list"];
+  for (const tool of candidates) {
+    try {
+      const data = await httpInvoke<{
+        nodes?: GatewayNode[];
+        workers?: GatewayNode[];
+        machines?: GatewayNode[];
+        hosts?: GatewayNode[];
+      }>(gatewayUrl, gatewayToken, tool, {});
+      const result = data.nodes ?? data.workers ?? data.machines ?? data.hosts ?? [];
+      if (result.length > 0) return result;
+    } catch { /* tool not supported — try next */ }
+  }
+  return [];
 }
 
 export async function listSessions(

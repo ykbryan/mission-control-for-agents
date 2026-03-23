@@ -12,6 +12,7 @@ interface AgentNodeProps {
     routerLabel?: string;
     platformIcon?: string;   // 🍎 | 🐧 | 🪟 | …
     machineLabel?: string;   // e.g. "Bryans MacBook Air" | "gorilla-ubuntu"
+    nodeHostname?: string;   // specific OpenClaw worker node (e.g. "develop-ubuntu")
   };
 }
 
@@ -53,11 +54,20 @@ export default function AgentNode({ data }: AgentNodeProps) {
               style={{ color: isOrch ? "#7c3aed99" : "#55556688" }}>
               {data.routerLabel}
             </span>
-            {data.platformIcon && (
-              <span className="text-[9px]" title={data.machineLabel}>{data.platformIcon}</span>
-            )}
-            {data.machineLabel && (
-              <span className="text-[9px] truncate" style={{ color: "#33333a", maxWidth: "80px" }}>{data.machineLabel}</span>
+            {data.nodeHostname ? (
+              <>
+                <span className="text-[9px]">🖥️</span>
+                <span className="text-[9px] truncate" style={{ color: "#666680", maxWidth: "80px" }}>{data.nodeHostname}</span>
+              </>
+            ) : (
+              <>
+                {data.platformIcon && (
+                  <span className="text-[9px]" title={data.machineLabel}>{data.platformIcon}</span>
+                )}
+                {data.machineLabel && (
+                  <span className="text-[9px] truncate" style={{ color: "#666680", maxWidth: "80px" }}>{data.machineLabel}</span>
+                )}
+              </>
             )}
           </div>
         )}

@@ -267,12 +267,19 @@ export default function AgentProfileStage({ agent, onBack }: Props) {
                   style={{ background: "rgba(99,102,241,0.1)", color: "#818cf8", border: "1px solid rgba(99,102,241,0.2)" }}>
                   {agent.routerLabel}
                 </span>
-                {nodeInfo && (
+                {agent.nodeHostname ? (
+                  <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full"
+                    style={{ background: "rgba(255,255,255,0.05)", color: "#8888a8", border: "1px solid rgba(255,255,255,0.1)" }}
+                    title="OpenClaw worker node">
+                    <span>🖥️</span>
+                    <span>{agent.nodeHostname}</span>
+                  </span>
+                ) : nodeInfo && (
                   <span className="flex items-center gap-1 text-[10px]"
-                    style={{ color: "#4a4a5e" }}
+                    style={{ color: "#8888a8" }}
                     title={`${nodeInfo.osLabel} · ${nodeInfo.arch} · ${nodeInfo.cpuCount} CPU · ${nodeInfo.totalMemGb}GB`}>
                     <span>{nodeInfo.platformIcon}</span>
-                    <span style={{ color: "#5a5a72" }}>{nodeInfo.machineLabel}</span>
+                    <span style={{ color: "#8888a8" }}>{nodeInfo.machineLabel}</span>
                   </span>
                 )}
               </div>

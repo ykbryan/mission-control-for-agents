@@ -23,10 +23,12 @@ import { randomBytes } from "crypto";
 import {
   listSessions,
   listAgents,
+  listNodes,
   listCrons,
   GatewaySession,
   GatewayMessage,
 } from "./openclaw";
+import { estimateCost, DEFAULT_PRICE_PER_1M } from "./pricing";
 import { parseMessages } from "./parse-session";
 
 // ---------------------------------------------------------------------------
@@ -316,10 +318,29 @@ function parseUrl(req: http.IncomingMessage): { path: string; params: URLSearchP
 // ---------------------------------------------------------------------------
 
 async function handleAgents(res: http.ServerResponse) {
-  const [sessions, gatewayAgents] = await Promise.all([
+  const [sessions, gatewayAgents, gatewayNodes] = await Promise.all([
     listSessions(OPENCLAW_URL, OPENCLAW_TOKEN),
     listAgents(OPENCLAW_URL, OPENCLAW_TOKEN).catch(() => [] as Awaited<ReturnType<typeof listAgents>>),
+    listNodes(OPENCLAW_URL, OPENCLAW_TOKEN).catch(() => []),
   ]);
+
+  // Build agentId → nodeHostname map from nodes_list response
+  // Handles two shapes: {agents:[...], hostname} or agents list with host field
+  const agentNodeMap = new Map<string, string>();
+  for (const node of gatewayNodes) {
+    const hostname = node.hostname ?? node.host ?? node.name ?? node.id ?? "";
+    if (!hostname) continue;
+    for (const agentId of (node.agents ?? [])) {
+      agentNodeMap.set(String(agentId), hostname);
+    }
+  }
+  // Also pick up host/node fields directly on each agent from agents_list
+  for (const a of gatewayAgents) {
+    const nodeHostname = a.host ?? a.hostname ?? a.node ?? "";
+    if (nodeHostname && !agentNodeMap.has(a.id)) {
+      agentNodeMap.set(a.id, String(nodeHostname));
+    }
+  }
 
   // Build a map from agentId → most recent session (for transcriptPath)
   const latestSession = new Map<string, GatewaySession>();
@@ -334,17 +355,17 @@ async function handleAgents(res: http.ServerResponse) {
   }
 
   // Merge gateway agents with session-derived ids
-  type AgentEntry = { id: string; name: string; configured: boolean; files: string[]; lastActiveAt?: number; tier?: string };
+  type AgentEntry = { id: string; name: string; configured: boolean; files: string[]; lastActiveAt?: number; tier?: string; nodeHostname?: string };
   const agentMap = new Map<string, AgentEntry>();
   for (const a of gatewayAgents) {
     const sess = latestSession.get(a.id);
     const files = sess?.transcriptPath ? listAgentFiles(agentDirFromTranscript(sess.transcriptPath)) : [];
-    agentMap.set(a.id, { ...a, files, lastActiveAt: sess?.updatedAt });
+    agentMap.set(a.id, { ...a, files, lastActiveAt: sess?.updatedAt, nodeHostname: agentNodeMap.get(a.id) });
   }
   for (const [id, sess] of latestSession) {
     if (!agentMap.has(id)) {
       const files = sess.transcriptPath ? listAgentFiles(agentDirFromTranscript(sess.transcriptPath)) : [];
-      agentMap.set(id, { id, name: id, configured: false, files, lastActiveAt: sess?.updatedAt });
+      agentMap.set(id, { id, name: id, configured: false, files, lastActiveAt: sess?.updatedAt, nodeHostname: agentNodeMap.get(id) });
     }
   }
 
@@ -691,8 +712,10 @@ async function handleDebug(res: http.ServerResponse) {
 
 async function handleCosts(res: http.ServerResponse) {
   const sessions = await listSessions(OPENCLAW_URL, OPENCLAW_TOKEN);
-  const byAgent = new Map<string, number>();           // agentId → totalTokens
-  const byAgentDate = new Map<string, number>();       // "agentId|YYYY-MM-DD" → tokens
+  const byAgent      = new Map<string, number>();  // agentId → totalTokens
+  const byAgentDate  = new Map<string, number>();  // "agentId|YYYY-MM-DD" → tokens
+  const byModel      = new Map<string, number>();  // modelName → totalTokens
+  const agentModel   = new Map<string, string>();  // agentId → most recent model
 
   for (const s of sessions) {
     const parts = s.key?.split(":");
@@ -708,27 +731,47 @@ async function handleCosts(res: http.ServerResponse) {
     const date = ts > 0 ? new Date(ts).toISOString().split("T")[0] : "unknown";
     const key = `${agentId}|${date}`;
     byAgentDate.set(key, (byAgentDate.get(key) ?? 0) + tokens);
+
+    // Track per-model usage — most recent session wins for agent model
+    if (tokens > 0 && s.model) {
+      const model = s.model.trim();
+      byModel.set(model, (byModel.get(model) ?? 0) + tokens);
+      // Sessions from listSessions are already sorted newest-first from OpenClaw;
+      // only set if not yet assigned so first-seen (newest) wins.
+      if (!agentModel.has(agentId)) agentModel.set(agentId, model);
+    }
   }
 
+  // Per-agent costs — use model-accurate pricing where available
   const costs = Array.from(byAgent.entries()).map(([agentId, totalTokens]) => ({
     agentId,
     totalTokens,
-    estimatedCost: parseFloat((totalTokens * 3 / 1_000_000).toFixed(6)),
+    estimatedCost: estimateCost(totalTokens, agentModel.get(agentId) ?? ""),
   }));
   costs.sort((a, b) => b.totalTokens - a.totalTokens);
 
+  // Daily costs — approximate with flat rate (no per-day model tracking yet)
   const daily = Array.from(byAgentDate.entries()).map(([key, tokens]) => {
     const sep = key.indexOf("|");
+    const agentId = key.slice(0, sep);
     return {
-      agentId: key.slice(0, sep),
+      agentId,
       date: key.slice(sep + 1),
       tokens,
-      estimatedCost: parseFloat((tokens * 3 / 1_000_000).toFixed(6)),
+      estimatedCost: estimateCost(tokens, agentModel.get(agentId) ?? ""),
     };
   });
   daily.sort((a, b) => a.date.localeCompare(b.date) || a.agentId.localeCompare(b.agentId));
 
-  json(res, 200, { costs, daily });
+  // Per-model costs — accurate pricing
+  const models = Array.from(byModel.entries()).map(([model, totalTokens]) => ({
+    model,
+    totalTokens,
+    estimatedCost: estimateCost(totalTokens, model),
+  }));
+  models.sort((a, b) => b.totalTokens - a.totalTokens);
+
+  json(res, 200, { costs, daily, models });
 }
 
 async function handleAllSessions(res: http.ServerResponse) {

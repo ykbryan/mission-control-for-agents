@@ -26,6 +26,7 @@ interface RouterAgent {
   files?: string[];
   lastActiveAt?: number;
   tier?: string;
+  nodeHostname?: string;
 }
 
 export async function fetchAgentsFromRouter(
@@ -60,7 +61,9 @@ export async function fetchAgentsFromRouter(
     // 3. Router AGENTS.md cross-reference detection (dynamic, but noisy when all agents share a template)
     const routerTier = ra.tier === "orchestrator" || ra.tier === "specialist" ? ra.tier : undefined;
     const tier: Agent["tier"] = inferTier(known, routerTier);
-    if (known) return { ...known, files, routerId, routerLabel, status, tier };
+    // Router-reported node takes priority; fall back to static config mapping
+    const nodeHostname = ra.nodeHostname || known?.nodeHostname || undefined;
+    if (known) return { ...known, files, routerId, routerLabel, status, tier, nodeHostname };
     return {
       id: ra.id,
       name: ra.name || ra.id,
@@ -73,6 +76,7 @@ export async function fetchAgentsFromRouter(
       routerLabel,
       status,
       tier,
+      nodeHostname,
     };
   });
 
