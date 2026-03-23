@@ -688,7 +688,7 @@ export default function AuditPage() {
             {/* Page header */}
             <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
               <div>
-                <h1 style={{ fontSize: "26px", fontWeight: 700, color: "#f0f0f0", margin: "0 0 4px 0", letterSpacing: "-0.02em" }}>CISO Security Audit</h1>
+                <h1 style={{ fontSize: "26px", fontWeight: 700, color: "#f0f0f0", margin: "0 0 4px 0", letterSpacing: "-0.02em" }}>Claw Audit</h1>
                 <p style={{ fontSize: "13px", color: "#555", margin: 0 }}>Continuous security posture monitoring across your AI agent fleet</p>
               </div>
               <div style={{
