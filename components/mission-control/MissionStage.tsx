@@ -252,7 +252,6 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, o
     <section className="mc-stage flex flex-col h-full w-full bg-[#0a0a0a]">
       <div className="mc-stage__toolbar p-4 flex justify-between items-center bg-[#111] z-10 border-b border-[#333]">
         <div>
-          <div className="text-xs text-[#e85d27] uppercase font-bold tracking-wider mb-1">Center stage</div>
           <h2 className="text-xl font-semibold text-[#f0f0f0] m-0">
             Agent Canvas
             {routerConfigs.length > 0 && (
