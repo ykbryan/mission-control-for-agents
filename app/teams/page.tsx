@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { agents as staticAgents, type Agent } from "@/lib/agents";
 import NavRail from "@/components/mission-control/NavRail";
 import AgentProfileStage from "@/components/stage/AgentProfileStage";
+import type { ScheduledJob } from "@/app/api/cron-schedule/route";
 
 // ─── types ────────────────────────────────────────────────────────────────────
 
@@ -255,6 +256,27 @@ export default function TeamsPage() {
   const [openTeamId, setOpenTeamId]           = useState<string | null>(null);
   const [openPipelineId, setOpenPipelineId]   = useState<string | null>(null);
   const [drilledAgent, setDrilledAgent]       = useState<Agent | null>(null);
+  const [cronJobs, setCronJobs]               = useState<ScheduledJob[]>([]);
+
+  // Cron jobs keyed by agentId::routerId
+  const cronsByAgent = useMemo(() => {
+    const map = new Map<string, ScheduledJob[]>();
+    for (const job of cronJobs) {
+      const key = `${job.agentId}::${job.routerId}`;
+      const arr = map.get(key) ?? [];
+      arr.push(job);
+      map.set(key, arr);
+    }
+    return map;
+  }, [cronJobs]);
+
+  // Fetch cron schedule (runs in parallel with agent fetch)
+  useEffect(() => {
+    fetch("/api/cron-schedule")
+      .then(r => r.ok ? r.json() : { jobs: [] })
+      .then((data: { jobs?: ScheduledJob[] }) => setCronJobs(data.jobs ?? []))
+      .catch(() => {/* non-critical */});
+  }, []);
 
   // Step 1: fetch agents
   useEffect(() => {
@@ -409,8 +431,12 @@ export default function TeamsPage() {
   function MemberCard({ agentId, routerId, taskLines }: { agentId: string; routerId: string; taskLines?: string[] }) {
     const live = getLiveAgent(agentId, routerId);
     const stat = getStatic(agentId);
-    const dot  = statusColor(live?.lastActiveAt);
+    const agentCrons = cronsByAgent.get(`${agentId}::${routerId}`) ?? cronsByAgent.get(`${agentId}::`) ?? [];
+    // If agent has upcoming cron jobs, show green regardless of lastActiveAt
+    const hasUpcomingCron = agentCrons.some(j => j.nextRunAt && j.nextRunAt > Date.now());
+    const dot  = hasUpcomingCron ? GREEN : statusColor(live?.lastActiveAt);
     const skills = (stat?.skills ?? []).slice(0, 4);
+    const activeCrons = agentCrons.filter(j => j.isActive || (j.nextRunAt && j.nextRunAt > Date.now()));
     return (
       <div
         onClick={() => openAgentProfile(agentId, routerId)}
@@ -432,6 +458,16 @@ export default function TeamsPage() {
               {stat?.role ?? "Agent"}
             </p>
           </div>
+          {/* Cron count badge */}
+          {agentCrons.length > 0 && (
+            <span title={`${agentCrons.length} scheduled routine${agentCrons.length !== 1 ? "s" : ""}`} style={{
+              fontSize: "8px", fontWeight: 700, letterSpacing: "0.04em",
+              background: activeCrons.length > 0 ? "rgba(34,197,94,0.1)" : "rgba(255,255,255,0.04)",
+              color: activeCrons.length > 0 ? "#22c55e" : "#444",
+              border: `1px solid ${activeCrons.length > 0 ? "rgba(34,197,94,0.25)" : "#1e1e26"}`,
+              borderRadius: "4px", padding: "2px 5px", flexShrink: 0,
+            }}>⏰ {agentCrons.length}</span>
+          )}
           <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: dot, flexShrink: 0 }} />
         </div>
         {/* Task lines from orchestrator memory */}
@@ -440,6 +476,21 @@ export default function TeamsPage() {
             {taskLines.map((line, i) => (
               <p key={i} style={{ margin: i > 0 ? "4px 0 0 0" : 0, fontSize: "10px", color: "#4a4a5a", lineHeight: 1.4, paddingLeft: "8px" }}>{line}</p>
             ))}
+          </div>
+        )}
+        {/* Scheduled routines (first 2) */}
+        {agentCrons.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+            {agentCrons.slice(0, 2).map(job => (
+              <div key={job.id} style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+                <span style={{ fontSize: "8px", color: "#2a3a2a" }}>▸</span>
+                <span style={{ fontSize: "9px", color: "#3a4a3a", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{job.name}</span>
+                <span style={{ fontSize: "8px", color: "#2a3a2a", fontFamily: "ui-monospace,monospace", flexShrink: 0 }}>{job.scheduleStr}</span>
+              </div>
+            ))}
+            {agentCrons.length > 2 && (
+              <span style={{ fontSize: "8px", color: "#2a2a2a" }}>+{agentCrons.length - 2} more</span>
+            )}
           </div>
         )}
         {/* Skills */}
@@ -462,8 +513,11 @@ export default function TeamsPage() {
   function SpecialistCard({ agentId, routerId }: { agentId: string; routerId: string }) {
     const live = getLiveAgent(agentId, routerId);
     const stat = getStatic(agentId);
-    const dot  = statusColor(live?.lastActiveAt);
+    const agentCrons = cronsByAgent.get(`${agentId}::${routerId}`) ?? cronsByAgent.get(`${agentId}::`) ?? [];
+    const hasUpcomingCron = agentCrons.some(j => j.nextRunAt && j.nextRunAt > Date.now());
+    const dot  = hasUpcomingCron ? GREEN : statusColor(live?.lastActiveAt);
     const skills = stat?.skills ?? [];
+    const activeCrons = agentCrons.filter(j => j.isActive || (j.nextRunAt && j.nextRunAt > Date.now()));
     return (
       <div
         onClick={() => openAgentProfile(agentId, routerId)}
@@ -484,8 +538,32 @@ export default function TeamsPage() {
               {stat?.role ?? "Agent"}
             </p>
           </div>
+          {agentCrons.length > 0 && (
+            <span title={`${agentCrons.length} scheduled routine${agentCrons.length !== 1 ? "s" : ""}`} style={{
+              fontSize: "8px", fontWeight: 700, letterSpacing: "0.04em",
+              background: activeCrons.length > 0 ? "rgba(34,197,94,0.1)" : "rgba(255,255,255,0.04)",
+              color: activeCrons.length > 0 ? "#22c55e" : "#444",
+              border: `1px solid ${activeCrons.length > 0 ? "rgba(34,197,94,0.25)" : "#1e1e26"}`,
+              borderRadius: "4px", padding: "2px 5px", flexShrink: 0,
+            }}>⏰ {agentCrons.length}</span>
+          )}
           <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: dot, flexShrink: 0 }} />
         </div>
+        {/* Scheduled routines */}
+        {agentCrons.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+            {agentCrons.slice(0, 3).map(job => (
+              <div key={job.id} style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+                <span style={{ fontSize: "8px", color: "#2a3a2a" }}>▸</span>
+                <span style={{ fontSize: "9px", color: "#3a4a3a", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{job.name}</span>
+                <span style={{ fontSize: "8px", color: "#2a3a2a", fontFamily: "ui-monospace,monospace", flexShrink: 0 }}>{job.scheduleStr}</span>
+              </div>
+            ))}
+            {agentCrons.length > 3 && (
+              <span style={{ fontSize: "8px", color: "#2a2a2a" }}>+{agentCrons.length - 3} more</span>
+            )}
+          </div>
+        )}
         {skills.length > 0 && (
           <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
             {skills.map(sk => (
@@ -573,6 +651,16 @@ export default function TeamsPage() {
           {an?.outgoing.size ? (
             <span style={{ fontSize: "10px", color: "#333" }}>{an.outgoing.size} reports</span>
           ) : null}
+          {/* Cron count for the whole team */}
+          {(() => {
+            const teamKeys = [{ agentId: team.orchestratorId, routerId: team.orchestratorRouterId }, ...team.members];
+            const totalCrons = teamKeys.reduce((n, { agentId, routerId }) =>
+              n + (cronsByAgent.get(`${agentId}::${routerId}`) ?? cronsByAgent.get(`${agentId}::`) ?? []).length, 0);
+            if (!totalCrons) return null;
+            return (
+              <span style={{ fontSize: "9px", color: "#3a5a3a" }}>⏰ {totalCrons}</span>
+            );
+          })()}
           <span style={{ fontSize: "10px", color: "#2a2a34", fontFamily: "ui-monospace,monospace" }}>
             {fmtDate(live?.lastActiveAt)}
           </span>
@@ -593,6 +681,16 @@ export default function TeamsPage() {
   }) {
     const orchMemory = orchAn?.memoryMd ?? "";
     const pipelineSteps = extractPipelineSteps(orchAn?.agentsMd ?? "");
+
+    // Collect all cron jobs for this team (orchestrator + members)
+    const teamAgentKeys = [
+      { agentId: team.orchestratorId, routerId: team.orchestratorRouterId },
+      ...team.members,
+    ];
+    const teamCronJobs = teamAgentKeys.flatMap(({ agentId, routerId }) =>
+      cronsByAgent.get(`${agentId}::${routerId}`) ??
+      cronsByAgent.get(`${agentId}::`) ?? []
+    );
 
     return (
       <div style={{
@@ -654,6 +752,51 @@ export default function TeamsPage() {
                     routerId={m.routerId}
                     taskLines={taskLines}
                   />
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Scheduled Routines (from gateway cron scheduler) */}
+        {teamCronJobs.length > 0 && (
+          <div style={{ borderTop: "1px solid #111116", padding: "14px 20px" }}>
+            <p style={{ margin: "0 0 10px 0", fontSize: "9px", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "#252530" }}>
+              Scheduled Routines — {teamCronJobs.length}
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+              {teamCronJobs.map(job => {
+                const isActive = job.isActive || (job.nextRunAt != null && job.nextRunAt > Date.now());
+                const agentStat = getStatic(job.agentId);
+                return (
+                  <div key={job.id} style={{
+                    display: "flex", alignItems: "center", gap: "10px",
+                    padding: "7px 10px", borderRadius: "6px",
+                    background: "#0a0a0e", border: "1px solid #111116",
+                  }}>
+                    <span style={{ fontSize: "12px", flexShrink: 0 }}>{agentStat?.emoji ?? "🤖"}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ fontSize: "11px", color: "#606060", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>
+                        {job.name}
+                      </span>
+                      {job.description && (
+                        <span style={{ fontSize: "9px", color: "#2a2a34", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>
+                          {job.description.slice(0, 80)}{job.description.length > 80 ? "…" : ""}
+                        </span>
+                      )}
+                    </div>
+                    <span style={{
+                      fontSize: "8px", fontFamily: "ui-monospace,monospace",
+                      color: isActive ? "#22c55e" : "#333",
+                      background: isActive ? "rgba(34,197,94,0.07)" : "transparent",
+                      border: isActive ? "1px solid rgba(34,197,94,0.15)" : "1px solid transparent",
+                      borderRadius: "3px", padding: "1px 5px", flexShrink: 0,
+                    }}>{job.scheduleStr}</span>
+                    <span style={{
+                      fontSize: "8px", color: "#2a2a2a",
+                      fontFamily: "ui-monospace,monospace", flexShrink: 0,
+                    }}>{job.agentId}</span>
+                  </div>
                 );
               })}
             </div>
