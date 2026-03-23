@@ -156,18 +156,6 @@ export default function MissionControlScreen({ agents, routerConfigs, routerErro
               </motion.div>
             )}
 
-            {activeView === "analytics" && (
-              <motion.div
-                key="analytics-stage"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.2 }}
-                className="absolute inset-0 h-full w-full"
-              >
-                <AnalyticsStage />
-              </motion.div>
-            )}
           </AnimatePresence>
         </div>
 
