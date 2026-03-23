@@ -398,13 +398,35 @@ async function handleAgents(res: http.ServerResponse) {
       }
       return found.length > 0 ? [...new Set(found)] : undefined;
     })() : undefined;
-    // Extract a one-line soul from SOUL.md (first non-empty, non-heading line)
+    // Extract a one-line soul summary from the agent's markdown files.
+    // Strategy:
+    //  1. AGENTS.md — first paragraph under a "Core job", "Purpose", "Mission", or "Role" heading
+    //  2. SOUL.md   — first non-empty, non-heading line that isn't a bare identity declaration
+    //                 ("You are X." / "I am X." add no value as a summary)
     const soul: string | undefined = agentDir ? (() => {
-      const content = readAgentFile(agentDir, "SOUL.md");
-      if (!content) return undefined;
-      for (const line of content.split("\n")) {
-        const trimmed = line.trim();
-        if (trimmed && !trimmed.startsWith("#")) return trimmed;
+      // Pass 1: AGENTS.md core-job section
+      const agentsMd = readAgentFile(agentDir, "AGENTS.md");
+      if (agentsMd) {
+        const CORE_HEADING = /^#{1,3}\s*(core\s*job|purpose|mission|primary\s*role|role)\s*$/i;
+        const lines = agentsMd.split("\n");
+        let inSection = false;
+        for (const line of lines) {
+          if (CORE_HEADING.test(line.trim())) { inSection = true; continue; }
+          if (inSection) {
+            if (line.trim().startsWith("#")) break; // next heading — stop
+            const trimmed = line.trim();
+            if (trimmed) return trimmed;
+          }
+        }
+      }
+      // Pass 2: SOUL.md — skip bare identity openers
+      const soulMd = readAgentFile(agentDir, "SOUL.md");
+      if (soulMd) {
+        const IDENTITY_LINE = /^(you are|i am)\s+\S+\.?$/i;
+        for (const line of soulMd.split("\n")) {
+          const trimmed = line.trim();
+          if (trimmed && !trimmed.startsWith("#") && !IDENTITY_LINE.test(trimmed)) return trimmed;
+        }
       }
       return undefined;
     })() : undefined;
