@@ -9,6 +9,7 @@ interface AgentNodeProps {
     status: "online" | "offline" | "idle";
     isSelected: boolean;
     tier?: "orchestrator" | "specialist";
+    routerLabel?: string;
   };
 }
 
@@ -43,6 +44,15 @@ export default function AgentNode({ data }: AgentNodeProps) {
           )}
         </div>
         <div className="text-xs text-[#888] truncate">{data.role}</div>
+        {data.routerLabel && (
+          <div className="flex items-center gap-1 mt-1">
+            <span className="text-[9px]">🛰️</span>
+            <span className="text-[9px] font-medium tracking-wide truncate"
+              style={{ color: isOrch ? "#7c3aed99" : "#55556688" }}>
+              {data.routerLabel}
+            </span>
+          </div>
+        )}
       </div>
 
       <div

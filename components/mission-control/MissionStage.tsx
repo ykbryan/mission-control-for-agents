@@ -109,6 +109,7 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, o
             status: (agent.status ?? "online") as "online" | "offline" | "idle",
             isSelected: nodeId === selectedAgentId,
             tier: "orchestrator",
+            routerLabel: label,
           },
         });
 
@@ -155,6 +156,7 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, o
             status: (agent.status ?? "online") as "online" | "offline" | "idle",
             isSelected: nodeId === selectedAgentId,
             tier: "specialist",
+            routerLabel: label,
           },
         });
 

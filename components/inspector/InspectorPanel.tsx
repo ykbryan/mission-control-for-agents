@@ -142,7 +142,13 @@ export default function InspectorPanel({ agent, activeFile, onSelectFile }: Prop
             {agent.routerLabel && (
               <section className="mc-inspector__section">
                 <div className="mc-section-label">Gateway</div>
-                <p className="text-xs text-zinc-400">{agent.routerLabel}</p>
+                <div className="flex items-center gap-1.5 mt-1">
+                  <span className="text-[11px]">🛰️</span>
+                  <span className="text-[11px] font-medium px-2 py-0.5 rounded-full"
+                    style={{ background: "rgba(99,102,241,0.1)", color: "#818cf8", border: "1px solid rgba(99,102,241,0.2)" }}>
+                    {agent.routerLabel}
+                  </span>
+                </div>
               </section>
             )}
 
