@@ -38,7 +38,7 @@ export default function AgentList({ agents, selectedAgent, onSelect }: Props) {
           const isSelected = agent.id === selectedAgent.id;
           return (
             <div
-              key={agent.id}
+              key={`${agent.routerId ?? ""}--${agent.id}`}
               onClick={() => onSelect(agent)}
               style={{
                 padding: "12px 14px",

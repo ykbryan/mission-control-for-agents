@@ -42,7 +42,7 @@ export default function SwarmStage() {
 
   const renderAgentCard = (agent: any) => (
     <motion.div 
-      key={agent.id} 
+      key={`${agent.routerId ?? ""}--${agent.id}`}
       variants={itemVariants}
       className="relative p-6 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md hover:bg-white/10 transition-colors duration-300 flex flex-col shadow-xl"
     >

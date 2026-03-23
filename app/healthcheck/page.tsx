@@ -113,8 +113,11 @@ function KpiCard({ label, value, sub, accent = ORANGE, alert = false }: {
 }) {
   return (
     <div style={{
-      background: "#0f0f12", border: "1px solid #1e1e26",
+      background: "#0f0f12",
       borderTop: `2px solid ${alert && Number(value) > 0 ? "#ef4444" : accent}`,
+      borderRight: "1px solid #1e1e26",
+      borderBottom: "1px solid #1e1e26",
+      borderLeft: "1px solid #1e1e26",
       borderRadius: "10px", padding: "20px 22px",
       display: "flex", flexDirection: "column", gap: "6px",
     }}>
@@ -196,7 +199,9 @@ function EventsTab({ events, agentRisk }: { events: AuditEvent[]; agentRisk: Age
               onClick={() => setSelected(evt)}
               style={{
                 background: effectiveSelected?.id === evt.id ? "#16161f" : "#0f0f12",
-                border: `1px solid ${effectiveSelected?.id === evt.id ? SEV_COLOR[evt.severity] + "55" : "#1e1e26"}`,
+                borderTop: `1px solid ${effectiveSelected?.id === evt.id ? SEV_COLOR[evt.severity] + "55" : "#1e1e26"}`,
+                borderRight: `1px solid ${effectiveSelected?.id === evt.id ? SEV_COLOR[evt.severity] + "55" : "#1e1e26"}`,
+                borderBottom: `1px solid ${effectiveSelected?.id === evt.id ? SEV_COLOR[evt.severity] + "55" : "#1e1e26"}`,
                 borderLeft: `3px solid ${SEV_COLOR[evt.severity]}`,
                 borderRadius: "8px",
                 padding: "12px 16px",
