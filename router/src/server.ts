@@ -57,6 +57,111 @@ function agentDirFromTranscript(transcriptPath: string): string {
   return path.dirname(path.dirname(transcriptPath));
 }
 
+/**
+ * Supplement listSessions() with sessions found directly on disk.
+ *
+ * OpenClaw writes session metadata to sessions.json immediately when a session
+ * starts, but sessions_list (the HTTP API) may lag behind or only return
+ * completed sessions. Reading sessions.json directly gives us zero-lag access
+ * to in-progress sessions.
+ *
+ * Two sources:
+ *   1. sessions.json entries not yet in sessions_list → in-progress registered sessions
+ *      (have proper agent:x:type:context keys)
+ *   2. Recent .jsonl files not referenced by sessions.json at all → brand-new
+ *      unregistered sessions (get a synthetic agent:x:running:uuid key)
+ */
+function supplementSessionsFromDisk(knownSessions: GatewaySession[]): GatewaySession[] {
+  const knownKeys   = new Set(knownSessions.map(s => s.key).filter(Boolean));
+  const knownFiles  = new Set(knownSessions.map(s => s.transcriptPath).filter(Boolean) as string[]);
+  const agentsBaseDirs = new Set<string>();
+
+  for (const s of knownSessions) {
+    if (!s.transcriptPath) continue;
+    // transcriptPath = {agentsBase}/{agentId}/sessions/{uuid}.jsonl  →  up 3 levels
+    agentsBaseDirs.add(path.dirname(path.dirname(path.dirname(s.transcriptPath))));
+  }
+
+  if (agentsBaseDirs.size === 0) return [];
+
+  const now = Date.now();
+  const SCAN_WINDOW_MS = 30 * 60 * 1000; // 30 min look-back
+  const extra: GatewaySession[] = [];
+
+  for (const agentsBase of agentsBaseDirs) {
+    if (!fs.existsSync(agentsBase)) continue;
+    let agentIds: string[];
+    try { agentIds = fs.readdirSync(agentsBase); } catch { continue; }
+
+    for (const agentId of agentIds) {
+      const sessionsDir = path.join(agentsBase, agentId, "sessions");
+      if (!fs.existsSync(sessionsDir)) continue;
+
+      // ── Source 1: sessions.json ──────────────────────────────────────────
+      const indexPath = path.join(sessionsDir, "sessions.json");
+      const knownSessionFiles = new Set<string>();
+      if (fs.existsSync(indexPath)) {
+        try {
+          type IndexEntry = { sessionId?: string; updatedAt?: number; sessionFile?: string };
+          const index = JSON.parse(fs.readFileSync(indexPath, "utf8")) as Record<string, IndexEntry>;
+          for (const [sessionKey, meta] of Object.entries(index)) {
+            if (meta.sessionFile) knownSessionFiles.add(meta.sessionFile);
+            if (knownKeys.has(sessionKey)) continue; // already in sessions_list
+            if (!meta.sessionFile) continue;
+
+            let stat: fs.Stats;
+            try { stat = fs.statSync(meta.sessionFile); } catch { continue; }
+            const mtimeMs = stat.mtimeMs;
+            if (now - mtimeMs > SCAN_WINDOW_MS) continue;
+
+            // Prefer updatedAt from the index; fall back to file mtime
+            const rawTs = meta.updatedAt ?? 0;
+            const updatedAt = rawTs > 0 && rawTs < 1e12 ? rawTs * 1000 : (rawTs || mtimeMs);
+
+            extra.push({
+              key: sessionKey,
+              transcriptPath: meta.sessionFile,
+              updatedAt,
+              totalTokens: 0,
+            });
+          }
+        } catch { /* skip malformed sessions.json */ }
+      }
+
+      // ── Source 2: orphan .jsonl files (not in sessions.json yet) ─────────
+      let files: string[];
+      try { files = fs.readdirSync(sessionsDir); } catch { continue; }
+      for (const file of files) {
+        if (!file.endsWith(".jsonl")) continue;
+        const filePath = path.join(sessionsDir, file);
+        if (knownFiles.has(filePath) || knownSessionFiles.has(filePath)) continue;
+
+        let stat: fs.Stats;
+        try { stat = fs.statSync(filePath); } catch { continue; }
+        const mtimeMs = stat.mtimeMs;
+        if (now - mtimeMs > SCAN_WINDOW_MS) continue;
+
+        const uuid = file.slice(0, -".jsonl".length);
+        extra.push({
+          key: `agent:${agentId}:running:${uuid}`,
+          transcriptPath: filePath,
+          updatedAt: mtimeMs,
+          totalTokens: Math.floor(stat.size / 800),
+        });
+      }
+    }
+  }
+
+  return extra;
+}
+
+/** Fetch all sessions: OpenClaw API + disk supplement for in-progress ones. */
+async function getAllSessions(): Promise<GatewaySession[]> {
+  const api = await listSessions(OPENCLAW_URL, OPENCLAW_TOKEN);
+  const disk = supplementSessionsFromDisk(api);
+  return [...api, ...disk];
+}
+
 /** Resolve the directory that actually contains .md files.
  *  OpenClaw may store them directly in agentDir or in agentDir/workspace/. */
 function resolveFilesDir(agentDir: string): string {
@@ -301,7 +406,7 @@ async function handleAgents(res: http.ServerResponse) {
 
 async function handleSessions(res: http.ServerResponse, params: URLSearchParams) {
   const agentId = params.get("agentId");
-  const sessions = await listSessions(OPENCLAW_URL, OPENCLAW_TOKEN);
+  const sessions = await getAllSessions();
   const filtered = agentId
     ? sessions.filter((s) => {
         const parts = s.key?.split(":");
@@ -317,7 +422,7 @@ async function handleSession(res: http.ServerResponse, params: URLSearchParams) 
   const key = params.get("key");
   const agentId = params.get("agentId");
 
-  const sessions = await listSessions(OPENCLAW_URL, OPENCLAW_TOKEN);
+  const sessions = await getAllSessions();
 
   // Single session by key
   if (key) {
@@ -377,7 +482,7 @@ async function handleFile(res: http.ServerResponse, params: URLSearchParams) {
   if (!agentId || !name) { json(res, 400, { error: "Missing agentId or name" }); return; }
 
   // Find agent dir from latest session transcriptPath
-  const sessions = await listSessions(OPENCLAW_URL, OPENCLAW_TOKEN);
+  const sessions = await getAllSessions();
   const latestSess = sessions
     .filter((s) => { const p = s.key?.split(":"); return p?.[0] === "agent" && p[1] === agentId; })
     .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))[0];
@@ -500,7 +605,7 @@ async function handleCosts(res: http.ServerResponse) {
 }
 
 async function handleAllSessions(res: http.ServerResponse) {
-  const raw = await listSessions(OPENCLAW_URL, OPENCLAW_TOKEN);
+  const raw = await getAllSessions();
   const ACTIVE_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
   const now = Date.now();
 
@@ -531,7 +636,7 @@ async function handleAllSessions(res: http.ServerResponse) {
 
 async function handleDebugSession(res: http.ServerResponse, params: URLSearchParams) {
   const agentId = params.get("agentId") ?? "";
-  const sessions = await listSessions(OPENCLAW_URL, OPENCLAW_TOKEN);
+  const sessions = await getAllSessions();
 
   const agentSessions = sessions.filter((s) => {
     const p = s.key?.split(":");
