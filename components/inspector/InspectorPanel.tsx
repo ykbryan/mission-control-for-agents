@@ -111,12 +111,15 @@ export default function InspectorPanel({ agent, activeFile, onSelectFile }: Prop
     setAgentModel(null);
     fetch("/api/telemetry/agent-costs")
       .then(r => r.json())
-      .then((d: { costs?: Array<{ agentId: string; model?: string }> }) => {
-        const match = (d.costs ?? []).find(c => c.agentId === agent.id);
+      .then((d: { costs?: Array<{ agentId: string; routerId?: string; model?: string }> }) => {
+        const costs = d.costs ?? [];
+        // Prefer exact match on both agentId + routerId to handle same-named agents across routers
+        const match = costs.find(c => c.agentId === agent.id && c.routerId === agent.routerId)
+          ?? costs.find(c => c.agentId === agent.id);
         if (match?.model) setAgentModel(match.model);
       })
       .catch(() => {});
-  }, [agent.id]);
+  }, [agent.id, agent.routerId]);
 
   function openSession(s: SessionDetail) {
     setDrillSession(s);
