@@ -4,7 +4,12 @@
 
 ![Canvas](media/canvas.png)
 ![Canvas](media/teams.png)
+![Canvas](media/agent-trace.png)
+![Canvas](media/trace-log.png)
 ![Canvas](media/tokens.png)
+![Canvas](media/token-agents.png)
+![Canvas](media/token-routers.png)
+![Canvas](media/token-providers.png)
 ![Canvas](media/profile.png)
 ![Canvas](media/login.png)
 
