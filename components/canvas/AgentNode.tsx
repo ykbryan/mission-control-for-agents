@@ -10,6 +10,8 @@ interface AgentNodeProps {
     isSelected: boolean;
     tier?: "orchestrator" | "specialist";
     routerLabel?: string;
+    platformIcon?: string;   // 🍎 | 🐧 | 🪟 | …
+    machineLabel?: string;   // e.g. "Bryans MacBook Air" | "gorilla-ubuntu"
   };
 }
 
@@ -45,12 +47,18 @@ export default function AgentNode({ data }: AgentNodeProps) {
         </div>
         <div className="text-xs text-[#888] truncate">{data.role}</div>
         {data.routerLabel && (
-          <div className="flex items-center gap-1 mt-1">
+          <div className="flex items-center gap-1 mt-1 flex-wrap">
             <span className="text-[9px]">🛰️</span>
             <span className="text-[9px] font-medium tracking-wide truncate"
               style={{ color: isOrch ? "#7c3aed99" : "#55556688" }}>
               {data.routerLabel}
             </span>
+            {data.platformIcon && (
+              <span className="text-[9px]" title={data.machineLabel}>{data.platformIcon}</span>
+            )}
+            {data.machineLabel && (
+              <span className="text-[9px] truncate" style={{ color: "#33333a", maxWidth: "80px" }}>{data.machineLabel}</span>
+            )}
           </div>
         )}
       </div>

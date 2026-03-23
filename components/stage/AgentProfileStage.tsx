@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import type { SessionGroup } from "@/app/api/agent-sessions/route";
 import type { ScheduledJob } from "@/app/api/cron-schedule/route";
+import type { NodeInfo } from "@/app/api/node-info/route";
 
 interface Props {
   agent: Agent;
@@ -108,6 +109,7 @@ export default function AgentProfileStage({ agent, onBack }: Props) {
   const [activeTab,setActiveTab]= useState<"activity"|"crons"|"skills">("activity");
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [sessionDetails, setSessionDetails] = useState<Record<string, SessionDetail>>({});
+  const [nodeInfo, setNodeInfo] = useState<NodeInfo | null>(null);
 
   useEffect(() => {
     const routerId = agent.routerId ?? "legacy";
@@ -119,6 +121,11 @@ export default function AgentProfileStage({ agent, onBack }: Props) {
         .then(r => r.json()).then(d => setCronJobs((d.jobs ?? []).filter((j: ScheduledJob) => j.agentId === agent.id))),
       fetch(`/api/agent-file?agent=${encodeURIComponent(agent.id)}&file=HEARTBEAT.md&routerId=${encodeURIComponent(routerId)}`)
         .then(r => r.json()).then(d => setHeartbeat(d.content ?? null)).catch(() => {}),
+      fetch(`/api/node-info`)
+        .then(r => r.json()).then((d: { nodes?: NodeInfo[] }) => {
+          const match = (d.nodes ?? []).find(n => n.routerId === routerId);
+          if (match) setNodeInfo(match);
+        }).catch(() => {}),
     ]).finally(() => setLoading(false));
   }, [agent.id, agent.routerId]);
 
@@ -254,12 +261,20 @@ export default function AgentProfileStage({ agent, onBack }: Props) {
             </div>
             <p className="text-sm mb-1.5" style={{ color: "#6b6b82" }}>{agent.role}</p>
             {agent.routerLabel && (
-              <div className="flex items-center gap-1.5 mb-1.5">
+              <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
                 <span className="text-[10px]">🛰️</span>
                 <span className="text-[10px] font-medium px-2 py-0.5 rounded-full"
                   style={{ background: "rgba(99,102,241,0.1)", color: "#818cf8", border: "1px solid rgba(99,102,241,0.2)" }}>
                   {agent.routerLabel}
                 </span>
+                {nodeInfo && (
+                  <span className="flex items-center gap-1 text-[10px]"
+                    style={{ color: "#4a4a5e" }}
+                    title={`${nodeInfo.osLabel} · ${nodeInfo.arch} · ${nodeInfo.cpuCount} CPU · ${nodeInfo.totalMemGb}GB`}>
+                    <span>{nodeInfo.platformIcon}</span>
+                    <span style={{ color: "#5a5a72" }}>{nodeInfo.machineLabel}</span>
+                  </span>
+                )}
               </div>
             )}
             <p className="text-xs italic leading-relaxed" style={{ color: "#3f3f52" }}>

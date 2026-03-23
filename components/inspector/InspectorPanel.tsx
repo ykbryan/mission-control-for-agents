@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import type { SessionGroup, SessionDetail } from "@/app/api/agent-sessions/route";
+import type { NodeInfo } from "@/app/api/node-info/route";
 
 interface Props {
   agent: Agent;
@@ -89,6 +90,17 @@ export default function InspectorPanel({ agent, activeFile, onSelectFile }: Prop
   const [drillLogs, setDrillLogs] = useState<{ id: string; type: string; message: string; fullMessage?: string; timestamp: string; model?: string }[]>([]);
   const [drillLoading, setDrillLoading] = useState(false);
   const [drillFilter, setDrillFilter] = useState<"all" | "chat" | "info" | "memory" | "error">("all");
+  const [nodeInfo, setNodeInfo] = useState<NodeInfo | null>(null);
+
+  useEffect(() => {
+    fetch("/api/node-info")
+      .then(r => r.json())
+      .then((d: { nodes?: NodeInfo[] }) => {
+        const match = (d.nodes ?? []).find(n => n.routerId === (agent.routerId ?? "legacy"));
+        if (match) setNodeInfo(match);
+      })
+      .catch(() => {});
+  }, [agent.routerId]);
 
   function openSession(s: SessionDetail) {
     setDrillSession(s);
@@ -141,14 +153,30 @@ export default function InspectorPanel({ agent, activeFile, onSelectFile }: Prop
 
             {agent.routerLabel && (
               <section className="mc-inspector__section">
-                <div className="mc-section-label">Gateway</div>
-                <div className="flex items-center gap-1.5 mt-1">
+                <div className="mc-section-label">Gateway · Node</div>
+                <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                   <span className="text-[11px]">🛰️</span>
                   <span className="text-[11px] font-medium px-2 py-0.5 rounded-full"
                     style={{ background: "rgba(99,102,241,0.1)", color: "#818cf8", border: "1px solid rgba(99,102,241,0.2)" }}>
                     {agent.routerLabel}
                   </span>
+                  {nodeInfo && (
+                    <span
+                      className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full"
+                      style={{ background: "rgba(255,255,255,0.03)", color: "#5a5a72", border: "1px solid rgba(255,255,255,0.06)" }}
+                      title={`${nodeInfo.osLabel} · ${nodeInfo.arch} · ${nodeInfo.cpuCount} CPU · ${nodeInfo.totalMemGb}GB RAM`}>
+                      <span>{nodeInfo.platformIcon}</span>
+                      <span>{nodeInfo.machineLabel}</span>
+                    </span>
+                  )}
                 </div>
+                {nodeInfo && (
+                  <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1.5">
+                    <span className="text-[10px]" style={{ color: "#38384a" }}>{nodeInfo.osLabel}</span>
+                    <span className="text-[10px]" style={{ color: "#2e2e3e" }}>{nodeInfo.arch} · {nodeInfo.cpuCount} CPU</span>
+                    <span className="text-[10px]" style={{ color: "#2e2e3e" }}>{nodeInfo.totalMemGb}GB RAM</span>
+                  </div>
+                )}
               </section>
             )}
 

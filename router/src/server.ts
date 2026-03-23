@@ -595,6 +595,43 @@ async function handleCronsNative(res: http.ServerResponse) {
   json(res, 200, { jobs });
 }
 
+async function handleInfo(res: http.ServerResponse) {
+  const cpus = os.cpus();
+  const totalMemGb = Math.round(os.totalmem() / (1024 ** 3) * 10) / 10;
+  // Derive a friendly OS label
+  const platform = os.platform(); // "darwin" | "linux" | "win32" | …
+  let osLabel: string = platform;
+  if (platform === "darwin") {
+    // e.g. "macOS 14.4.1"
+    osLabel = `macOS ${os.release()}`;
+  } else if (platform === "linux") {
+    // Try to read /etc/os-release for distro name
+    try {
+      const release = fs.readFileSync("/etc/os-release", "utf8");
+      const nameLine = release.split("\n").find(l => l.startsWith("PRETTY_NAME="));
+      if (nameLine) osLabel = nameLine.replace(/^PRETTY_NAME=["']?/, "").replace(/["']?$/, "").trim();
+    } catch { osLabel = `Linux ${os.release()}`; }
+  }
+
+  json(res, 200, {
+    hostname:    os.hostname(),
+    platform,
+    arch:        os.arch(),
+    osLabel,
+    cpuModel:    cpus[0]?.model ?? "Unknown",
+    cpuCount:    cpus.length,
+    totalMemGb,
+    uptimeSeconds: Math.floor(os.uptime()),
+    nodeVersion: process.version,
+    routerVersion: (() => {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        return (require("../package.json") as { version: string }).version;
+      } catch { return "unknown"; }
+    })(),
+  });
+}
+
 async function handleDebug(res: http.ServerResponse) {
   const out: Record<string, unknown> = {
     gatewayUrl: OPENCLAW_URL,
@@ -813,6 +850,7 @@ const server = http.createServer(async (req, res) => {
     if (urlPath === "/costs") { await handleCosts(res); return; }
     if (urlPath === "/all-sessions") { await handleAllSessions(res); return; }
     if (urlPath === "/crons-native") { await handleCronsNative(res); return; }
+    if (urlPath === "/info") { await handleInfo(res); return; }
     if (urlPath === "/debug") { await handleDebug(res); return; }
     if (urlPath === "/debug-session") { await handleDebugSession(res, params); return; }
     json(res, 404, { error: "Not found" });

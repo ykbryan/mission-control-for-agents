@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useCallback, useEffect } from "react";
+import { useMemo, useCallback, useEffect, useState } from "react";
 import { ReactFlow, ReactFlowProvider, useNodesState, useEdgesState } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { Agent } from "@/lib/agents";
@@ -8,6 +8,7 @@ import { RouterConfig } from "@/lib/router-config";
 import AgentNode from "@/components/canvas/AgentNode";
 import GatewayNode from "@/components/canvas/GatewayNode";
 import CanvasControls from "@/components/canvas/CanvasControls";
+import type { NodeInfo } from "@/app/api/node-info/route";
 
 interface Props {
   agents: Agent[];
@@ -36,6 +37,19 @@ const CLUSTER_GAP = 120;     // horizontal gap between gateway clusters
 const AGENTS_TOP_OFFSET = 120; // vertical space below gateway node
 
 export default function MissionStage({ agents, selectedAgentId, onSelectAgent, onNodeDoubleClick, mode, darkMode, onModeChange, routerConfigs }: Props) {
+
+  // Node info: routerId → NodeInfo (fetched once)
+  const [nodeInfoMap, setNodeInfoMap] = useState<Map<string, NodeInfo>>(new Map());
+  useEffect(() => {
+    fetch("/api/node-info")
+      .then(r => r.json())
+      .then((d: { nodes?: NodeInfo[] }) => {
+        const map = new Map<string, NodeInfo>();
+        for (const n of d.nodes ?? []) map.set(n.routerId, n);
+        setNodeInfoMap(map);
+      })
+      .catch(() => {});
+  }, []);
 
   const { initialNodes, initialEdges } = useMemo(() => {
     // Group agents by routerId
@@ -93,6 +107,8 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, o
       const orchRowW = orchestrators.length * AGENT_W + (orchestrators.length - 1) * AGENT_COL_GAP;
       const orchStartX = cursorX + totalW / 2 - orchRowW / 2;
 
+      const ni = nodeInfoMap.get(routerId);
+
       orchestrators.forEach((agent, i) => {
         const nodeId = `${routerId}--${agent.id}`;
         const agentX = orchStartX + i * (AGENT_W + AGENT_COL_GAP);
@@ -110,6 +126,8 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, o
             isSelected: nodeId === selectedAgentId,
             tier: "orchestrator",
             routerLabel: label,
+            platformIcon: ni?.platformIcon,
+            machineLabel: ni?.machineLabel,
           },
         });
 
@@ -157,6 +175,8 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, o
             isSelected: nodeId === selectedAgentId,
             tier: "specialist",
             routerLabel: label,
+            platformIcon: ni?.platformIcon,
+            machineLabel: ni?.machineLabel,
           },
         });
 
@@ -174,7 +194,7 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, o
     }
 
     return { initialNodes: nodes, initialEdges: edges };
-  }, [agents, selectedAgentId, routerConfigs]);
+  }, [agents, selectedAgentId, routerConfigs, nodeInfoMap]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
