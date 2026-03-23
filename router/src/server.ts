@@ -58,6 +58,66 @@ function agentDirFromTranscript(transcriptPath: string): string {
 }
 
 /**
+ * After session compaction OpenClaw creates a NEW .jsonl file and updates
+ * sessions.json on disk, but the sessions_list HTTP API may still return the
+ * OLD transcriptPath (stale in-memory cache).  This function reads sessions.json
+ * directly and overwrites any stale transcriptPaths with the current on-disk
+ * value so callers always read the live file.
+ */
+function patchStaleTranscriptPaths(sessions: GatewaySession[]): void {
+  // Build map: sessionKey → agentsBase (derived from each session's transcriptPath)
+  const agentsBaseDirs = new Set<string>();
+  for (const s of sessions) {
+    if (s.transcriptPath) {
+      agentsBaseDirs.add(path.dirname(path.dirname(path.dirname(s.transcriptPath))));
+    }
+  }
+  if (agentsBaseDirs.size === 0) return;
+
+  // Index of on-disk session files keyed by session key
+  const diskMap = new Map<string, string>(); // sessionKey → sessionFile (on-disk)
+
+  for (const agentsBase of agentsBaseDirs) {
+    if (!fs.existsSync(agentsBase)) continue;
+    let agentIds: string[];
+    try { agentIds = fs.readdirSync(agentsBase); } catch { continue; }
+
+    for (const agentId of agentIds) {
+      const indexPath = path.join(agentsBase, agentId, "sessions", "sessions.json");
+      if (!fs.existsSync(indexPath)) continue;
+      try {
+        type IndexEntry = { sessionFile?: string };
+        const index = JSON.parse(fs.readFileSync(indexPath, "utf8")) as Record<string, IndexEntry>;
+        for (const [key, meta] of Object.entries(index)) {
+          if (meta.sessionFile) diskMap.set(key, meta.sessionFile);
+        }
+      } catch { /* skip */ }
+    }
+  }
+
+  // Patch: if disk has a different (newer) file for a known session, update it
+  for (const s of sessions) {
+    if (!s.key) continue;
+    const diskFile = diskMap.get(s.key);
+    if (!diskFile) continue;
+    if (diskFile === s.transcriptPath) continue; // already correct
+
+    // Only upgrade if disk file is newer
+    let diskStat: fs.Stats;
+    try { diskStat = fs.statSync(diskFile); } catch { continue; }
+
+    const apiStat = s.transcriptPath ? (() => { try { return fs.statSync(s.transcriptPath!); } catch { return null; } })() : null;
+    const apiMtime = apiStat?.mtimeMs ?? 0;
+    if (diskStat.mtimeMs > apiMtime) {
+      console.log(`[router] patching stale transcriptPath for ${s.key}: ${path.basename(s.transcriptPath ?? "?")} → ${path.basename(diskFile)}`);
+      s.transcriptPath = diskFile;
+      // Also freshen updatedAt
+      if (diskStat.mtimeMs > (s.updatedAt ?? 0)) s.updatedAt = diskStat.mtimeMs;
+    }
+  }
+}
+
+/**
  * Supplement listSessions() with sessions found directly on disk.
  *
  * OpenClaw writes session metadata to sessions.json immediately when a session
@@ -158,6 +218,7 @@ function supplementSessionsFromDisk(knownSessions: GatewaySession[]): GatewaySes
 /** Fetch all sessions: OpenClaw API + disk supplement for in-progress ones. */
 async function getAllSessions(): Promise<GatewaySession[]> {
   const api = await listSessions(OPENCLAW_URL, OPENCLAW_TOKEN);
+  patchStaleTranscriptPaths(api);
   const disk = supplementSessionsFromDisk(api);
   return [...api, ...disk];
 }
