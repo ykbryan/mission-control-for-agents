@@ -646,7 +646,7 @@ function LiveTrendsTab({ data }: { data: AuditEventsResponse }) {
             <YAxis tick={{ fill: "#444", fontSize: 9 }} tickLine={false} axisLine={false}
               tickFormatter={v => v >= 1000000 ? `${(v/1000000).toFixed(1)}M` : v >= 1000 ? `${(v/1000).toFixed(0)}K` : String(v)} />
             <Tooltip contentStyle={chartTooltipStyle}
-              formatter={(v) => [fmtTokens(Number(v)), "Tokens"]} />
+              formatter={(v) => [fmtTokens(Number(v ?? 0)), "Tokens"]} />
             <Area type="monotone" dataKey="totalTokens" stroke={ORANGE} fill={`${ORANGE}20`} strokeWidth={2} dot={false} />
           </AreaChart>
         </ResponsiveContainer>
@@ -661,7 +661,7 @@ function LiveTrendsTab({ data }: { data: AuditEventsResponse }) {
             <XAxis dataKey="name" tick={{ fill: "#888", fontSize: 10 }} tickLine={false} />
             <YAxis tick={{ fill: "#444", fontSize: 9 }} tickLine={false} axisLine={false} />
             <Tooltip contentStyle={chartTooltipStyle}
-              formatter={(v: number) => [`${v} days`, "Uptime"]} />
+              formatter={(v) => [`${Number(v ?? 0)} days`, "Uptime"]} />
             <Bar dataKey="uptimeDays" radius={[4, 4, 0, 0]}>
               {gwData.map((entry, i) => (
                 <Cell key={i} fill={entry.color} />
