@@ -729,11 +729,12 @@ function AgentRiskTab({ agents }: { agents: AgentRiskEntry[] }) {
         <tbody>
           {agents.map((a, i) => {
             const riskColor = a.riskScore >= 60 ? "#ef4444" : a.riskScore >= 30 ? "#f97316" : a.riskScore >= 15 ? "#f59e0b" : "#6b7280";
-            const isExpanded = expandedId === a.agentId;
+            const compositeId = `${a.routerId}--${a.agentId}`;
+            const isExpanded = expandedId === compositeId;
             return (
-              <React.Fragment key={a.agentId}>
+              <React.Fragment key={compositeId}>
                 <tr
-                  onClick={() => setExpandedId(isExpanded ? null : a.agentId)}
+                  onClick={() => setExpandedId(isExpanded ? null : compositeId)}
                   style={{
                     borderBottom: isExpanded ? "none" : "1px solid #13131a",
                     cursor: "pointer",
