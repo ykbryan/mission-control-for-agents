@@ -34,6 +34,7 @@ interface Team {
   orchestratorRouterId: string;
   members: { agentId: string; routerId: string }[];
   workflow: string;         // extracted summary from AGENTS.md
+  teamName?: string;        // extracted from "## Name — Team …" heading in AGENTS.md
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -82,6 +83,14 @@ function extractPipelineSteps(content: string): string[] {
     }
   }
   return steps.slice(0, 8);
+}
+
+// Extract a named team from a heading like "## The Octonauts — Team & Responsibilities"
+function extractTeamName(agentsMd: string | null): string | undefined {
+  if (!agentsMd) return undefined;
+  const m = agentsMd.match(/^#{1,3}\s+(.+?)\s*(?:—|--|–|-)\s*(?:team|squad|crew|members?|roster|group|responsibilities)/im);
+  if (m) return m[1].trim();
+  return undefined;
 }
 
 // Extract task-routing lines from an orchestrator's MEMORY.md for a specific member agent
@@ -392,11 +401,13 @@ export default function TeamsPage() {
         .filter(Boolean) as { agentId: string; routerId: string }[];
 
       const workflow = extractWorkflow(orch.agentsMd ?? "");
+      const teamName = extractTeamName(orch.agentsMd);
       return {
         orchestratorId: orch.agentId,
         orchestratorRouterId: orch.routerId,
         members,
         workflow,
+        teamName,
       };
     });
 
@@ -573,6 +584,9 @@ export default function TeamsPage() {
             <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: dot, flexShrink: 0 }} />
           </div>
           <p style={{ margin: 0, fontSize: "10px", color: "#444" }}>{stat?.role ?? "Orchestrator"}</p>
+          {team.teamName && (
+            <p style={{ margin: "2px 0 0", fontSize: "9px", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: ORANGE + "99" }}>{team.teamName}</p>
+          )}
         </div>
 
         {/* Divider */}
