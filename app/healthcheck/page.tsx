@@ -397,6 +397,17 @@ const CHECK_META = [
   { id: "manyshot-attack",     icon: "📋", title: "Many-shot attack"           },
   { id: "cot-hijack",          icon: "🧩", title: "CoT hijack"                },
   { id: "policy-puppetry",     icon: "📄", title: "Policy puppetry"           },
+  { id: "injection-attack",   icon: "💉", title: "Injection attack"           },
+  { id: "tool-exploit",           icon: "🔧", title: "Tool-exploit attack"           },
+  { id: "credential-extraction", icon: "🗝️", title: "Credential-extraction attack" },
+  { id: "data-exfiltration",      icon: "📤", title: "Data-exfiltration attack"      },
+  { id: "jailbreak",             icon: "🔓", title: "Jailbreak attack"              },
+  { id: "multi-turn-manipulation", icon: "🔄", title: "Multi-turn manipulation"    },
+  { id: "context-confusion",    icon: "🌀", title: "Context-confusion attack"      },
+  { id: "role-hijack",          icon: "🎪", title: "Role-hijack attack"            },
+  { id: "policy-bypass",        icon: "⚖️", title: "Policy-bypass attack"         },
+  { id: "indirect-injection",   icon: "🕸️", title: "Indirect-injection attack"    },
+  { id: "boundary-testing",     icon: "📡", title: "Boundary-testing attack"      },
 ];
 
 function CheckCard({ check, isScanning, scanIndex, myIndex }: {
@@ -622,7 +633,7 @@ function AuditTab({ onResult }: { onResult?: (r: SecurityAuditResponse | null) =
                 🛡️ Security Audit
               </h2>
               <p style={{ margin: 0, fontSize: "13px", color: "#555", lineHeight: "1.6" }}>
-                Runs 14 targeted checks across all agents and their config files — covering privilege abuse, plaintext secrets, prompt injection, exec access, subagent control, direct attacks, encoding obfuscation, persona overrides, social engineering, crescendo escalation, many-shot priming, CoT injection, and policy puppetry.
+                Runs 25 targeted checks across all agents and their config files — covering privilege abuse, plaintext secrets, exec access, subagent control, direct attacks, encoding obfuscation, persona overrides, social engineering, crescendo escalation, many-shot priming, CoT injection, policy puppetry, document injection, MCP/tool-calling boundary attacks, credential extraction, structured data exfiltration, jailbreak framings, multi-turn manipulation, context confusion, role hijacking, policy-bypass via exception clauses, indirect RAG/web/email injection, and refusal-threshold boundary testing.
               </p>
             </>
           )}
