@@ -383,12 +383,13 @@ function EventsTab({ events, agentRisk }: { events: AuditEvent[]; agentRisk: Age
 // ── Audit Tab ─────────────────────────────────────────────────────────────────
 
 const CHECK_META = [
-  { id: "main-agent",         icon: "🔑", title: "Main agent usage"          },
-  { id: "skill-count",        icon: "⚡", title: "Over-privileged agents"    },
-  { id: "exec-privilege",     icon: "🖥️", title: "Exec / shell privilege"    },
-  { id: "credentials",        icon: "🔐", title: "Credentials in plaintext"  },
-  { id: "subagent-creation",  icon: "🤖", title: "Subagent creation control" },
-  { id: "suspicious-content", icon: "🔍", title: "Suspicious content scan"   },
+  { id: "main-agent",          icon: "🔑", title: "Main agent usage"          },
+  { id: "skill-count",         icon: "⚡", title: "Over-privileged agents"    },
+  { id: "exec-privilege",      icon: "🖥️", title: "Exec / shell privilege"    },
+  { id: "credentials",         icon: "🔐", title: "Credentials in plaintext"  },
+  { id: "subagent-creation",   icon: "🤖", title: "Subagent creation control" },
+  { id: "suspicious-content",  icon: "🔍", title: "Suspicious content scan"   },
+  { id: "direct-agent-attack", icon: "🎯", title: "Direct agent attack"       },
 ];
 
 function CheckCard({ check, isScanning, scanIndex, myIndex }: {
@@ -519,9 +520,10 @@ function AuditTab() {
       return r.json() as Promise<SecurityAuditResponse>;
     });
 
-    for (let i = 0; i < 6; i++) {
+    const n = CHECK_META.length;
+    for (let i = 0; i < n; i++) {
       setScanIndex(i);
-      setProgress(Math.round(((i + 0.7) / 6) * 100));
+      setProgress(Math.round(((i + 0.7) / n) * 100));
       await new Promise(res => setTimeout(res, 520));
     }
     setProgress(98);
@@ -559,7 +561,7 @@ function AuditTab() {
                 🛡️ Security Audit
               </h2>
               <p style={{ margin: 0, fontSize: "13px", color: "#555", lineHeight: "1.6" }}>
-                Runs 6 targeted checks across all agents and their config files — covering privilege abuse, plaintext secrets, prompt injection, exec access, and subagent control.
+                Runs 7 targeted checks across all agents and their config files — covering privilege abuse, plaintext secrets, prompt injection, exec access, subagent control, and direct agent attacks.
               </p>
             </>
           )}
@@ -567,7 +569,7 @@ function AuditTab() {
             <>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
                 <span style={{ fontSize: "12px", color: "#888" }}>
-                  Running check {Math.min(scanIndex + 1, 6)} of 6…
+                  Running check {Math.min(scanIndex + 1, 7)} of 7…
                 </span>
                 <span style={{ fontSize: "12px", color: ORANGE, fontFamily: "ui-monospace,monospace" }}>{progress}%</span>
               </div>
