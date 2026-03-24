@@ -426,16 +426,32 @@ interface SwarmChain {
 }
 
 function extractSpawnedAgentIds(events: ActivityEvent[]): string[] {
+  const seen = new Set<string>();
   const spawned: string[] = [];
+
+  function add(id: string) {
+    if (id && !seen.has(id)) { seen.add(id); spawned.push(id); }
+  }
+
   for (const e of events) {
     const msg = e.fullMessage ?? e.message ?? '';
-    if (!msg.includes('sessions_spawn')) continue;
-    const match = msg.match(/sessions_spawn\((\{[\s\S]*?\})\)/);
-    if (match) {
-      try {
-        const args = JSON.parse(match[1]);
-        if (args.agentId) spawned.push(args.agentId);
-      } catch { /* ignore parse errors */ }
+
+    // Pattern 1: sessions_spawn({"agentId": "xxx"})
+    if (msg.includes('sessions_spawn')) {
+      const match = msg.match(/sessions_spawn\((\{[\s\S]*?\})\)/);
+      if (match) {
+        try { const args = JSON.parse(match[1]); if (args.agentId) add(args.agentId); } catch { /* ignore */ }
+      }
+    }
+
+    // Pattern 2: openclaw agent --agent <name> (covers exec calls)
+    for (const m of msg.matchAll(/openclaw\s+agent\s+--agent\s+([\w-]+)/gi)) {
+      add(m[1].toLowerCase());
+    }
+
+    // Pattern 3: --agent <name> anywhere (shorter variant)
+    for (const m of msg.matchAll(/--agent\s+([\w-]+)/gi)) {
+      add(m[1].toLowerCase());
     }
   }
   return spawned;
@@ -567,9 +583,9 @@ function SwarmTraceView({
             }
           }
 
-          // Always add timing-based candidates that weren't detected via sessions_spawn.
-          // Any active session within 15 min of this root and not yet claimed by another root.
-          {
+          // Timing-based fallback: only when there is a single root to avoid wrongly
+          // pulling agents from a different concurrent task into this chain.
+          if (roots.length === 1) {
             const candidates = activeSessions.filter(s =>
               !claimedKeys.has(s.key) &&
               !stepMap.has(s.agentId) &&
