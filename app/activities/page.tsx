@@ -539,13 +539,13 @@ function SwarmTraceView({
             }
           }
 
-          // Fallback: if no spawned agents detected from logs, try timing-based grouping.
-          // Any active session that started within 5 min of root and isn't already a root
-          // is considered a potential delegate.
-          if (stepMap.size === 0 && roots.length === 1) {
+          // Always add timing-based candidates that weren't detected via sessions_spawn.
+          // Any active session started within 5 min of root and not yet claimed counts as a delegate.
+          if (roots.length === 1) {
             const rootKeys = new Set(roots.map(r => r.key));
             const candidates = activeSessions.filter(s =>
               !rootKeys.has(s.key) &&
+              !stepMap.has(s.agentId) &&
               Math.abs(s.updatedAt - root.updatedAt) < 5 * 60 * 1000
             );
             for (const c of candidates) {
@@ -555,12 +555,9 @@ function SwarmTraceView({
           }
 
           const steps: SwarmChainStep[] = uniqueSpawnedIds.length > 0
-            ? uniqueSpawnedIds
-                .filter(id => stepMap.has(id))
-                .map(id => {
-                  const sessions = stepMap.get(id)!;
-                  return { sessions, timestamp: sessions[0].updatedAt, label: id };
-                })
+            ? Array.from(stepMap.entries()).map(([id, sessions]) => ({
+                sessions, timestamp: sessions[0].updatedAt, label: id,
+              }))
             : Array.from(stepMap.entries()).map(([id, sessions]) => ({
                 sessions, timestamp: sessions[0].updatedAt, label: id,
               }));
