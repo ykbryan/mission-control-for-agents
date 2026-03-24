@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { agents as staticAgents, type Agent } from "@/lib/agents";
 import NavRail from "@/components/mission-control/NavRail";
 import AgentProfileStage from "@/components/stage/AgentProfileStage";
+import { fmtDateTs } from "@/lib/formatters";
 
 // ─── types ────────────────────────────────────────────────────────────────────
 
@@ -172,11 +173,6 @@ function statusColor(raw: number | undefined): string {
   return "#ef4444";
 }
 
-function fmtDate(raw: number | undefined): string {
-  if (!raw) return "Never";
-  const ts = raw > 0 && raw < 1e12 ? raw * 1000 : raw;
-  return new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
 
 // ─── orchestrator detection ───────────────────────────────────────────────────
 //
@@ -547,7 +543,7 @@ export default function TeamsPage() {
             ))}
           </div>
         )}
-        <div style={{ fontSize: "10px", color: "#2a2a34" }}>{fmtDate(live?.lastActiveAt)}</div>
+        <div style={{ fontSize: "10px", color: "#2a2a34" }}>{fmtDateTs(live?.lastActiveAt)}</div>
       </div>
     );
   }
@@ -670,7 +666,7 @@ export default function TeamsPage() {
             <span style={{ fontSize: "10px", color: "#333" }}>{an.outgoing.size} reports</span>
           ) : null}
           <span style={{ fontSize: "10px", color: "#2a2a34", fontFamily: "ui-monospace,monospace" }}>
-            {fmtDate(live?.lastActiveAt)}
+            {fmtDateTs(live?.lastActiveAt)}
           </span>
           <span style={{ fontSize: "11px", color: isOpen ? ORANGE : "#2a2a34" }}>{isOpen ? "▲" : "▼"}</span>
         </div>

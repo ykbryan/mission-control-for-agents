@@ -5,8 +5,32 @@ set -e
 #  Mission Control Router — one-command installer
 #  Supports: macOS · Linux (Ubuntu/Debian/RHEL) · WSL
 #
-#  curl -fsSL https://raw.githubusercontent.com/ykbryan/mission-control-for-agents/main/install-router.sh -o /tmp/install-router.sh && bash /tmp/install-router.sh
+#  curl -fsSL https://raw.githubusercontent.com/ykbryan/mission-control-for-agents/main/install-router.sh | bash
 # ─────────────────────────────────────────────────────────────
+
+if [[ "${1}" == "--help" || "${1}" == "-h" ]]; then
+  echo ""
+  echo "  Mission Control Router — Installer"
+  echo ""
+  echo "  Usage: bash install-router.sh [options]"
+  echo ""
+  echo "  Options:"
+  echo "    --help, -h          Show this help message"
+  echo ""
+  echo "  Environment overrides (skip prompts):"
+  echo "    OPENCLAW_URL        OpenClaw gateway URL  (default: http://127.0.0.1:18789)"
+  echo "    OPENCLAW_TOKEN      OpenClaw bearer token (required)"
+  echo "    ROUTER_PORT         Port for this router  (default: 3010)"
+  echo "    ROUTER_INSTALL_DIR  Custom install directory"
+  echo ""
+  echo "  Example (non-interactive):"
+  echo "    OPENCLAW_URL=http://127.0.0.1:18789 \\"
+  echo "    OPENCLAW_TOKEN=mytoken \\"
+  echo "    ROUTER_PORT=3010 \\"
+  echo "    bash install-router.sh"
+  echo ""
+  exit 0
+fi
 
 REPO="https://github.com/ykbryan/mission-control-for-agents.git"
 
@@ -76,7 +100,7 @@ fi
 
 while [ -z "$OPENCLAW_TOKEN" ]; do
   printf "  OpenClaw Token (input hidden): "
-  read -r OPENCLAW_TOKEN
+  read -rs OPENCLAW_TOKEN
   echo ""
   [ -z "$OPENCLAW_TOKEN" ] && echo -e "  ${YELLOW}Token cannot be empty, please try again.${RESET}"
 done
@@ -116,7 +140,7 @@ info "Installing dependencies …"
 (cd "$INSTALL_DIR" && npm install 2>&1 | tail -5)
 
 info "Installing TypeScript globally …"
-npm install -g typescript
+npm install -g typescript --silent
 
 info "Building …"
 (cd "$INSTALL_DIR" && ./node_modules/.bin/tsc || tsc)
@@ -165,6 +189,21 @@ fi
 
 success "Router is running."
 
+# ── Health check ─────────────────────────────────────────────
+info "Waiting for router to come online …"
+HEALTHY=0
+for i in $(seq 1 12); do
+  sleep 1
+  HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${ROUTER_PORT}/health" 2>/dev/null || true)
+  if [ "$HTTP_STATUS" = "200" ] || [ "$HTTP_STATUS" = "401" ]; then
+    HEALTHY=1
+    break
+  fi
+  printf "."
+done
+echo ""
+[ "$HEALTHY" = "0" ] && warn "Router health check timed out — check 'pm2 logs mission-control-router'"
+
 # ── Wait for token ───────────────────────────────────────────
 info "Waiting for router to generate token …"
 TOKEN_FILE="$INSTALL_DIR/.router-token"
@@ -181,14 +220,12 @@ done
 ROUTER_IP=""
 case "$OS" in
   mac)
-    # Try common interfaces
     for iface in en0 en1 en2; do
       ROUTER_IP=$(ipconfig getifaddr "$iface" 2>/dev/null || true)
       [ -n "$ROUTER_IP" ] && break
     done
     ;;
   wsl)
-    # WSL: use the Windows host IP or the WSL eth0 IP
     ROUTER_IP=$(ip route show | grep -i default | awk '{print $3}' 2>/dev/null || true)
     [ -z "$ROUTER_IP" ] && ROUTER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
     ;;

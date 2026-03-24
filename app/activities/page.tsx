@@ -5,21 +5,9 @@ import { createPortal } from "react-dom";
 import NavRail from "@/components/mission-control/NavRail";
 import type { ActivitySession } from "@/app/api/activities/route";
 import type { ScheduledJob, JobValidity } from "@/app/api/cron-schedule/route";
+import { timeAgo, fmtTokens } from "@/lib/formatters";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
-
-function timeAgo(ms: number): string {
-  if (!ms) return "never";
-  const diff = Date.now() - ms;
-  const s = Math.floor(diff / 1000);
-  const m = Math.floor(s / 60);
-  const h = Math.floor(m / 60);
-  const d = Math.floor(h / 24);
-  if (s < 60) return `${s}s ago`;
-  if (m < 60) return `${m}m ago`;
-  if (h < 24) return `${h}h ago`;
-  return `${d}d ago`;
-}
 
 function fmtTs(ms: number): string {
   if (!ms) return "—";
@@ -27,12 +15,6 @@ function fmtTs(ms: number): string {
     month: "short", day: "numeric",
     hour: "2-digit", minute: "2-digit",
   });
-}
-
-function fmtTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  return String(n);
 }
 
 const ACTIVE_MS = 10 * 60 * 1000;
@@ -741,7 +723,7 @@ function SwarmTraceView({
             {taskMsg && (
               <div className="px-4 pt-3 pb-2" style={{ borderBottom: "1px solid #111", background: "#09090d" }}>
                 <div className="flex items-start gap-2">
-                  <span className="text-[10px] font-bold uppercase tracking-widest mt-0.5 flex-shrink-0" style={{ color: "#e85d2760" }}>Task</span>
+                  <span className="text-[10px] font-bold uppercase tracking-widest mt-0.5 flex-shrink-0" style={{ color: "#e85d2760" }}>Last Response</span>
                   <p className="text-sm leading-relaxed" style={{ color: "#c0b0a0" }}>
                     {taskMsg.length > 180 ? taskMsg.slice(0, 180) + "…" : taskMsg}
                   </p>

@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import type { SessionGroup } from "@/app/api/agent-sessions/route";
 import type { ScheduledJob } from "@/app/api/cron-schedule/route";
 import type { NodeInfo } from "@/app/api/node-info/route";
+import { timeAgo, fmtTokens } from "@/lib/formatters";
 
 interface Props {
   agent: Agent;
@@ -13,24 +14,6 @@ interface Props {
 }
 
 // ── helpers ─────────────────────────────────────────────────────────────────
-
-function timeAgo(ms: number): string {
-  if (!ms) return "—";
-  const diff = Date.now() - (ms > 1e12 ? ms : ms * 1000);
-  const m = Math.floor(diff / 60_000);
-  if (m < 1)  return "just now";
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
-}
-
-function fmtTokens(n: number): string {
-  if (!n) return "—";
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000)     return `${(n / 1_000).toFixed(1)}k`;
-  return String(n);
-}
 
 function parseHeartbeatLines(content: string): Array<{ name: string; schedule: string; desc: string }> {
   const results: Array<{ name: string; schedule: string; desc: string }> = [];

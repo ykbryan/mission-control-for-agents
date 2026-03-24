@@ -16,6 +16,7 @@ import type {
   AgentRiskEntry,
 } from "@/app/api/healthcheck/events/route";
 import type { SecurityAuditResponse, SecurityCheck } from "@/app/api/healthcheck/audit/route";
+import { timeAgo, uptimeFmt, fmtCost, fmtTokens } from "@/lib/formatters";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -50,35 +51,6 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 const SEV_ALL: AuditSeverity[] = ["critical", "high", "medium", "low", "info"];
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function timeAgo(ts: number): string {
-  const s = Math.floor((Date.now() - ts) / 1000);
-  if (s < 60)  return `${s}s ago`;
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-  return `${Math.floor(s / 86400)}d ago`;
-}
-
-function uptimeFmt(s: number): string {
-  if (s < 60)    return `${Math.round(s)}s`;
-  if (s < 3600)  return `${Math.floor(s / 60)}m`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
-  return `${Math.floor(s / 86400)}d ${Math.floor((s % 86400) / 3600)}h`;
-}
-
-function fmtCost(n: number): string {
-  if (n === 0) return "$0.0000";
-  if (n < 0.0001) return "< $0.0001";
-  return `$${n.toFixed(4)}`;
-}
-
-function fmtTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
-  if (n >= 1_000)     return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
-}
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -410,6 +382,231 @@ const CHECK_META = [
   { id: "boundary-testing",     icon: "📡", title: "Boundary-testing attack"      },
 ];
 
+// ── Agent Canvas ──────────────────────────────────────────────────────────────
+
+function AgentCanvas({ result }: { result: SecurityAuditResponse }) {
+  const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
+  const detailRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (selectedAgent && detailRef.current) {
+      setTimeout(() => detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+    }
+  }, [selectedAgent]);
+
+  type AgentData = {
+    id: string;
+    name: string;
+    checkMap: Map<string, "fail" | "warn" | "pass">;
+    failCount: number;
+    warnCount: number;
+    worst: "fail" | "warn" | "pass";
+  };
+
+  const agentMap = new Map<string, AgentData>();
+  for (const check of result.checks) {
+    for (const finding of check.findings) {
+      if (!agentMap.has(finding.agentId)) {
+        agentMap.set(finding.agentId, {
+          id: finding.agentId,
+          name: finding.agentName,
+          checkMap: new Map(),
+          failCount: 0,
+          warnCount: 0,
+          worst: "pass",
+        });
+      }
+      const agent = agentMap.get(finding.agentId)!;
+      const isHard = finding.detail.startsWith("[CRITICAL]") || finding.detail.startsWith("[HIGH]");
+      const existing = agent.checkMap.get(check.id);
+      if (!existing || (isHard && existing === "warn")) {
+        agent.checkMap.set(check.id, isHard ? "fail" : "warn");
+      }
+    }
+  }
+  for (const [, agent] of agentMap) {
+    for (const meta of CHECK_META) {
+      if (!agent.checkMap.has(meta.id)) agent.checkMap.set(meta.id, "pass");
+    }
+    agent.failCount = [...agent.checkMap.values()].filter(v => v === "fail").length;
+    agent.warnCount = [...agent.checkMap.values()].filter(v => v === "warn").length;
+    agent.worst = agent.failCount > 0 ? "fail" : agent.warnCount > 0 ? "warn" : "pass";
+  }
+
+  const agents = [...agentMap.values()].sort((a, b) => {
+    const order: Record<string, number> = { fail: 0, warn: 1, pass: 2 };
+    if (order[a.worst] !== order[b.worst]) return order[a.worst] - order[b.worst];
+    return (b.failCount + b.warnCount) - (a.failCount + a.warnCount);
+  });
+
+  const cleanCount = Math.max(0, result.agentsScanned - agentMap.size);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+      {/* Legend */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: "20px", flexWrap: "wrap",
+        padding: "10px 16px", background: "#0f0f12",
+        border: "1px solid #1e1e26", borderRadius: "8px",
+      }}>
+        <span style={{ fontSize: "10px", color: "#444", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>Legend</span>
+        {([["#ef4444", "FAIL — critical/high finding"], ["#f59e0b", "WARN — no guard clause"], ["#22c55e33", "PASS"]] as const).map(([color, label]) => (
+          <div key={label} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <div style={{ width: "20px", height: "8px", borderRadius: "2px", background: color, border: `1px solid ${color}88` }} />
+            <span style={{ fontSize: "11px", color: "#555" }}>{label}</span>
+          </div>
+        ))}
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "4px" }}>
+          <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#22c55e" }} />
+          <span style={{ fontSize: "11px", color: "#22c55e" }}>{cleanCount} agent{cleanCount !== 1 ? "s" : ""} fully clean</span>
+        </div>
+      </div>
+
+      {/* Agent grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "10px" }}>
+        {agents.map(agent => {
+          const wc = agent.worst === "fail" ? "#ef4444" : agent.worst === "warn" ? "#f59e0b" : "#22c55e";
+          const isSelected = selectedAgent === agent.id;
+          const checkStatuses = CHECK_META.map(m => agent.checkMap.get(m.id) ?? "pass");
+          return (
+            <div
+              key={agent.id}
+              onClick={() => setSelectedAgent(isSelected ? null : agent.id)}
+              style={{
+                background: isSelected ? "#111118" : "#0f0f12",
+                borderTop: `3px solid ${wc}`,
+                borderRight: `1px solid ${wc}${isSelected ? "66" : "28"}`,
+                borderBottom: `1px solid ${wc}${isSelected ? "66" : "28"}`,
+                borderLeft: `1px solid ${wc}${isSelected ? "66" : "28"}`,
+                borderRadius: "10px",
+                padding: "14px 14px 12px",
+                cursor: "pointer",
+                transition: "all 0.18s",
+                boxShadow: isSelected ? `0 0 0 1px ${wc}33, 0 4px 20px ${wc}14` : "none",
+              }}
+            >
+              {/* Name row */}
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: "10px", gap: "6px" }}>
+                <span style={{ fontSize: "12px", fontWeight: 700, color: "#ddd", lineHeight: 1.3, flex: 1, wordBreak: "break-word" }}>
+                  {agent.name}
+                </span>
+                <div style={{ display: "flex", flexDirection: "column", gap: "3px", alignItems: "flex-end", flexShrink: 0 }}>
+                  {agent.failCount > 0 && (
+                    <span style={{ fontSize: "9px", fontWeight: 800, padding: "1px 6px", borderRadius: "4px", background: "#ef444422", color: "#ef4444", border: "1px solid #ef444433", letterSpacing: "0.04em" }}>
+                      {agent.failCount}✗
+                    </span>
+                  )}
+                  {agent.warnCount > 0 && (
+                    <span style={{ fontSize: "9px", fontWeight: 800, padding: "1px 6px", borderRadius: "4px", background: "#f59e0b22", color: "#f59e0b", border: "1px solid #f59e0b33", letterSpacing: "0.04em" }}>
+                      {agent.warnCount}⚠
+                    </span>
+                  )}
+                </div>
+              </div>
+              {/* 5×5 check dot grid */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "3px" }}>
+                {checkStatuses.map((status, i) => {
+                  const dc = status === "fail" ? "#ef4444" : status === "warn" ? "#f59e0b" : "#22c55e";
+                  const bg = status === "pass" ? "#22c55e1a" : status === "warn" ? "#f59e0b44" : "#ef444466";
+                  return (
+                    <div
+                      key={CHECK_META[i].id}
+                      title={`${i + 1}. ${CHECK_META[i].title}: ${status.toUpperCase()}`}
+                      style={{ height: "7px", borderRadius: "2px", background: bg, border: `1px solid ${dc}44` }}
+                    />
+                  );
+                })}
+              </div>
+              {isSelected && (
+                <div style={{ marginTop: "8px", fontSize: "10px", color: "#555", textAlign: "center" }}>click to collapse ▲</div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Selected agent detail panel */}
+      {selectedAgent && (() => {
+        const agent = agentMap.get(selectedAgent);
+        if (!agent) return null;
+        const wc = agent.worst === "fail" ? "#ef4444" : agent.worst === "warn" ? "#f59e0b" : "#22c55e";
+        const failChecks = CHECK_META.filter(m => agent.checkMap.get(m.id) === "fail");
+        const warnChecks = CHECK_META.filter(m => agent.checkMap.get(m.id) === "warn");
+        const allFindings = result.checks.flatMap(check =>
+          check.findings.filter(f => f.agentId === agent.id).map(f => ({ check, finding: f }))
+        );
+        return (
+          <div ref={detailRef} style={{ background: "#0f0f12", borderTop: `1px solid ${wc}44`, borderRight: `1px solid ${wc}44`, borderBottom: `1px solid ${wc}44`, borderLeft: `3px solid ${wc}`, borderRadius: "10px", padding: "20px" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
+              <div>
+                <h3 style={{ margin: "0 0 3px", fontSize: "15px", fontWeight: 700, color: "#f0f0f0" }}>{agent.name}</h3>
+                <p style={{ margin: 0, fontSize: "10px", color: "#444", fontFamily: "ui-monospace,monospace" }}>{agent.id}</p>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <div style={{ display: "flex", gap: "6px" }}>
+                  {agent.failCount > 0 && <span style={{ fontSize: "11px", fontWeight: 700, padding: "3px 10px", borderRadius: "6px", background: "#ef444422", color: "#ef4444", border: "1px solid #ef444444" }}>{agent.failCount} FAIL</span>}
+                  {agent.warnCount > 0 && <span style={{ fontSize: "11px", fontWeight: 700, padding: "3px 10px", borderRadius: "6px", background: "#f59e0b22", color: "#f59e0b", border: "1px solid #f59e0b44" }}>{agent.warnCount} WARN</span>}
+                </div>
+                <button onClick={() => setSelectedAgent(null)} style={{ background: "none", border: "none", color: "#555", cursor: "pointer", fontSize: "18px", lineHeight: 1 }}>✕</button>
+              </div>
+            </div>
+
+            {failChecks.length > 0 && (
+              <div style={{ marginBottom: "14px" }}>
+                <p style={{ margin: "0 0 8px", fontSize: "10px", fontWeight: 700, color: "#ef4444", textTransform: "uppercase", letterSpacing: "0.08em" }}>✗ Failed checks</p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                  {failChecks.map(m => (
+                    <span key={m.id} style={{ padding: "4px 10px", borderRadius: "6px", fontSize: "11px", fontWeight: 600, background: "#ef444416", color: "#ef4444", border: "1px solid #ef444430" }}>
+                      {m.icon} {m.title}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {warnChecks.length > 0 && (
+              <div style={{ marginBottom: "14px" }}>
+                <p style={{ margin: "0 0 8px", fontSize: "10px", fontWeight: 700, color: "#f59e0b", textTransform: "uppercase", letterSpacing: "0.08em" }}>⚠ Warning checks</p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                  {warnChecks.map(m => (
+                    <span key={m.id} style={{ padding: "4px 10px", borderRadius: "6px", fontSize: "11px", fontWeight: 600, background: "#f59e0b16", color: "#f59e0b", border: "1px solid #f59e0b30" }}>
+                      {m.icon} {m.title}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div>
+              <p style={{ margin: "0 0 8px", fontSize: "10px", fontWeight: 700, color: "#555", textTransform: "uppercase", letterSpacing: "0.08em" }}>All findings for this agent</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px", maxHeight: "300px", overflowY: "auto" }}>
+                {allFindings.length === 0
+                  ? <p style={{ margin: 0, fontSize: "12px", color: "#333", fontStyle: "italic" }}>No findings — agent passed all checks.</p>
+                  : allFindings.map(({ check, finding }, i) => {
+                    const checkMeta = CHECK_META.find(m => m.id === check.id);
+                    return (
+                      <div key={i} style={{ background: "#080810", border: "1px solid #1a1a22", borderRadius: "6px", padding: "9px 12px" }}>
+                        <div style={{ marginBottom: "4px", display: "flex", alignItems: "center", gap: "6px" }}>
+                          <span style={{ fontSize: "10px", color: "#444" }}>{checkMeta?.icon} {check.title}</span>
+                        </div>
+                        <p style={{ margin: 0, fontSize: "11px", color: "#ccc", lineHeight: 1.5 }}>{finding.detail}</p>
+                        {finding.snippet && (
+                          <code style={{ display: "block", fontSize: "10px", color: "#f97316", fontFamily: "ui-monospace,monospace", background: "#0a0a14", padding: "4px 8px", borderRadius: "4px", marginTop: "5px" }}>
+                            {finding.snippet}
+                          </code>
+                        )}
+                      </div>
+                    );
+                  })
+                }
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
 function CheckCard({ check, isScanning, scanIndex, myIndex }: {
   check: SecurityCheck | null;
   isScanning: boolean;
@@ -573,11 +770,12 @@ function CheckCard({ check, isScanning, scanIndex, myIndex }: {
 }
 
 function AuditTab({ onResult }: { onResult?: (r: SecurityAuditResponse | null) => void }) {
-  const [phase, setPhase]       = useState<"idle" | "scanning" | "done">("idle");
+  const [phase, setPhase]         = useState<"idle" | "scanning" | "done">("idle");
   const [scanIndex, setScanIndex] = useState(-1);
-  const [progress, setProgress] = useState(0);
-  const [result, setResult]     = useState<SecurityAuditResponse | null>(null);
-  const [error, setError]       = useState<string | null>(null);
+  const [progress, setProgress]   = useState(0);
+  const [result, setResult]       = useState<SecurityAuditResponse | null>(null);
+  const [error, setError]         = useState<string | null>(null);
+  const [viewMode, setViewMode]   = useState<"canvas" | "checks">("checks");
 
   async function runAudit() {
     setPhase("scanning");
@@ -624,7 +822,7 @@ function AuditTab({ onResult }: { onResult?: (r: SecurityAuditResponse | null) =
       {/* Header card */}
       <div style={{
         background: "#0f0f12", border: "1px solid #1e1e26", borderRadius: "10px",
-        padding: "22px 28px", display: "flex", alignItems: "center", gap: "24px",
+        padding: "20px 24px", display: "flex", alignItems: "center", gap: "20px",
       }}>
         <div style={{ flex: 1 }}>
           {phase === "idle" && (
@@ -655,15 +853,36 @@ function AuditTab({ onResult }: { onResult?: (r: SecurityAuditResponse | null) =
             </>
           )}
           {phase === "done" && result && (
-            <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap" }}>
               <div>
                 <h2 style={{ margin: "0 0 4px", fontSize: "16px", fontWeight: 700, color: "#f0f0f0" }}>Audit Complete</h2>
                 <p style={{ margin: 0, fontSize: "12px", color: "#555" }}>
                   {result.agentsScanned} agents · {result.filesScanned} files · {new Date(result.runAt).toLocaleTimeString()}
                 </p>
               </div>
+              {/* View mode toggle */}
               <div style={{
-                marginLeft: "auto", padding: "8px 18px",
+                display: "flex", gap: "0", marginLeft: "auto",
+                border: "1px solid #1e1e26", borderRadius: "8px", overflow: "hidden",
+              }}>
+                {(["canvas", "checks"] as const).map(mode => (
+                  <button
+                    key={mode}
+                    onClick={() => setViewMode(mode)}
+                    style={{
+                      padding: "7px 16px", border: "none", cursor: "pointer",
+                      fontSize: "11px", fontWeight: 700, letterSpacing: "0.04em",
+                      background: viewMode === mode ? ORANGE : "transparent",
+                      color: viewMode === mode ? "#fff" : "#555",
+                      transition: "all 0.15s",
+                    }}
+                  >
+                    {mode === "canvas" ? "🗺 Canvas" : "☑ Checks"}
+                  </button>
+                ))}
+              </div>
+              <div style={{
+                padding: "8px 18px",
                 background: overallColor + "18", border: `1px solid ${overallColor}44`, borderRadius: "8px",
               }}>
                 <p style={{ margin: "0 0 1px", fontSize: "9px", color: "#555", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em" }}>Overall</p>
@@ -707,15 +926,34 @@ function AuditTab({ onResult }: { onResult?: (r: SecurityAuditResponse | null) =
         </div>
       )}
 
-      {(phase === "scanning" || phase === "done") && (
+      {/* Scanning state — show check list progress */}
+      {phase === "scanning" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
           {CHECK_META.map((meta, idx) => (
             <CheckCard
               key={meta.id}
               myIndex={idx}
-              isScanning={phase === "scanning"}
+              isScanning={true}
               scanIndex={scanIndex}
-              check={result?.checks.find(c => c.id === meta.id) ?? null}
+              check={null}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Done state — canvas or checks view */}
+      {phase === "done" && result && viewMode === "canvas" && (
+        <AgentCanvas result={result} />
+      )}
+      {phase === "done" && result && viewMode === "checks" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          {CHECK_META.map((meta, idx) => (
+            <CheckCard
+              key={meta.id}
+              myIndex={idx}
+              isScanning={false}
+              scanIndex={-1}
+              check={result.checks.find(c => c.id === meta.id) ?? null}
             />
           ))}
         </div>
@@ -735,8 +973,11 @@ function InfrastructureTab({ routers }: { routers: RouterHealthSnapshot[] }) {
         const statusColor = !r.reachable ? "#ef4444" : r.hasRecentRestart ? "#f59e0b" : "#22c55e";
         return (
           <div key={r.routerId} style={{
-            background: "#0f0f12", border: `1px solid ${borderColor}44`,
+            background: "#0f0f12",
             borderTop: `2px solid ${borderColor}`,
+            borderRight: `1px solid ${borderColor}44`,
+            borderBottom: `1px solid ${borderColor}44`,
+            borderLeft: `1px solid ${borderColor}44`,
             borderRadius: "10px", padding: "20px",
           }}>
             <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: "14px" }}>

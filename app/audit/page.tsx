@@ -15,6 +15,7 @@ import type {
   RouterHealthSnapshot,
   AgentRiskEntry,
 } from "@/app/api/audit/events/route";
+import { timeAgo, uptimeFmt, fmtCost, fmtTokens } from "@/lib/formatters";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -48,35 +49,6 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 const SEV_ALL: AuditSeverity[] = ["critical", "high", "medium", "low", "info"];
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function timeAgo(ts: number): string {
-  const s = Math.floor((Date.now() - ts) / 1000);
-  if (s < 60)  return `${s}s ago`;
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-  return `${Math.floor(s / 86400)}d ago`;
-}
-
-function uptimeFmt(s: number): string {
-  if (s < 60)    return `${Math.round(s)}s`;
-  if (s < 3600)  return `${Math.floor(s / 60)}m`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
-  return `${Math.floor(s / 86400)}d ${Math.floor((s % 86400) / 3600)}h`;
-}
-
-function fmtCost(n: number): string {
-  if (n === 0) return "$0.0000";
-  if (n < 0.0001) return "< $0.0001";
-  return `$${n.toFixed(4)}`;
-}
-
-function fmtTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
-  if (n >= 1_000)     return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
-}
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 

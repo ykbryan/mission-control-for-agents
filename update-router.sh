@@ -5,8 +5,23 @@ set -e
 #  Mission Control Router — one-command updater
 #  Run this on the machine where the router is installed.
 #
-#  curl -fsSL https://raw.githubusercontent.com/ykbryan/mission-control-for-agents/main/update-router.sh -o /tmp/update-router.sh && bash /tmp/update-router.sh
+#  curl -fsSL https://raw.githubusercontent.com/ykbryan/mission-control-for-agents/main/update-router.sh | bash
 # ─────────────────────────────────────────────────────────────
+
+if [[ "${1}" == "--help" || "${1}" == "-h" ]]; then
+  echo ""
+  echo "  Mission Control Router — Updater"
+  echo ""
+  echo "  Usage: bash update-router.sh [options]"
+  echo ""
+  echo "  Options:"
+  echo "    --help, -h          Show this help message"
+  echo ""
+  echo "  Environment overrides:"
+  echo "    ROUTER_INSTALL_DIR  Custom install directory"
+  echo ""
+  exit 0
+fi
 
 REPO="https://github.com/ykbryan/mission-control-for-agents.git"
 GREEN="\033[0;32m"; CYAN="\033[0;36m"; YELLOW="\033[1;33m"; RED="\033[0;31m"; BOLD="\033[1m"; RESET="\033[0m"
@@ -23,7 +38,7 @@ elif [ -d "$HOME/mission-control-router" ]; then
 elif [ -d "/opt/mission-control-router" ]; then
   INSTALL_DIR="/opt/mission-control-router"
 else
-  error "Router install directory not found. Set ROUTER_INSTALL_DIR or reinstall."
+  error "Router install directory not found. Set ROUTER_INSTALL_DIR or reinstall with install-router.sh"
 fi
 
 echo ""
@@ -41,9 +56,7 @@ git clone --depth 1 --filter=blob:none --sparse "$REPO" "$TMP_DIR" -q
 (cd "$TMP_DIR" && git sparse-checkout set router)
 
 # Preserve .env and token
-cp "$TMP_DIR/router/." "$INSTALL_DIR/" -r --no-clobber 2>/dev/null || true
-# Force-copy source files only
-cp -r "$TMP_DIR/router/src" "$INSTALL_DIR/"
+cp -r "$TMP_DIR/router/src"          "$INSTALL_DIR/"
 cp    "$TMP_DIR/router/tsconfig.json" "$INSTALL_DIR/"
 cp    "$TMP_DIR/router/package.json"  "$INSTALL_DIR/"
 success "Source updated."
@@ -67,9 +80,25 @@ pm2 restart mission-control-router --silent
 pm2 save --force >/dev/null
 success "Router restarted."
 
+# ── Health check ─────────────────────────────────────────────
+ROUTER_PORT=$(grep "^ROUTER_PORT=" "$INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2 || echo "3010")
+info "Checking router health on port ${ROUTER_PORT} …"
+HEALTHY=0
+for i in $(seq 1 12); do
+  sleep 1
+  HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${ROUTER_PORT}/health" 2>/dev/null || true)
+  if [ "$HTTP_STATUS" = "200" ] || [ "$HTTP_STATUS" = "401" ]; then
+    HEALTHY=1; break
+  fi
+  printf "."
+done
+echo ""
+[ "$HEALTHY" = "0" ] && warn "Health check timed out — check 'pm2 logs mission-control-router'"
+[ "$HEALTHY" = "1" ] && success "Router is healthy."
+
 echo ""
 echo -e "${GREEN}  ╔═══════════════════════════════════════╗${RESET}"
-echo -e "${GREEN}  ║${RESET}  ${BOLD}Router updated successfully!${RESET}        ${GREEN}║${RESET}"
+echo -e "${GREEN}  ║${RESET}  ${BOLD}✓ Router updated successfully!${RESET}      ${GREEN}║${RESET}"
 echo -e "${GREEN}  ╠═══════════════════════════════════════╣${RESET}"
 echo -e "${GREEN}  ║${RESET}  pm2 logs mission-control-router    ${GREEN}║${RESET}"
 echo -e "${GREEN}  ╚═══════════════════════════════════════╝${RESET}"
