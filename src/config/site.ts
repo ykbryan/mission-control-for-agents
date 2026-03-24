@@ -1,21 +1,9 @@
 export const siteConfig = {
-  title: "Claw Base HQ",
-  subtitle: "The Mission Control for the Claw network. Zero telemetry. Zero compromise.",
+  name: "Claw Base HQ",
+  description: "Mission Control Site - Core Systems Online",
   features: [
-    {
-      id: "feature-1",
-      title: "One Dashboard to Rule Them All",
-      description: "Looker consolidates all your metrics into a single, unified mission control center."
-    },
-    {
-      id: "feature-2",
-      title: "Enterprise & Hobbyist Ready",
-      description: "Scalable architecture designed for both massive enterprises and solo operators alike."
-    },
-    {
-      id: "feature-3",
-      title: "Zero-Telemetry Privacy",
-      description: "Built with strictly zero tracking. Your data stays inside your mission control."
-    }
+    { title: "Looker Embed", description: "Seamless Looker dashboard integration and secure API communication." },
+    { title: "Real-time Metrics", description: "Live tracking of critical agent activities and system health." },
+    { title: "Encrypted Comms", description: "End-to-end encrypted messaging via secured cyber channels." }
   ]
 };
