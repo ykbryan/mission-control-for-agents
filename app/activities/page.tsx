@@ -448,11 +448,22 @@ function extractLastActivity(events: ActivityEvent[]): string | undefined {
     if (!msg || msg.length < 10) continue;
     // Prefer agent/user chat messages
     if (msg.startsWith('🤖') || msg.startsWith('💬')) {
-      return msg.replace(/^[🤖💬]\s*/, '').slice(0, 100);
+      return msg.replace(/^[🤖💬]\s*/, '').slice(0, 120);
     }
     // Skip system noise
     if (msg.startsWith('[') || msg.startsWith('{') || msg.includes('tool_use')) continue;
-    if (msg.length > 15) return msg.slice(0, 100);
+    if (msg.length > 15) return msg.slice(0, 120);
+  }
+  return undefined;
+}
+
+// Find the first user (💬) message — the task that was assigned
+function extractTaskMessage(events: ActivityEvent[]): string | undefined {
+  for (const e of events) {
+    const msg = (e.fullMessage ?? e.message ?? '').trim();
+    if (msg.startsWith('💬')) {
+      return msg.replace(/^💬\s*/, '').slice(0, 200);
+    }
   }
   return undefined;
 }
@@ -470,6 +481,7 @@ function SwarmTraceView({
   const [orphans, setOrphans] = useState<ActivitySession[]>([]);
   const [loading, setLoading] = useState(true);
   const [sessionSummaries, setSessionSummaries] = useState<Map<string, string>>(new Map());
+  const [taskMessages, setTaskMessages] = useState<Map<string, string>>(new Map());
   const hasLoadedRef = useRef(false);
 
   useEffect(() => {
@@ -494,6 +506,7 @@ function SwarmTraceView({
       const builtChains: SwarmChain[] = [];
       const claimedKeys = new Set<string>();
       const summaries = new Map<string, string>();
+      const tasks = new Map<string, string>();
 
       for (const root of roots) {
         claimedKeys.add(root.key);
@@ -506,7 +519,9 @@ function SwarmTraceView({
           const res = await fetch(`/api/agent-session?${params}`);
           const events: ActivityEvent[] = await res.json();
 
-          // Capture root summary
+          // Capture task description (first user message) and current activity
+          const taskMsg = extractTaskMessage(events);
+          if (taskMsg) tasks.set(root.key, taskMsg);
           const rootSummary = extractLastActivity(events);
           if (rootSummary) summaries.set(root.key, rootSummary);
 
@@ -589,6 +604,7 @@ function SwarmTraceView({
       // Sessions not part of any chain
       const remainingOrphans = activeSessions.filter(s => !claimedKeys.has(s.key));
       hasLoadedRef.current = true;
+      setTaskMessages(tasks);
       setChains(builtChains);
       setOrphans(remainingOrphans);
       setLoading(false);
@@ -643,26 +659,40 @@ function SwarmTraceView({
         const rootActive = Date.now() - chain.root.updatedAt < ACTIVE_MS;
         const ts = typeStyle(chain.root.type);
         const allDelegates = chain.steps.flatMap(s => s.sessions);
-        const rootSummary = sessionSummaries.get(chain.root.key);
+        const taskMsg = taskMessages.get(chain.root.key);
+        const activeCount = allDelegates.filter(s => Date.now() - s.updatedAt < ACTIVE_MS).length;
+        const doneCount = allDelegates.length - activeCount;
         return (
           <div
             key={chain.root.key}
             className="rounded-lg border overflow-hidden"
             style={{ background: "#0c0c0e", borderColor: "#1e1e28" }}
           >
-            {/* Root header */}
+            {/* Task banner */}
+            {taskMsg && (
+              <div className="px-4 pt-3 pb-2" style={{ borderBottom: "1px solid #111", background: "#09090d" }}>
+                <div className="flex items-start gap-2">
+                  <span className="text-[9px] font-bold uppercase tracking-widest mt-0.5 flex-shrink-0" style={{ color: "#e85d2760" }}>Task</span>
+                  <p className="text-[11px] leading-relaxed" style={{ color: "#c0b0a0" }}>
+                    {taskMsg.length > 180 ? taskMsg.slice(0, 180) + "…" : taskMsg}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Root agent row */}
             <button
               onClick={() => onOpen(chain.root)}
-              className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-white/[0.02] transition-colors"
+              className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-white/[0.02] transition-colors"
               style={{ borderBottom: "1px solid #1a1a22" }}
             >
-              <span className="text-lg flex-shrink-0">{chain.root.icon}</span>
+              <span className="text-base flex-shrink-0">{chain.root.icon}</span>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-sm font-bold" style={{ color: "#e85d27" }}>
+                  <span className="text-xs font-bold" style={{ color: "#e85d27" }}>
                     {chain.root.agentId}
                   </span>
-                  <span className={`text-[10px] font-medium px-2 py-0.5 rounded ${ts.bg} ${ts.text}`}>
+                  <span className={`text-[10px] font-medium px-1.5 py-px rounded ${ts.bg} ${ts.text}`}>
                     {chain.root.label}
                   </span>
                   {rootActive ? (
@@ -673,33 +703,41 @@ function SwarmTraceView({
                   ) : (
                     <span className="text-[9px] text-zinc-600 uppercase tracking-wider">Done</span>
                   )}
-                  <span className="text-[10px] text-zinc-600">{timeAgo(chain.root.updatedAt)}</span>
+                  <span className="text-[10px] text-zinc-700">{timeAgo(chain.root.updatedAt)}</span>
                 </div>
-                {rootSummary ? (
-                  <div className="text-[11px] text-zinc-400 mt-1 truncate leading-relaxed">
-                    {rootSummary}
-                  </div>
-                ) : (
-                  <div className="text-[10px] text-zinc-700 mt-0.5 truncate">{chain.root.label}</div>
-                )}
               </div>
               {allDelegates.length > 0 && (
-                <div className="flex-shrink-0 text-right">
-                  <div className="text-[10px] text-zinc-600">Delegated to</div>
-                  <div className="text-sm font-bold" style={{ color: "#e85d27" }}>{allDelegates.length} agents</div>
+                <div className="flex-shrink-0 flex items-center gap-3 text-right">
+                  {activeCount > 0 && (
+                    <span className="text-[10px] text-emerald-500">{activeCount} working</span>
+                  )}
+                  {doneCount > 0 && (
+                    <span className="text-[10px] text-zinc-600">{doneCount} done</span>
+                  )}
+                  <span className="text-[10px] text-zinc-700">↗</span>
                 </div>
               )}
-              <span className="text-[10px] text-zinc-700 flex-shrink-0 ml-2">↗</span>
             </button>
 
-            {/* Connector arrow */}
+            {/* Team status bar */}
             {allDelegates.length > 0 && (
-              <div className="flex items-center gap-2 px-6 py-1.5" style={{ background: "#09090c" }}>
-                <div className="w-px h-3 bg-zinc-800 ml-1" />
-                <span className="text-[9px] font-semibold uppercase tracking-widest text-zinc-700">
-                  ↓ dispatched {allDelegates.length} parallel agent{allDelegates.length !== 1 ? "s" : ""}
-                </span>
-                <div className="flex-1 h-px bg-zinc-900" />
+              <div className="flex items-center gap-3 px-4 py-2" style={{ background: "#080810", borderBottom: "1px solid #111" }}>
+                <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: "#e85d2750" }}>Team</span>
+                <div className="flex items-center gap-1.5 flex-wrap flex-1">
+                  {allDelegates.map(s => {
+                    const sActive = Date.now() - s.updatedAt < ACTIVE_MS;
+                    return (
+                      <span
+                        key={s.key}
+                        className="flex items-center gap-1 text-[10px] px-1.5 py-px rounded"
+                        style={{ background: sActive ? "rgba(74,222,128,0.06)" : "rgba(255,255,255,0.03)", color: sActive ? "#4ade8099" : "#444" }}
+                      >
+                        {s.icon} {s.agentId}
+                        {sActive && <span className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse" />}
+                      </span>
+                    );
+                  })}
+                </div>
               </div>
             )}
 
