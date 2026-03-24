@@ -396,6 +396,7 @@ const CHECK_META = [
   { id: "crescendo-attack",    icon: "📈", title: "Crescendo attack"           },
   { id: "manyshot-attack",     icon: "📋", title: "Many-shot attack"           },
   { id: "cot-hijack",          icon: "🧩", title: "CoT hijack"                },
+  { id: "policy-puppetry",     icon: "📄", title: "Policy puppetry"           },
 ];
 
 function CheckCard({ check, isScanning, scanIndex, myIndex }: {
@@ -621,7 +622,7 @@ function AuditTab({ onResult }: { onResult?: (r: SecurityAuditResponse | null) =
                 🛡️ Security Audit
               </h2>
               <p style={{ margin: 0, fontSize: "13px", color: "#555", lineHeight: "1.6" }}>
-                Runs 13 targeted checks across all agents and their config files — covering privilege abuse, plaintext secrets, prompt injection, exec access, subagent control, direct attacks, encoding obfuscation, persona overrides, social engineering, crescendo escalation, many-shot priming, and chain-of-thought injection.
+                Runs 14 targeted checks across all agents and their config files — covering privilege abuse, plaintext secrets, prompt injection, exec access, subagent control, direct attacks, encoding obfuscation, persona overrides, social engineering, crescendo escalation, many-shot priming, CoT injection, and policy puppetry.
               </p>
             </>
           )}
