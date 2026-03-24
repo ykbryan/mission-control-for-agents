@@ -457,13 +457,24 @@ function extractLastActivity(events: ActivityEvent[]): string | undefined {
   return undefined;
 }
 
-// Find the first user (💬) message — the task that was assigned
+// Boilerplate resume/system messages to skip
+const SKIP_PATTERNS = [
+  /^continue where you left off/i,
+  /^the previous model attempt/i,
+  /^resuming previous session/i,
+  /^picking up where/i,
+  /^your task is to continue/i,
+];
+
+// Find the first substantive user (💬) message — the real task assigned
 function extractTaskMessage(events: ActivityEvent[]): string | undefined {
   for (const e of events) {
     const msg = (e.fullMessage ?? e.message ?? '').trim();
-    if (msg.startsWith('💬')) {
-      return msg.replace(/^💬\s*/, '').slice(0, 200);
-    }
+    if (!msg.startsWith('💬')) continue;
+    const text = msg.replace(/^💬\s*/, '').trim();
+    if (text.length < 10) continue;
+    if (SKIP_PATTERNS.some(p => p.test(text))) continue;
+    return text.slice(0, 200);
   }
   return undefined;
 }
