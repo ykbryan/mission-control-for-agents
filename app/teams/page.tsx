@@ -154,16 +154,23 @@ function detectOrchestrators(
 
   // ── Pass 0: AGENTS.md — structural team definition ───────────────────────
   // New orchestrators may not yet have a MEMORY.md (never run yet).
-  // AGENTS.md often declares the team structure explicitly, e.g.:
-  //   "Uma orchestrates. Roy pressure-tests…" / "manages Jelly, Deer, Queen and Roy"
-  // Heuristic: if AGENTS.md contains ≥2 known agent names AND an orchestration
-  // keyword near the top, treat those agents as outgoing members.
-  const ORCH_KEYWORDS = /\b(orchestrat|manages|coordinat|leads|assigns\s+to|delegates?\s+to|routes?\s+to|supervise|oversee|direct)\b/i;
+  // Only triggers when THIS agent's own name/ID appears on the same line as
+  // an orchestration verb — e.g. "Uma orchestrates" / "Uma | Orchestrator".
+  // This prevents other agents' AGENTS.md templates (which share the same
+  // team roster table) from being falsely promoted.
   for (const [, an] of analyses) {
     const agentsMd = an.agentsMd ?? "";
     if (!agentsMd) continue;
-    if (!ORCH_KEYWORDS.test(agentsMd)) continue;
+    const esc = an.agentId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    // Agent's own name must be subject of (or described as) an orchestration role on the same line
+    const selfOrchestratesRe = new RegExp(
+      `\\b${esc}\\b[^\\n]{0,140}\\b(orchestrat|is\\s+the\\s+\\w[\\w\\s]{0,20}lead|manages\\s+the|coordinates\\s+the)\\b` +
+      `|\\b(orchestrat|content\\s+lead|coordinates)\\b[^\\n]{0,80}\\b${esc}\\b`,
+      "i"
+    );
+    if (!selfOrchestratesRe.test(agentsMd)) continue;
     const mentioned = extractMentionedAgents(agentsMd, an.agentId);
+    if (mentioned.size < 2) continue;
     for (const targetId of mentioned) {
       an.outgoing.add(targetId);
     }
