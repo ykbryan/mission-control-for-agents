@@ -1,8 +1,8 @@
 # Mission Control for Agents
 
-Mission Control for Agents — A real-time dashboard to monitor, audit and manage your AI agent fleet.
+A real-time dashboard to monitor, audit, and manage your AI agent fleet.
 
-![Mission Control](docs/screenshot.png)
+![Agent Canvas](media/canvas.png)
 
 ---
 
@@ -14,7 +14,7 @@ Mission Control for Agents — A real-time dashboard to monitor, audit and manag
 curl -fsSL https://raw.githubusercontent.com/ykbryan/mission-control-for-agents/main/install.sh | bash
 ```
 
-**Install components separately:**
+**Or install components separately:**
 
 ```bash
 # Router only (run on the machine alongside OpenClaw)
@@ -26,17 +26,67 @@ curl -fsSL https://raw.githubusercontent.com/ykbryan/mission-control-for-agents/
 
 ---
 
+## Features
+
+### Agent Canvas
+
+Visualise your entire agent fleet as a live hierarchy. Click any agent card to inspect its model, capabilities, active sessions, OpenClaw files, and contextual summary in the side panel.
+
+![Agent Canvas](media/canvas.png)
+
+---
+
+### Agentic Teams
+
+Automatically detects orchestration relationships from `AGENTS.md` and session activity. See which agents are leads, which are delegates, and which are running solo.
+
+![Agentic Teams](media/teams.png)
+
+---
+
+### Live Activity Monitoring
+
+The Active Now tab renders swarm traces in real time — showing each root agent, its delegated sub-agents, the last response, and live/done status for every node.
+
+![Active Sessions](media/agent-trace.png)
+
+---
+
+### Session Trace Log
+
+Drill into any session to see the full message-by-message log with timestamps, token counts, tool calls, and agent-to-agent handoffs.
+
+![Session Trace Log](media/trace-log.png)
+
+---
+
+### Cost Intelligence
+
+Track spend across every dimension. Switch between By Agent, By Router, By Model, and By Provider views with configurable time periods (1D → All time).
+
+<img src="media/tokens.png" width="49.5%"> <img src="media/token-providers.png" width="49.5%">
+
+---
+
+### Agent Profile
+
+Deep-dive into any individual agent: full session history, token usage breakdown across Telegram groups, cron jobs, and delegated tasks — all in one view.
+
+![Agent Profile](media/profile.png)
+
+---
+
 ## Installation
 
 ### Full install (Router + UI)
 
-Run the combined installer on any machine that has Node 18+, npm, and git:
+Run the combined installer on any machine with Node 18+, npm, and git:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ykbryan/mission-control-for-agents/main/install.sh | bash
 ```
 
-The script will prompt for:
+The script prompts for:
 - OpenClaw URL (default: `http://127.0.0.1:18789`)
 - OpenClaw token
 - Router port (default: `3010`)
@@ -52,7 +102,11 @@ MC_PORT=3000 \
 curl -fsSL https://raw.githubusercontent.com/ykbryan/mission-control-for-agents/main/install.sh | bash
 ```
 
-After installation, open Mission Control in your browser, click **+ Router**, and enter the Router URL and token printed at the end of the install output. The token is also saved to `<ROUTER_INSTALL_DIR>/.router-token`.
+After installation, open Mission Control in your browser and click **+ Router**:
+
+![Connect Router](media/login.png)
+
+Enter the Router URL and token printed at the end of the install output. The token is also saved to `<ROUTER_INSTALL_DIR>/.router-token`.
 
 **Default install directories:**
 
@@ -73,7 +127,7 @@ Run this on the machine where OpenClaw is running:
 curl -fsSL https://raw.githubusercontent.com/ykbryan/mission-control-for-agents/main/install-router.sh | bash
 ```
 
-Non-interactive example:
+Non-interactive:
 
 ```bash
 OPENCLAW_URL=http://127.0.0.1:18789 \
@@ -82,7 +136,7 @@ ROUTER_PORT=3010 \
 bash install-router.sh
 ```
 
-Once installed, the router URL and token are printed and saved to `<INSTALL_DIR>/.env.local`. Enter these values into Mission Control under **+ Router**.
+The router URL and token are printed on completion and saved to `<INSTALL_DIR>/.env.local`.
 
 ---
 
@@ -94,7 +148,7 @@ Run this on the machine that will host the dashboard:
 curl -fsSL https://raw.githubusercontent.com/ykbryan/mission-control-for-agents/main/install-missioncontrol.sh | bash
 ```
 
-Non-interactive example:
+Non-interactive:
 
 ```bash
 MC_PORT=3000 bash install-missioncontrol.sh
@@ -130,18 +184,16 @@ All update scripts preserve your existing `.env` and `.router-token` files and r
 
 ## Configuration
 
-Environment variables used by the install and update scripts. Set them before running a script to skip interactive prompts.
-
 | Variable | Default | Description |
 |---|---|---|
 | `OPENCLAW_URL` | `http://127.0.0.1:18789` | URL of the OpenClaw gateway the router connects to |
 | `OPENCLAW_TOKEN` | _(required)_ | Bearer token for authenticating with OpenClaw |
 | `ROUTER_PORT` | `3010` | Port the router HTTP API listens on |
 | `MC_PORT` | `3000` | Port Mission Control UI listens on |
-| `ROUTER_INSTALL_DIR` | `~/mission-control-router` (macOS/WSL) / `/opt/mission-control-router` (Linux) | Override the router install directory |
-| `MC_INSTALL_DIR` | `~/mission-control-ui` (macOS/WSL) / `/opt/mission-control-ui` (Linux) | Override the Mission Control UI install directory |
+| `ROUTER_INSTALL_DIR` | `~/mission-control-router` (macOS/WSL) · `/opt/mission-control-router` (Linux) | Override the router install directory |
+| `MC_INSTALL_DIR` | `~/mission-control-ui` (macOS/WSL) · `/opt/mission-control-ui` (Linux) | Override the Mission Control UI install directory |
 
-The router reads its runtime config from `<ROUTER_INSTALL_DIR>/.env`. The Mission Control UI port is configured through the pm2 ecosystem file (`ecosystem.config.cjs`) written during installation.
+The router reads its runtime config from `<ROUTER_INSTALL_DIR>/.env`. The Mission Control UI port is configured via the pm2 ecosystem file (`ecosystem.config.cjs`) written during installation.
 
 ---
 
@@ -179,8 +231,6 @@ The router reads its runtime config from `<ROUTER_INSTALL_DIR>/.env`. The Missio
 
 Prerequisites: Node 18+, npm.
 
-Clone the repository and install dependencies:
-
 ```bash
 git clone https://github.com/ykbryan/mission-control-for-agents.git
 cd mission-control-for-agents
@@ -208,11 +258,9 @@ npm run dev --prefix router
 
 ---
 
-## Process management
+## Process Management
 
-Both components are managed by [pm2](https://pm2.keymetrics.io/). The install scripts set up pm2 and configure auto-start on reboot automatically.
-
-Common pm2 commands:
+Both components are managed by [pm2](https://pm2.keymetrics.io/). The install scripts configure pm2 and auto-start on reboot automatically.
 
 | Command | Description |
 |---|---|
@@ -232,16 +280,12 @@ Common pm2 commands:
 
 **Port already in use**
 
-If the install fails with a port conflict, either stop the conflicting process or set a different port before re-running the installer:
-
 ```bash
+# Use a different port
 ROUTER_PORT=3011 curl -fsSL https://raw.githubusercontent.com/ykbryan/mission-control-for-agents/main/install-router.sh | bash
 MC_PORT=3001     curl -fsSL https://raw.githubusercontent.com/ykbryan/mission-control-for-agents/main/install-missioncontrol.sh | bash
-```
 
-Check which process is using a port:
-
-```bash
+# Find what's using a port
 lsof -i :3010
 ```
 
@@ -249,11 +293,11 @@ lsof -i :3010
 
 **Token not found after install**
 
-The router writes its token to `<ROUTER_INSTALL_DIR>/.router-token` shortly after first start. If the token was not printed during install, read it directly:
+The router writes its token to `<ROUTER_INSTALL_DIR>/.router-token` shortly after first start:
 
 ```bash
 cat ~/mission-control-router/.router-token
-# or on Linux:
+# Linux:
 cat /opt/mission-control-router/.router-token
 ```
 
@@ -268,23 +312,16 @@ pm2 logs mission-control-router
 **Health check fails / UI shows router as offline**
 
 1. Confirm the router process is running: `pm2 list`
-2. Check router logs for errors: `pm2 logs mission-control-router`
-3. Verify the router port is reachable: `curl http://localhost:3010/health`
+2. Check router logs: `pm2 logs mission-control-router`
+3. Verify the port is reachable: `curl http://localhost:3010/health`
 4. Ensure `OPENCLAW_URL` in `<ROUTER_INSTALL_DIR>/.env` points to a running OpenClaw instance
 5. If you changed the port after install, update `.env` and restart: `pm2 restart mission-control-router`
-
-For the UI:
-
-```bash
-pm2 logs mission-control-ui
-curl http://localhost:3000
-```
 
 ---
 
 **WSL: auto-start not supported**
 
-pm2 auto-start on reboot is not available in WSL. Start the processes manually after each WSL session:
+pm2 auto-start on reboot is not available in WSL. Start manually after each session:
 
 ```bash
 pm2 start mission-control-router
