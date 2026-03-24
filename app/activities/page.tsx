@@ -441,6 +441,22 @@ function extractSpawnedAgentIds(events: ActivityEvent[]): string[] {
   return spawned;
 }
 
+function extractLastActivity(events: ActivityEvent[]): string | undefined {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i];
+    const msg = (e.fullMessage ?? e.message ?? '').trim();
+    if (!msg || msg.length < 10) continue;
+    // Prefer agent/user chat messages
+    if (msg.startsWith('🤖') || msg.startsWith('💬')) {
+      return msg.replace(/^[🤖💬]\s*/, '').slice(0, 100);
+    }
+    // Skip system noise
+    if (msg.startsWith('[') || msg.startsWith('{') || msg.includes('tool_use')) continue;
+    if (msg.length > 15) return msg.slice(0, 100);
+  }
+  return undefined;
+}
+
 function SwarmTraceView({
   activeSessions,
   allSessions,
@@ -453,11 +469,15 @@ function SwarmTraceView({
   const [chains, setChains] = useState<SwarmChain[]>([]);
   const [orphans, setOrphans] = useState<ActivitySession[]>([]);
   const [loading, setLoading] = useState(true);
+  const [sessionSummaries, setSessionSummaries] = useState<Map<string, string>>(new Map());
 
   useEffect(() => {
-    const roots = activeSessions.filter(
-      s => s.type === "telegram" || s.type === "main"
-    );
+    // Prefer telegram sessions as roots (triggered by external message);
+    // fall back to any active main sessions if no telegram roots found
+    const telegramRoots = activeSessions.filter(s => s.type === "telegram");
+    const roots = telegramRoots.length > 0
+      ? telegramRoots
+      : activeSessions.filter(s => s.type === "main");
 
     if (roots.length === 0) {
       setChains([]);
@@ -471,6 +491,7 @@ function SwarmTraceView({
     async function buildChains() {
       const builtChains: SwarmChain[] = [];
       const claimedKeys = new Set<string>();
+      const summaries = new Map<string, string>();
 
       for (const root of roots) {
         claimedKeys.add(root.key);
@@ -482,6 +503,11 @@ function SwarmTraceView({
           });
           const res = await fetch(`/api/agent-session?${params}`);
           const events: ActivityEvent[] = await res.json();
+
+          // Capture root summary
+          const rootSummary = extractLastActivity(events);
+          if (rootSummary) summaries.set(root.key, rootSummary);
+
           const spawnedIds = extractSpawnedAgentIds(events);
 
           // Deduplicate spawned agent IDs (preserve order)
@@ -492,11 +518,6 @@ function SwarmTraceView({
               seenIds.add(id);
               uniqueSpawnedIds.push(id);
             }
-          }
-
-          if (uniqueSpawnedIds.length === 0) {
-            builtChains.push({ root, steps: [] });
-            continue;
           }
 
           // Time window: root.updatedAt - 2h to now
@@ -518,16 +539,31 @@ function SwarmTraceView({
             }
           }
 
-          const steps: SwarmChainStep[] = uniqueSpawnedIds
-            .filter(id => stepMap.has(id))
-            .map(id => {
-              const sessions = stepMap.get(id)!;
-              return {
-                sessions,
-                timestamp: sessions[0].updatedAt,
-                label: id,
-              };
-            });
+          // Fallback: if no spawned agents detected from logs, try timing-based grouping.
+          // Any active session that started within 5 min of root and isn't already a root
+          // is considered a potential delegate.
+          if (stepMap.size === 0 && roots.length === 1) {
+            const rootKeys = new Set(roots.map(r => r.key));
+            const candidates = activeSessions.filter(s =>
+              !rootKeys.has(s.key) &&
+              Math.abs(s.updatedAt - root.updatedAt) < 5 * 60 * 1000
+            );
+            for (const c of candidates) {
+              stepMap.set(c.agentId, [c]);
+              claimedKeys.add(c.key);
+            }
+          }
+
+          const steps: SwarmChainStep[] = uniqueSpawnedIds.length > 0
+            ? uniqueSpawnedIds
+                .filter(id => stepMap.has(id))
+                .map(id => {
+                  const sessions = stepMap.get(id)!;
+                  return { sessions, timestamp: sessions[0].updatedAt, label: id };
+                })
+            : Array.from(stepMap.entries()).map(([id, sessions]) => ({
+                sessions, timestamp: sessions[0].updatedAt, label: id,
+              }));
 
           builtChains.push({ root, steps });
         } catch {
@@ -535,9 +571,24 @@ function SwarmTraceView({
         }
       }
 
+      // Fetch summaries for all delegate sessions in parallel
+      const allDelegateSessions = builtChains.flatMap(c =>
+        c.steps.flatMap(s => s.sessions)
+      );
+      await Promise.all(allDelegateSessions.map(async s => {
+        try {
+          const p = new URLSearchParams({ agent: s.agentId, routerId: s.routerId, sessionKey: s.key });
+          const r = await fetch(`/api/agent-session?${p}`);
+          const ev: ActivityEvent[] = await r.json();
+          const sum = extractLastActivity(ev);
+          if (sum) summaries.set(s.key, sum);
+        } catch { /* ignore */ }
+      }));
+
+      setSessionSummaries(summaries);
+
       // Sessions not part of any chain
       const remainingOrphans = activeSessions.filter(s => !claimedKeys.has(s.key));
-
       setChains(builtChains);
       setOrphans(remainingOrphans);
       setLoading(false);
@@ -545,6 +596,30 @@ function SwarmTraceView({
 
     buildChains();
   }, [activeSessions, allSessions]);
+
+  // Poll summaries every 5s for any active session in the chains
+  useEffect(() => {
+    const liveKeys = [
+      ...chains.filter(c => Date.now() - c.root.updatedAt < ACTIVE_MS).map(c => c.root),
+      ...chains.flatMap(c => c.steps.flatMap(s => s.sessions)).filter(s => Date.now() - s.updatedAt < ACTIVE_MS),
+    ];
+    if (liveKeys.length === 0) return;
+    const poll = async () => {
+      const updates = new Map<string, string>();
+      await Promise.all(liveKeys.map(async s => {
+        try {
+          const p = new URLSearchParams({ agent: s.agentId, routerId: s.routerId, sessionKey: s.key });
+          const r = await fetch(`/api/agent-session?${p}`);
+          const ev: ActivityEvent[] = await r.json();
+          const sum = extractLastActivity(ev);
+          if (sum) updates.set(s.key, sum);
+        } catch { /* ignore */ }
+      }));
+      if (updates.size > 0) setSessionSummaries(prev => new Map([...prev, ...updates]));
+    };
+    const iv = setInterval(poll, 5_000);
+    return () => clearInterval(iv);
+  }, [chains]);
 
   if (loading) {
     return (
@@ -567,6 +642,8 @@ function SwarmTraceView({
       {chains.map(chain => {
         const rootActive = Date.now() - chain.root.updatedAt < ACTIVE_MS;
         const ts = typeStyle(chain.root.type);
+        const allDelegates = chain.steps.flatMap(s => s.sessions);
+        const rootSummary = sessionSummaries.get(chain.root.key);
         return (
           <div
             key={chain.root.key}
@@ -577,17 +654,16 @@ function SwarmTraceView({
             <button
               onClick={() => onOpen(chain.root)}
               className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-white/[0.02] transition-colors"
-              style={{ borderBottom: chain.steps.length > 0 ? "1px solid #1a1a22" : undefined }}
+              style={{ borderBottom: "1px solid #1a1a22" }}
             >
               <span className="text-lg flex-shrink-0">{chain.root.icon}</span>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs font-bold" style={{ color: "#e85d27" }}>
+                  <span className="text-sm font-bold" style={{ color: "#e85d27" }}>
                     {chain.root.agentId}
                   </span>
-                  <span className="text-zinc-700 text-xs">·</span>
                   <span className={`text-[10px] font-medium px-2 py-0.5 rounded ${ts.bg} ${ts.text}`}>
-                    {chain.root.type}
+                    {chain.root.label}
                   </span>
                   {rootActive ? (
                     <span className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 px-1.5 py-px rounded">
@@ -599,82 +675,81 @@ function SwarmTraceView({
                   )}
                   <span className="text-[10px] text-zinc-600">{timeAgo(chain.root.updatedAt)}</span>
                 </div>
-                <div className="text-[10px] text-zinc-600 mt-0.5 truncate">{chain.root.label}</div>
+                {rootSummary ? (
+                  <div className="text-[11px] text-zinc-400 mt-1 truncate leading-relaxed">
+                    {rootSummary}
+                  </div>
+                ) : (
+                  <div className="text-[10px] text-zinc-700 mt-0.5 truncate">{chain.root.label}</div>
+                )}
               </div>
-              <span className="text-[10px] text-zinc-700 flex-shrink-0">↗</span>
+              {allDelegates.length > 0 && (
+                <div className="flex-shrink-0 text-right">
+                  <div className="text-[10px] text-zinc-600">Delegated to</div>
+                  <div className="text-sm font-bold" style={{ color: "#e85d27" }}>{allDelegates.length} agents</div>
+                </div>
+              )}
+              <span className="text-[10px] text-zinc-700 flex-shrink-0 ml-2">↗</span>
             </button>
 
-            {/* Steps */}
-            {chain.steps.length > 0 && (
-              <div className="px-4 py-3 flex flex-col gap-3">
-                {chain.steps.map((step, stepIdx) => {
-                  const isParallel = step.sessions.length > 1;
-                  return (
-                    <div key={step.label}>
-                      {/* Step connector line */}
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className="w-px h-3 ml-2" style={{ background: "#2a2a36" }} />
-                        <div className="flex items-center gap-2">
-                          <span className="text-[9px] font-semibold uppercase tracking-wider text-zinc-700">
-                            Step {stepIdx + 1}
-                          </span>
-                          {isParallel && (
-                            <span className="text-[9px] text-zinc-800 uppercase tracking-wider">
-                              · parallel
-                            </span>
-                          )}
-                          <div className="flex-1 h-px" style={{ background: "#1e1e28", minWidth: "40px" }} />
-                        </div>
-                      </div>
+            {/* Connector arrow */}
+            {allDelegates.length > 0 && (
+              <div className="flex items-center gap-2 px-6 py-1.5" style={{ background: "#09090c" }}>
+                <div className="w-px h-3 bg-zinc-800 ml-1" />
+                <span className="text-[9px] font-semibold uppercase tracking-widest text-zinc-700">
+                  ↓ dispatched {allDelegates.length} parallel agent{allDelegates.length !== 1 ? "s" : ""}
+                </span>
+                <div className="flex-1 h-px bg-zinc-900" />
+              </div>
+            )}
 
-                      {/* Step sessions */}
-                      <div
-                        className="rounded-md overflow-hidden"
-                        style={{ background: stepIdx % 2 === 0 ? "#0f0f14" : "#0d0d12", border: "1px solid #1a1a22" }}
-                      >
-                        {step.sessions.map((s, si) => {
-                          const sActive = Date.now() - s.updatedAt < ACTIVE_MS;
-                          return (
-                            <button
-                              key={s.key}
-                              onClick={() => onOpen(s)}
-                              className="group w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-white/[0.03] transition-colors"
-                              style={{
-                                borderBottom: si < step.sessions.length - 1 ? "1px solid #141418" : undefined,
-                              }}
-                            >
-                              <span className="text-sm flex-shrink-0">{s.icon}</span>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-xs font-semibold text-zinc-200">{s.agentId}</span>
-                                  {sActive ? (
-                                    <span className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-emerald-400">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                      Active
-                                    </span>
-                                  ) : (
-                                    <span className="text-[10px] text-zinc-600">✓ Done</span>
-                                  )}
-                                  <span className="text-[10px] text-zinc-700">{timeAgo(s.updatedAt)}</span>
-                                </div>
-                                {s.label && (
-                                  <div className="text-[10px] text-zinc-700 truncate mt-0.5">{s.label}</div>
-                                )}
-                              </div>
-                              <span className="text-[10px] text-zinc-800 opacity-0 group-hover:opacity-100 transition-opacity">↗</span>
-                            </button>
-                          );
-                        })}
+            {/* Delegate grid */}
+            {allDelegates.length > 0 && (
+              <div className="p-3 grid grid-cols-2 gap-2">
+                {allDelegates.map(s => {
+                  const sActive = Date.now() - s.updatedAt < ACTIVE_MS;
+                  const summary = sessionSummaries.get(s.key);
+                  return (
+                    <button
+                      key={s.key}
+                      onClick={() => onOpen(s)}
+                      className="group text-left rounded-md p-3 hover:bg-white/[0.04] transition-colors"
+                      style={{ background: "#0f0f14", border: "1px solid #1a1a22" }}
+                    >
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <span className="text-base flex-shrink-0">{s.icon}</span>
+                        <span className="text-xs font-semibold text-zinc-200">{s.agentId}</span>
+                        {sActive ? (
+                          <span className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-emerald-400">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            Active
+                          </span>
+                        ) : (
+                          <span className="text-[9px] text-zinc-600">✓ Done</span>
+                        )}
+                        <span className="ml-auto text-[9px] text-zinc-800 opacity-0 group-hover:opacity-100 transition-opacity">↗</span>
                       </div>
-                    </div>
+                      {summary ? (
+                        <div className="text-[10px] leading-relaxed line-clamp-2" style={{ color: "#6a6a8a" }}>
+                          {summary}
+                        </div>
+                      ) : (
+                        <div className="text-[10px] text-zinc-800 italic">
+                          {sActive ? "Working…" : timeAgo(s.updatedAt)}
+                        </div>
+                      )}
+                      {s.totalTokens > 0 && (
+                        <div className="text-[9px] font-mono text-zinc-800 mt-1.5">{fmtTokens(s.totalTokens)} tok</div>
+                      )}
+                    </button>
                   );
                 })}
               </div>
             )}
 
-            {chain.steps.length === 0 && (
+            {allDelegates.length === 0 && (
               <div className="px-4 py-2 text-[10px] text-zinc-800 italic">
-                No spawned subagents detected
+                No delegates detected yet
               </div>
             )}
           </div>
@@ -684,9 +759,7 @@ function SwarmTraceView({
       {/* Orphan sessions not part of any chain */}
       {orphans.length > 0 && (
         <>
-          <div
-            className="text-[10px] font-semibold uppercase tracking-wider text-zinc-800 px-1"
-          >
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-700 px-1 mt-2">
             Other active sessions
           </div>
           {orphans.map(s => (
@@ -1742,7 +1815,7 @@ export default function ActivitiesPage() {
   const [tab, setTab] = useState<Tab>("scheduled");
   const [agentFilter, setAgentFilter] = useState<string>("all");
   const [detailSession, setDetailSession] = useState<ActivitySession | null>(null);
-  const [swarmTrace, setSwarmTrace] = useState(false);
+  const [swarmTrace, setSwarmTrace] = useState(true);
 
   useEffect(() => {
     async function load() {
@@ -1764,6 +1837,14 @@ export default function ActivitiesPage() {
     const iv = setInterval(load, 5_000);
     return () => clearInterval(iv);
   }, []);
+
+  // Auto-switch to Active Now on first load if there are active sessions
+  const hasAutoSwitched = useRef(false);
+  useEffect(() => {
+    if (loading || hasAutoSwitched.current) return;
+    const activeCount = sessions.filter(s => Date.now() - s.updatedAt < ACTIVE_MS).length;
+    if (activeCount > 0) { setTab("active"); hasAutoSwitched.current = true; }
+  }, [loading, sessions]);
 
   const now = Date.now();
   const active    = sessions.filter(s => now - s.updatedAt < ACTIVE_MS);
