@@ -1,16 +1,14 @@
-import React from 'react';
 import styles from './Hero.module.css';
+import { siteConfig } from '../../config/site';
 
-interface HeroProps {
-  title: string;
-  subtitle: string;
-}
-
-export const Hero: React.FC<HeroProps> = ({ title, subtitle }) => {
+export const Hero = () => {
   return (
     <section className={styles.hero}>
-      <h1 className={styles.hero__title}>{title}</h1>
-      <p className={styles.hero__subtitle}>{subtitle}</p>
+      <div className={styles.hero__container}>
+        <h1 className={styles.hero__title}>{siteConfig.name}</h1>
+        <p className={styles.hero__subtitle}>{siteConfig.description}</p>
+        <button className={styles.hero__button}>INITIALIZE SYSTEM</button>
+      </div>
     </section>
   );
 };
