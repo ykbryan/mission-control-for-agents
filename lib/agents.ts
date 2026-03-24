@@ -8,6 +8,10 @@ export interface Agent {
   files: string[];
   routerId?: string;
   routerLabel?: string;
+  nodeHostname?: string;  // physical OpenClaw node this agent runs on
+  model?: string;         // primary AI model (e.g. "claude-sonnet-4-5", "gpt-4o")
+  status?: "online" | "offline" | "idle";
+  tier?: "orchestrator" | "specialist";
 }
 
 export const agents: Agent[] = [
@@ -17,9 +21,9 @@ export const agents: Agent[] = [
   {"id":"charles","name":"Charles","emoji":"👔","role":"Work & Scheduling Agent","soul":"Makes meetings happen without conflicts, and keeps work moving.","skills":["gog","calendar","notion"],"files":["IDENTITY.md","SOUL.md","TOOLS.md","HEARTBEAT.md","AGENTS.md","USER.md"]},
   {"id":"evelyn","name":"Evelyn","emoji":"👔","role":"Executive Chief of Staff","soul":"Executive Chief of Staff for Bryan across GoPomelo + Digital China.","skills":["gog","notion","web_search","message","cron","firehose"],"files":["IDENTITY.md","SOUL.md","TOOLS.md","HEARTBEAT.md","AGENTS.md","MEMORY.md","USER.md","CHANGELOG.md"]},
   {"id":"faith","name":"Faith","emoji":"🌻","role":"Family Planner & Memory-Keeper","soul":"Family planner and memory-keeper for Bryan household.","skills":["apple-reminders","nodes","cron"],"files":["IDENTITY.md","SOUL.md","TOOLS.md","HEARTBEAT.md","AGENTS.md","USER.md"]},
-  {"id":"gorilla","name":"Gorilla","emoji":"🦍","role":"Senior Developer","soul":"Senior Developer. Super Geek. Measures twice, cuts once.","skills":["claude-code","exec","git","github"],"files":["IDENTITY.md","SOUL.md","TOOLS.md","HEARTBEAT.md","AGENTS.md","USER.md"]},
+  {"id":"gorilla","name":"Gorilla","emoji":"🦍","role":"Senior Developer","soul":"Senior Developer. Super Geek. Measures twice, cuts once.","skills":["claude-code","exec","git","github"],"files":["IDENTITY.md","SOUL.md","TOOLS.md","HEARTBEAT.md","AGENTS.md","USER.md"],"nodeHostname":"develop-ubuntu"},
   {"id":"hex","name":"Hex","emoji":"⛓️","role":"Crypto & Blockchain Expert","soul":"Crypto and blockchain technical expert. Former Bitcoin whale.","skills":["web_search","web_fetch","exec"],"files":["IDENTITY.md","SOUL.md","TOOLS.md","HEARTBEAT.md","AGENTS.md","USER.md"]},
-  {"id":"ivy","name":"Ivy","emoji":"📱","role":"Senior iOS Developer","soul":"Senior iOS Developer & Mobile UX Expert.","skills":["exec","nodes","xcode","git"],"files":["IDENTITY.md","SOUL.md","TOOLS.md","HEARTBEAT.md","AGENTS.md","MEMORY.md","USER.md"]},
+  {"id":"ivy","name":"Ivy","emoji":"📱","role":"Senior iOS Developer","soul":"Senior iOS Developer & Mobile UX Expert.","skills":["exec","nodes","xcode","git"],"files":["IDENTITY.md","SOUL.md","TOOLS.md","HEARTBEAT.md","AGENTS.md","MEMORY.md","USER.md"],"nodeHostname":"mac.lan"},
   {"id":"kat","name":"Kat","emoji":"🎯","role":"Senior Product Manager","soul":"Senior Product Manager & Startup Founder. Obsessed with market fit, high standards, and perfect UX.","skills":["web_search","notion","image"],"files":["IDENTITY.md","SOUL.md","TOOLS.md","HEARTBEAT.md","AGENTS.md","USER.md"]},
   {"id":"looker","name":"Looker","emoji":"🔍","role":"Market Intelligence Researcher","soul":"Lead Growth Researcher & Opportunity Scout.","skills":["web_search","web_fetch","browser","image"],"files":["IDENTITY.md","SOUL.md","TOOLS.md","HEARTBEAT.md","AGENTS.md","MEMORY.md","USER.md"]},
   {"id":"mother","name":"Mother","emoji":"🛡️","role":"QA Gatekeeper & SRE","soul":"Senior SDET and Site Reliability Engineer.","skills":["exec","browser","nodes","github"],"files":["IDENTITY.md","SOUL.md","TOOLS.md","HEARTBEAT.md","AGENTS.md","USER.md"]},
@@ -28,7 +32,8 @@ export const agents: Agent[] = [
   {"id":"pat","name":"Pat","emoji":"🏷️","role":"Price Tracking Agent","soul":"Price tracker, deal hunter, and web scraper.","skills":["web_search","web_fetch","exec"],"files":["IDENTITY.md","SOUL.md","TOOLS.md","HEARTBEAT.md","AGENTS.md","USER.md"]},
   {"id":"queen","name":"Queen","emoji":"👑","role":"Marketing SEO Specialist","soul":"Data-driven search strategist who builds sustainable organic visibility.","skills":["web_search","web_fetch","notion"],"files":["IDENTITY.md","SOUL.md","TOOLS.md","HEARTBEAT.md","AGENTS.md","USER.md"]},
   {"id":"roy","name":"Roy","emoji":"💼","role":"Founder / CEO / Business Strategist","soul":"Founder, CEO, businessman.","skills":["web_search","notion","exec"],"files":["IDENTITY.md","SOUL.md","TOOLS.md","HEARTBEAT.md","AGENTS.md","USER.md"]},
-  {"id":"jelly","name":"Jelly","emoji":"✍️","role":"Blogging Developer & Writer","soul":"Blogging developer and writing partner for Bryan.","skills":["web_search","exec","github"],"files":["IDENTITY.md","SOUL.md","TOOLS.md","HEARTBEAT.md","AGENTS.md","USER.md"]}
+  {"id":"jelly","name":"Jelly","emoji":"✍️","role":"Blogging Developer & Writer","soul":"Blogging developer and writing partner for Bryan.","skills":["web_search","exec","github"],"files":["IDENTITY.md","SOUL.md","TOOLS.md","HEARTBEAT.md","AGENTS.md","USER.md"],"nodeHostname":"ubuntu-personal"},
+  {"id":"uma","name":"Uma","emoji":"🌊","role":"Content Lead, bryanchua.com","soul":"Content Lead for bryanchua.com — orchestrating the Octonauts to produce sharp, ambitious, SEO-ready blog posts in Bryan's voice.","skills":["message","cron"],"files":["IDENTITY.md","SOUL.md","TOOLS.md","HEARTBEAT.md","AGENTS.md","USER.md"],"tier":"orchestrator"}
 ];
 
 export const skillDescriptions: Record<string, string> = {

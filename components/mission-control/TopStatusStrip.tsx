@@ -1,7 +1,7 @@
 "use client";
 
 import SearchTrigger from "@/components/ui/SearchTrigger";
-import Cookies from "js-cookie";
+import { logout } from "@/app/actions/auth";
 
 interface Props {
   mode: "graph" | "workflow";
@@ -22,11 +22,7 @@ export default function TopStatusStrip({
   onToggleTheme,
   selectedAgent,
 }: Props) {
-  const handleLogout = () => {
-    Cookies.remove("gatewayUrl");
-    Cookies.remove("gatewayToken");
-    window.location.href = "/login";
-  };
+  const handleLogout = () => logout();
 
   return (
     <header className="flex items-center justify-between px-6 py-3 bg-zinc-950/80 backdrop-blur-md border-b border-zinc-800 text-zinc-100 shrink-0">
@@ -51,7 +47,7 @@ export default function TopStatusStrip({
         <input
           id="search-input"
           type="text"
-          placeholder="Global command search..."
+          placeholder="Search for your agents..."
           value={searchQuery}
           onChange={(e) => onSearchChange(e.target.value)}
           className="block w-full pl-10 pr-12 py-1.5 bg-zinc-900/50 border border-zinc-700/50 rounded-md text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-orange-500/50 focus:border-orange-500/50 transition-all"
@@ -70,8 +66,11 @@ export default function TopStatusStrip({
         <button onClick={onToggleTheme} title="Toggle theme" className="p-1.5 text-zinc-400 hover:text-zinc-100 transition-colors">
           {darkMode ? "☀︎" : "☾"}
         </button>
-        <button onClick={handleLogout} title="Disconnect" className="px-3 py-1.5 text-xs font-medium bg-transparent border border-zinc-700 text-zinc-300 rounded hover:bg-zinc-800 hover:text-zinc-100 transition-colors">
-          Disconnect
+        <a href="/login" title="Manage routers" className="px-3 py-1.5 text-xs font-medium bg-transparent border border-zinc-700 text-zinc-300 rounded hover:bg-zinc-800 hover:text-zinc-100 transition-colors">
+          ＋ Router
+        </a>
+        <button onClick={handleLogout} title="Reset all connections" className="px-3 py-1.5 text-xs font-medium bg-transparent border border-zinc-700 text-zinc-300 rounded hover:bg-zinc-800 hover:text-zinc-100 transition-colors">
+          Reset
         </button>
       </div>
     </header>

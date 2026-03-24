@@ -1,8 +1,12 @@
 import { Agent, skillDescriptions } from "@/lib/agents";
+import { modelToProvider } from "@/lib/model-pricing";
 import MarkdownViewer from "@/components/MarkdownViewer";
 import AgentLogStream from "./AgentLogStream";
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
+import type { SessionGroup, SessionDetail } from "@/app/api/agent-sessions/route";
+import type { NodeInfo } from "@/app/api/node-info/route";
 
 interface Props {
   agent: Agent;
@@ -10,7 +14,7 @@ interface Props {
   onSelectFile: (file: string | null) => void;
 }
 
-const FILE_ICONS: Record<string, string> = {
+const OPENCLAW_FILES: Record<string, string> = {
   "IDENTITY.md": "🪪",
   "SOUL.md": "✨",
   "TOOLS.md": "🔧",
@@ -52,10 +56,212 @@ function FilePreview({ agentId, file, routerId }: { agentId: string; file: strin
   return <MarkdownViewer content={content} />;
 }
 
+function useSessionGroups(agentId: string, routerId?: string) {
+  const [groups, setGroups] = useState<SessionGroup[]>([]);
+  const [total, setTotal] = useState(0);
+
+  useEffect(() => {
+    const routerParam = routerId ? `&routerId=${encodeURIComponent(routerId)}` : "";
+    fetch(`/api/agent-sessions?agent=${encodeURIComponent(agentId)}${routerParam}`)
+      .then(r => r.json())
+      .then(d => { setGroups(d.groups ?? []); setTotal(d.total ?? 0); })
+      .catch(() => {});
+  }, [agentId, routerId]);
+
+  return { groups, total };
+}
+
+/** Resolves the active model for each session type (main, cron, subagent, telegram…).
+ *  Fetches the latest session per group in parallel and parses model events. */
+function useSessionTypeModels(agentId: string, routerId: string | undefined, groups: SessionGroup[]) {
+  const [typeModels, setTypeModels] = useState<Map<string, string>>(new Map());
+
+  useEffect(() => {
+    if (groups.length === 0) return;
+    let active = true;
+    const routerParam = routerId ? `&routerId=${encodeURIComponent(routerId)}` : "";
+
+    Promise.allSettled(
+      groups.map(async (g) => {
+        const latest = g.sessions?.[0];
+        if (!latest) return null;
+        try {
+          const r = await fetch(
+            `/api/agent-session?agent=${encodeURIComponent(agentId)}&sessionKey=${encodeURIComponent(latest.key)}${routerParam}`
+          );
+          if (!r.ok) return null;
+          const events: Array<{ message: string }> = await r.json();
+          if (!Array.isArray(events)) return null;
+
+          // Initial model from 🧠 event
+          let model: string | null = null;
+          for (const ev of events) {
+            const m = ev.message?.match(/🧠\s*Model:\s*(.+)/);
+            if (m) { model = m[1].trim(); break; }
+          }
+          // Override with most-recent 🔄 switch destination
+          for (let i = events.length - 1; i >= 0; i--) {
+            const m = events[i].message?.match(/🔄\s*Model:\s*.+?\s*→\s*(.+)/);
+            if (m) { model = m[1].trim(); break; }
+          }
+          return model ? { type: g.type, model } : null;
+        } catch { return null; }
+      })
+    ).then(results => {
+      if (!active) return;
+      const map = new Map<string, string>();
+      for (const r of results) {
+        if (r.status === "fulfilled" && r.value) map.set(r.value.type, r.value.model);
+      }
+      setTypeModels(map);
+    });
+
+    return () => { active = false; };
+  }, [agentId, routerId, groups]);
+
+  return typeModels;
+}
+
+function timeAgo(ms: number): string {
+  if (!ms) return "";
+  const diff = Date.now() - ms;
+  const m = Math.floor(diff / 60000);
+  const h = Math.floor(diff / 3600000);
+  const d = Math.floor(diff / 86400000);
+  if (m < 2) return "just now";
+  if (h < 1) return `${m}m ago`;
+  if (d < 1) return `${h}h ago`;
+  return `${d}d ago`;
+}
+
+const PROVIDER_COLORS: Record<string, string> = {
+  Anthropic: "#c77c3a", OpenAI: "#19c37d", Google: "#4285f4",
+  "xAI": "#1da1f2", MiniMax: "#9b59b6", Alibaba: "#ff6a00",
+  DeepSeek: "#0ea5e9", Mistral: "#f97316", Meta: "#0073e6",
+};
+
+function ModelBadge({ model, size = "sm" }: { model: string; size?: "xs" | "sm" }) {
+  const provider = modelToProvider(model);
+  const color = PROVIDER_COLORS[provider] ?? "#888";
+  const cls = size === "xs"
+    ? "text-[9px] font-mono px-1.5 py-0.5 rounded"
+    : "text-[10px] font-mono px-2 py-0.5 rounded-md";
+  return (
+    <span className={cls} style={{ color, background: `${color}15`, border: `1px solid ${color}28` }}>
+      {model}
+    </span>
+  );
+}
+
 export default function InspectorPanel({ agent, activeFile, onSelectFile }: Props) {
   const [activeTab, setActiveTab] = useState<"context" | "logs">("context");
+  const [activeSkill, setActiveSkill] = useState<string | null>(null);
+  // Clear skill tooltip when switching agents
+  useEffect(() => { setActiveSkill(null); }, [agent.id]);
+  const { groups: sessionGroups, total: sessionTotal } = useSessionGroups(agent.id, agent.routerId);
+  const [expandedGroup, setExpandedGroup] = useState<SessionGroup | null>(null);
+  const [drillSession, setDrillSession] = useState<SessionDetail | null>(null);
+  const [drillLogs, setDrillLogs] = useState<{ id: string; type: string; message: string; fullMessage?: string; timestamp: string; model?: string }[]>([]);
+  const [drillLoading, setDrillLoading] = useState(false);
+  const [drillFilter, setDrillFilter] = useState<"all" | "chat" | "info" | "memory" | "error">("all");
+  const [nodeInfo, setNodeInfo] = useState<NodeInfo | null>(null);
+  const [agentModel, setAgentModel] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/node-info")
+      .then(r => r.json())
+      .then((d: { nodes?: NodeInfo[] }) => {
+        const match = (d.nodes ?? []).find(n => n.routerId === (agent.routerId ?? "legacy"));
+        if (match) setNodeInfo(match);
+      })
+      .catch(() => {});
+  }, [agent.routerId]);
+
+  useEffect(() => {
+    setAgentModel(null);
+    let active = true;
+
+    async function resolveModel() {
+      // Step 1: cost telemetry as a baseline (may be stale)
+      let telemetryModel: string | null = null;
+      try {
+        const r = await fetch("/api/telemetry/agent-costs");
+        const d: { costs?: Array<{ agentId: string; routerId?: string; model?: string }> } = await r.json();
+        const costs = d.costs ?? [];
+        const match = costs.find(c => c.agentId === agent.id && c.routerId === agent.routerId)
+          ?? costs.find(c => c.agentId === agent.id);
+        if (match?.model) telemetryModel = match.model;
+      } catch { /* ignore */ }
+
+      if (!active) return;
+      if (telemetryModel) setAgentModel(telemetryModel);
+
+      // Step 2: live session events — parse most-recent "🔄 Model: X → Y" to get current model.
+      // Important: skip cron sessions (e.g. heartbeat) — they may use a different model
+      // than the agent's primary model and would produce a misleading result.
+      try {
+        const routerParam = agent.routerId ? `&routerId=${encodeURIComponent(agent.routerId)}` : "";
+
+        // First, list sessions grouped by type so we can pick the right one
+        const listRes = await fetch(`/api/agent-sessions?agent=${encodeURIComponent(agent.id)}${routerParam}`);
+        let sessionKey: string | null = null;
+        if (listRes.ok) {
+          const { groups }: { groups?: Array<{ type: string; lastUpdated: number; sessions: Array<{ key: string }> }> } = await listRes.json();
+          // Find most-recently-updated non-cron session
+          let bestTime = 0;
+          for (const g of groups ?? []) {
+            if (g.type === "cron") continue; // heartbeat / scheduled jobs — skip
+            if (g.lastUpdated > bestTime && g.sessions?.length > 0) {
+              bestTime = g.lastUpdated;
+              sessionKey = g.sessions[0].key; // sessions already sorted newest-first
+            }
+          }
+        }
+
+        // Fall back to latest session if no non-cron session found
+        const keyParam = sessionKey ? `&sessionKey=${encodeURIComponent(sessionKey)}` : "";
+        const r = await fetch(`/api/agent-session?agent=${encodeURIComponent(agent.id)}${routerParam}${keyParam}`);
+        if (r.ok) {
+          const events: Array<{ message: string }> = await r.json();
+          if (Array.isArray(events)) {
+            // Walk events in reverse to find the most recent model switch
+            for (let i = events.length - 1; i >= 0; i--) {
+              const m = events[i].message?.match(/🔄\s*Model:\s*.+?\s*→\s*(.+)/);
+              if (m) {
+                const liveModel = m[1].trim();
+                if (active) setAgentModel(liveModel);
+                break;
+              }
+            }
+          }
+        }
+      } catch { /* ignore */ }
+    }
+
+    resolveModel();
+    return () => { active = false; };
+  }, [agent.id, agent.routerId]);
+
+  function openSession(s: SessionDetail) {
+    setDrillSession(s);
+    setDrillLogs([]);
+    setDrillLoading(true);
+    setDrillFilter("all");
+    const routerParam = agent.routerId ? `&routerId=${encodeURIComponent(agent.routerId)}` : "";
+    fetch(`/api/agent-session?agent=${encodeURIComponent(agent.id)}&sessionKey=${encodeURIComponent(s.key)}${routerParam}`)
+      .then(r => r.json())
+      .then(data => {
+        const normalised = (Array.isArray(data) ? data : []).map((e: { type: string; message: string; fullMessage?: string; id: string; timestamp: string; model?: string }) =>
+          e.type === "info" && (e.message.startsWith("💬") || e.message.startsWith("🤖")) ? { ...e, type: "chat" } : e
+        );
+        setDrillLogs(normalised);
+      })
+      .catch(() => setDrillLogs([]))
+      .finally(() => setDrillLoading(false));
+  }
 
   return (
+    <>
     <aside className="mc-inspector w-[332px] flex flex-col h-full flex-shrink-0 relative overflow-hidden" style={{ display: 'flex', flexDirection: 'column', height: '100%', flexShrink: 0 }}>
       {/* Tabs Header */}
       <div className="flex border-b border-[#333] sticky top-0 z-20 bg-[#0a0a0a]">
@@ -87,10 +293,96 @@ export default function InspectorPanel({ agent, activeFile, onSelectFile }: Prop
 
             {agent.routerLabel && (
               <section className="mc-inspector__section">
-                <div className="mc-section-label">Gateway</div>
-                <p className="text-xs text-zinc-400">{agent.routerLabel}</p>
+                <div className="mc-section-label">Gateway · Node</div>
+                <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                  <span className="text-[11px]">🛰️</span>
+                  <span className="text-[11px] font-medium px-2 py-0.5 rounded-full"
+                    style={{ background: "rgba(99,102,241,0.1)", color: "#818cf8", border: "1px solid rgba(99,102,241,0.2)" }}>
+                    {agent.routerLabel}
+                  </span>
+                  {agent.nodeHostname ? (
+                    <span
+                      className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full"
+                      style={{ background: "rgba(255,255,255,0.05)", color: "#8888a8", border: "1px solid rgba(255,255,255,0.1)" }}
+                      title="OpenClaw worker node">
+                      <span>🖥️</span>
+                      <span>{agent.nodeHostname}</span>
+                    </span>
+                  ) : nodeInfo && (
+                    <span
+                      className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full"
+                      style={{ background: "rgba(255,255,255,0.05)", color: "#8888a8", border: "1px solid rgba(255,255,255,0.1)" }}
+                      title={`${nodeInfo.osLabel} · ${nodeInfo.arch} · ${nodeInfo.cpuCount} CPU · ${nodeInfo.totalMemGb}GB RAM`}>
+                      <span>{nodeInfo.platformIcon}</span>
+                      <span>{nodeInfo.machineLabel}</span>
+                    </span>
+                  )}
+                </div>
+                {nodeInfo && (
+                  <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1.5">
+                    <span className="text-[10px]" style={{ color: "#606078" }}>{nodeInfo.osLabel}</span>
+                    <span className="text-[10px]" style={{ color: "#50505e" }}>{nodeInfo.arch} · {nodeInfo.cpuCount} CPU</span>
+                    <span className="text-[10px]" style={{ color: "#50505e" }}>{nodeInfo.totalMemGb}GB RAM</span>
+                  </div>
+                )}
               </section>
             )}
+
+            {agentModel && (() => {
+              const provider = modelToProvider(agentModel);
+              const color = PROVIDER_COLORS[provider] ?? "#888";
+              return (
+                <section className="mc-inspector__section">
+                  <div className="mc-section-label flex items-center gap-1.5">
+                    Primary Model
+                    <span
+                      title="Live model from latest session switch event. Falls back to cost telemetry if no switch event is found."
+                      style={{ fontSize: "10px", color: "#444", cursor: "help" }}
+                    >ⓘ</span>
+                  </div>
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <span
+                      className="text-xs font-mono font-semibold px-2.5 py-1 rounded-lg"
+                      style={{ color, background: `${color}15`, border: `1px solid ${color}30` }}
+                    >
+                      ⚡ {agentModel}
+                    </span>
+                    <span className="text-[11px]" style={{ color: "#555" }}>{provider}</span>
+                  </div>
+                </section>
+              );
+            })()}
+
+            {sessionGroups.length > 0 && (
+              <section className="mc-inspector__section">
+                <div className="mc-section-label">Sessions · {sessionTotal}</div>
+                <div className="flex flex-col gap-1 mt-1">
+                  {sessionGroups.map(g => (
+                    <button
+                      key={g.type}
+                      onClick={() => setExpandedGroup(g)}
+                      className="flex items-center justify-between px-2 py-1.5 rounded-md bg-[#141414] border border-[#222] hover:border-[#333] hover:bg-[#1a1a1a] transition-colors w-full text-left group"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm">{g.icon}</span>
+                        <div>
+                          <div className="text-xs text-zinc-300 font-medium">{g.label}</div>
+                          {g.lastUpdated > 0 && (
+                            <div className="text-[10px] text-zinc-600">{timeAgo(g.lastUpdated)}</div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-mono text-zinc-500 bg-[#1e1e1e] px-1.5 py-0.5 rounded">{g.count}</span>
+                        <span className="text-[10px] text-zinc-700 group-hover:text-zinc-500 transition-colors">↗</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
+
+{/* portals rendered outside inspector overflow */}
 
             <section className="mc-inspector__section">
               <div className="mc-section-label">Summary</div>
@@ -101,43 +393,65 @@ export default function InspectorPanel({ agent, activeFile, onSelectFile }: Prop
               <div className="mc-section-label">Capabilities</div>
               <div className="mc-chip-grid">
                 {agent.skills.map((skill) => (
-                  <div key={skill} className="mc-skill-chip" title={skillDescriptions[skill] || skill}>
-                    <span className="mc-skill-chip__dot" />
+                  <div
+                    key={skill}
+                    className="mc-skill-chip"
+                    style={activeSkill === skill ? { borderColor: "#e85d27", background: "rgba(232,93,39,0.08)" } : {}}
+                    onClick={() => setActiveSkill(s => s === skill ? null : skill)}
+                  >
+                    <span className="mc-skill-chip__dot" style={activeSkill === skill ? { background: "#e85d27" } : {}} />
                     {skill}
                   </div>
                 ))}
               </div>
+              {activeSkill && (
+                <div
+                  className="mt-2 px-3 py-2 rounded-lg text-xs leading-relaxed"
+                  style={{ background: "rgba(232,93,39,0.06)", border: "1px solid rgba(232,93,39,0.2)", color: "#ccc" }}
+                >
+                  <span className="font-semibold text-[#e85d27] mr-1.5">{activeSkill}</span>
+                  {skillDescriptions[activeSkill] || "No description available."}
+                </div>
+              )}
             </section>
 
-            <section className="mc-inspector__section mc-inspector__section--files">
-              <div className="mc-section-label">Markdown files</div>
-              <div className="mc-file-list">
-                {agent.files.map((file) => {
-                  const active = file === activeFile;
-                  return (
-                    <button
-                      key={file}
-                      className={`mc-file-row ${active ? "is-active" : ""}`}
-                      onClick={() => onSelectFile(active ? null : file)}
-                    >
-                      <span className="mc-file-row__meta">
-                        <span>{FILE_ICONS[file] || "📄"}</span>
-                        <span>{file}</span>
-                      </span>
-                      <span className="mc-file-row__action">{active ? "Close" : "Open"}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
+            {(() => {
+              const ocFiles = agent.files.filter((f) => f in OPENCLAW_FILES);
+              const customFiles = agent.files.filter((f) => !(f in OPENCLAW_FILES));
+              const renderFileRow = (file: string) => {
+                const active = file === activeFile;
+                return (
+                  <button
+                    key={file}
+                    className={`mc-file-row ${active ? "is-active" : ""}`}
+                    onClick={() => onSelectFile(active ? null : file)}
+                  >
+                    <span className="mc-file-row__meta">
+                      <span>{OPENCLAW_FILES[file] || "📄"}</span>
+                      <span>{file}</span>
+                    </span>
+                    <span className="mc-file-row__action">{active ? "Close" : "Open"}</span>
+                  </button>
+                );
+              };
+              return (
+                <>
+                  {ocFiles.length > 0 && (
+                    <section className="mc-inspector__section mc-inspector__section--files">
+                      <div className="mc-section-label">OpenClaw files</div>
+                      <div className="mc-file-list">{ocFiles.map(renderFileRow)}</div>
+                    </section>
+                  )}
+                  {customFiles.length > 0 && (
+                    <section className="mc-inspector__section mc-inspector__section--files">
+                      <div className="mc-section-label">Custom</div>
+                      <div className="mc-file-list">{customFiles.map(renderFileRow)}</div>
+                    </section>
+                  )}
+                </>
+              );
+            })()}
 
-            <section className="mc-inspector__section mc-inspector__section--overview">
-              <div className="mc-section-label">Overview</div>
-              <div className="mc-overview-card">
-                <strong>Quiet by default</strong>
-                <p>Select a file to bring detail forward. The stage remains primary until you ask for depth.</p>
-              </div>
-            </section>
           </div>
         )}
 
@@ -173,5 +487,173 @@ export default function InspectorPanel({ agent, activeFile, onSelectFile }: Prop
         )}
       </AnimatePresence>
     </aside>
+
+    {/* ── Session group popup (portal) ── */}
+    {expandedGroup && typeof document !== "undefined" && createPortal(
+      <div
+        className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+        style={{ background: "rgba(0,0,0,0.8)", backdropFilter: "blur(6px)" }}
+        onClick={() => setExpandedGroup(null)}
+      >
+        <div
+          className="w-full max-w-md flex flex-col overflow-hidden"
+          style={{ background: "#0f0f0f", border: "1px solid #222", borderRadius: "10px", maxHeight: "72vh" }}
+          onClick={e => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: "#1a1a1a" }}>
+            <div className="flex items-center gap-2">
+              <span>{expandedGroup.icon}</span>
+              <span className="text-sm font-semibold text-zinc-100">{expandedGroup.label}</span>
+              <span className="text-[10px] text-zinc-600 font-mono bg-[#1a1a1a] px-1.5 py-0.5 rounded">{expandedGroup.count} sessions</span>
+            </div>
+            <button onClick={() => setExpandedGroup(null)} className="text-zinc-600 hover:text-zinc-300 transition-colors text-xl leading-none px-1">×</button>
+          </div>
+          {/* Summary */}
+          <div className="flex gap-6 px-4 py-2.5 border-b" style={{ borderColor: "#141414", background: "#0a0a0a" }}>
+            <div>
+              <div className="text-[9px] uppercase tracking-wider text-zinc-700 mb-0.5">Last Active</div>
+              <div className="text-xs text-zinc-400">{timeAgo(expandedGroup.lastUpdated)}</div>
+            </div>
+            <div>
+              <div className="text-[9px] uppercase tracking-wider text-zinc-700 mb-0.5">Total Tokens</div>
+              <div className="text-xs text-zinc-400 font-mono">{expandedGroup.totalTokens.toLocaleString()}</div>
+            </div>
+          </div>
+          {/* Sessions list — click to drill in */}
+          <div className="overflow-y-auto custom-scrollbar">
+            {(expandedGroup.sessions ?? []).map((s: SessionDetail, i: number) => (
+              <button
+                key={s.key}
+                onClick={() => { openSession(s); setExpandedGroup(null); }}
+                className="w-full text-left px-4 py-3 border-b hover:bg-white/[0.03] transition-colors group"
+                style={{ borderColor: "#111" }}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-[10px] text-zinc-700 font-mono flex-shrink-0">#{i + 1}</span>
+                    <span className="text-xs text-zinc-200 truncate">{s.label}</span>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {s.totalTokens > 0 && <span className="text-[10px] font-mono text-zinc-600">{s.totalTokens.toLocaleString()} tok</span>}
+                    <span className="text-[10px] text-zinc-700 group-hover:text-[#e85d27] transition-colors">View logs ↗</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 mt-0.5">
+                  <span className="text-[9px] text-zinc-700">{timeAgo(s.updatedAt)}</span>
+                  <span className="text-[9px] text-zinc-800 font-mono truncate">{s.key}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>,
+      document.body
+    )}
+
+    {/* ── Session log drill-down (portal) ── */}
+    {drillSession && typeof document !== "undefined" && createPortal(
+      <div
+        className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+        style={{ background: "rgba(0,0,0,0.85)", backdropFilter: "blur(6px)" }}
+        onClick={() => setDrillSession(null)}
+      >
+        <div
+          className="w-full max-w-lg flex flex-col overflow-hidden"
+          style={{ background: "#0a0a0a", border: "1px solid #222", borderRadius: "10px", maxHeight: "78vh" }}
+          onClick={e => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: "#1a1a1a" }}>
+            <div className="flex items-center gap-2 min-w-0">
+              <button onClick={() => { setDrillSession(null); setExpandedGroup(expandedGroup); }} className="text-zinc-600 hover:text-zinc-300 text-sm transition-colors mr-1">←</button>
+              <span className="text-sm font-semibold text-zinc-100 truncate">{drillSession.label}</span>
+              {drillSession.totalTokens > 0 && (
+                <span className="text-[10px] text-zinc-600 font-mono bg-[#1a1a1a] px-1.5 py-0.5 rounded flex-shrink-0">{drillSession.totalTokens.toLocaleString()} tok</span>
+              )}
+            </div>
+            <button onClick={() => setDrillSession(null)} className="text-zinc-600 hover:text-zinc-300 transition-colors text-xl leading-none px-1 flex-shrink-0">×</button>
+          </div>
+          {/* Filter bar */}
+          {!drillLoading && drillLogs.length > 0 && (() => {
+            const counts = {
+              chat:   drillLogs.filter(l => l.type === "chat").length,
+              info:   drillLogs.filter(l => l.type === "info").length,
+              memory: drillLogs.filter(l => l.type === "memory").length,
+              error:  drillLogs.filter(l => l.type === "error").length,
+            };
+            const tabs = [
+              { key: "all",    label: "All",    dot: null,            count: drillLogs.length },
+              { key: "chat",   label: "Chats",  dot: "bg-sky-500",    count: counts.chat },
+              { key: "info",   label: "Info",   dot: "bg-emerald-500",count: counts.info },
+              { key: "memory", label: "Memory", dot: "bg-violet-500", count: counts.memory },
+              { key: "error",  label: "Error",  dot: "bg-red-500",    count: counts.error },
+            ].filter(t => t.key === "all" || t.count > 0);
+            return (
+              <div className="flex items-center gap-1 px-3 py-2 border-b flex-wrap" style={{ background: "#0a0a0a", borderColor: "#161616" }}>
+                {tabs.map(t => (
+                  <button
+                    key={t.key}
+                    onClick={() => setDrillFilter(t.key as typeof drillFilter)}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+                      drillFilter === t.key
+                        ? "bg-[#1e1e1e] text-white border border-[#2e2e2e]"
+                        : "text-zinc-600 hover:text-zinc-300 hover:bg-[#111]"
+                    }`}
+                  >
+                    {t.dot && <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${drillFilter === t.key ? t.dot : "bg-zinc-700"}`} />}
+                    {t.label}
+                    <span className={`px-1.5 py-px rounded text-[10px] font-mono ${drillFilter === t.key ? "bg-[#2a2a2a] text-zinc-400" : "text-zinc-700"}`}>
+                      {t.count}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            );
+          })()}
+          {/* Log entries */}
+          <div className="overflow-y-auto custom-scrollbar flex-1" style={{ minHeight: 0 }}>
+            {drillLoading ? (
+              <div className="flex items-center justify-center py-16 gap-3">
+                <div className="w-4 h-4 rounded-full border-2 animate-spin" style={{ borderColor: "#222", borderTopColor: "#e85d27" }} />
+                <span className="text-xs text-zinc-600">Loading logs…</span>
+              </div>
+            ) : drillLogs.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 gap-2">
+                <div className="text-xl opacity-10">◌</div>
+                <p className="text-xs text-zinc-600">No activity found for this session</p>
+              </div>
+            ) : (() => {
+              const visible = drillFilter === "all" ? drillLogs : drillLogs.filter(l => l.type === drillFilter);
+              const typeColors: Record<string, string> = { chat: "text-sky-300/90", info: "text-emerald-300/90", memory: "text-violet-300/90", error: "text-red-300/90" };
+              const borderColors: Record<string, string> = { chat: "border-l-sky-500/40", info: "border-l-emerald-500/30", memory: "border-l-violet-500/40", error: "border-l-red-500/50" };
+              return visible.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 gap-2">
+                  <div className="text-xl opacity-10">◌</div>
+                  <p className="text-xs text-zinc-600">No entries match this filter</p>
+                </div>
+              ) : visible.map((log, i) => (
+                <div key={log.id} className={`border-l-2 px-3 pt-2 pb-2.5 ${borderColors[log.type] ?? "border-l-zinc-800"}`}
+                  style={{ background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.008)", borderBottom: "1px solid #0f0f0f" }}>
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="text-[10px] tabular-nums text-zinc-700">{new Date(log.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
+                    {log.model && <span className="text-[9px] font-mono text-zinc-700 bg-[#111] border border-[#1e1e1e] px-1.5 py-px rounded">{log.model.split("/").pop()}</span>}
+                  </div>
+                  <p className={`text-[11px] ${typeColors[log.type] ?? "text-zinc-400"} leading-relaxed break-words whitespace-pre-wrap`}>
+                    {log.fullMessage ?? log.message}
+                  </p>
+                </div>
+              ));
+            })()}
+          </div>
+          <div className="px-4 py-1.5 border-t flex items-center justify-between" style={{ borderColor: "#141414", background: "#080808" }}>
+            <span className="text-[9px] text-zinc-800 font-mono truncate">{drillSession.key}</span>
+            {drillLogs.length > 0 && <span className="text-[10px] text-zinc-700 tabular-nums">{drillLogs.length} events</span>}
+          </div>
+        </div>
+      </div>,
+      document.body
+    )}
+    </>
   );
 }

@@ -29,6 +29,7 @@ export interface ActivityEvent {
   id: string;
   type: "info" | "error" | "memory";
   message: string;
+  fullMessage?: string;
   timestamp: string;
   model?: string;
 }
@@ -48,7 +49,11 @@ function isMemoryTool(name: string) {
 function extractUserText(raw: string): string {
   // Strip the "Sender (untrusted metadata):\n```json\n...\n```\n\n[timestamp] " preamble
   const match = raw.match(/\]\s+([\s\S]+)$/);
-  return match ? match[1].trim() : raw.trim();
+  if (match) return match[1].trim();
+  // Try to find actual message after closing JSON brace (e.g. Conversation info format)
+  const afterJson = raw.replace(/^[\s\S]*\}\s*'?\s*\n?/, '').trim();
+  if (afterJson && afterJson.length > 0 && afterJson.length < raw.length * 0.8) return afterJson;
+  return raw.trim();
 }
 
 function shortModel(model: string): string {
@@ -71,13 +76,19 @@ export function parseMessages(messages: GatewayMessage[]): ActivityEvent[] {
     const base = `${msg.timestamp ?? i}-${i}`;
 
     if (msg.role === "user") {
-      const raw = msg.content?.find((c) => c.type === "text")?.text ?? "";
-      const text = extractUserText(raw);
+      // Try all text content blocks; prefer one that extracts cleanly over raw metadata
+      const textBlocks = (msg.content ?? [])
+        .filter((c) => c.type === "text" && c.text)
+        .map((c) => c.text!);
+      const extracted = textBlocks.map(extractUserText);
+      // Prefer the shortest extracted text (likely the real message, not metadata blob)
+      const text = extracted.sort((a, b) => a.length - b.length)[0] ?? "";
       if (text) {
         events.push({
           id: `${base}-user`,
           type: "info",
           message: `💬 ${text.slice(0, 140)}${text.length > 140 ? "…" : ""}`,
+          fullMessage: text,
           timestamp: ts,
         });
       }
@@ -164,9 +175,8 @@ export async function fetchSessionKey(
         Authorization: `Bearer ${gatewayToken}`,
       },
       body: JSON.stringify({ tool: "sessions_list", args: { limit: 500 } }),
-      cache: "no-store",
     });
-    const data = await res.json();
+    const data = await res.json() as { ok: boolean; result?: { content?: Array<{ text?: string }> } };
     if (!data.ok) return null;
     const text = data.result?.content?.[0]?.text ?? "{}";
     const parsed = JSON.parse(text) as {

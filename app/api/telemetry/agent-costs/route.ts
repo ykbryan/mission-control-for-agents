@@ -2,43 +2,81 @@ import { NextRequest, NextResponse } from "next/server";
 import { routerGet } from "@/lib/router-client";
 import { parseRouters } from "@/lib/router-config";
 
-export async function GET(req: NextRequest) {
-  // Get router config
-  const { searchParams } = new URL(req.url);
-  const routerId = searchParams.get("routerId") ?? "legacy";
-  const routers = parseRouters(req.cookies.get("routers")?.value);
-  let routerUrl: string | undefined;
-  let routerToken: string | undefined;
+interface RouterCostsResponse {
+  costs: { agentId: string; totalTokens: number; estimatedCost: number; model?: string }[];
+  daily?: { agentId: string; date: string; tokens: number; estimatedCost: number }[];
+  models?: { model: string; totalTokens: number; estimatedCost: number }[];
+}
 
-  if (routers.length > 0) {
-    const router = routers.find(r => r.id === routerId) ?? routers[0];
-    routerUrl = router.url;
-    routerToken = router.token;
-  } else {
-    // Legacy fallback
-    routerUrl = req.cookies.get("routerUrl")?.value;
-    routerToken = req.cookies.get("routerToken")?.value;
+export async function GET(req: NextRequest) {
+  const routers = parseRouters(req.cookies.get("routers")?.value);
+
+  // Fallback: legacy single-router cookies
+  if (routers.length === 0) {
+    const url = req.cookies.get("routerUrl")?.value;
+    const token = req.cookies.get("routerToken")?.value;
+    if (url && token) routers.push({ id: "legacy", label: "Router", url, token });
   }
 
-  if (!routerUrl || !routerToken) {
+  if (routers.length === 0) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  try {
-    const data = await routerGet<{
-      costs: { agentId: string; totalTokens: number; estimatedCost: number }[];
-    }>(routerUrl, routerToken, "/costs");
+  const results = await Promise.allSettled(
+    routers.map((r) => routerGet<RouterCostsResponse>(r.url, r.token, "/costs"))
+  );
 
-    const agentCosts = (data.costs ?? []).map((c) => ({
-      agentId: c.agentId,
-      tokens: c.totalTokens,
-      estimatedCost: c.estimatedCost,
-      date: new Date().toISOString().split("T")[0],
-    }));
+  type CostEntry   = { agentId: string; tokens: number; estimatedCost: number; model?: string; routerId: string; routerLabel: string };
+  type DailyEntry  = { agentId: string; date: string; tokens: number; estimatedCost: number; routerId: string; routerLabel: string };
+  type RouterEntry = { routerId: string; routerLabel: string; totalTokens: number; estimatedCost: number };
+  type ModelEntry  = { model: string; totalTokens: number; estimatedCost: number };
 
-    return NextResponse.json(agentCosts);
-  } catch (err) {
-    console.error("Failed to fetch costs:", err);
-    return NextResponse.json({ error: "Failed to fetch costs" }, { status: 502 });
+  const allCosts:  CostEntry[]   = [];
+  const allDaily:  DailyEntry[]  = [];
+  const byRouter:  RouterEntry[] = [];
+  const modelMap   = new Map<string, { tokens: number; cost: number }>();
+
+  for (let i = 0; i < routers.length; i++) {
+    const r = routers[i];
+    const result = results[i];
+    if (result.status !== "fulfilled") continue;
+    const data = result.value;
+
+    let routerTokens = 0;
+    for (const c of data.costs ?? []) {
+      allCosts.push({
+        agentId: c.agentId,
+        tokens: c.totalTokens,
+        estimatedCost: c.estimatedCost,
+        model: c.model,
+        routerId: r.id,
+        routerLabel: r.label,
+      });
+      routerTokens += c.totalTokens;
+    }
+    for (const d of data.daily ?? []) {
+      allDaily.push({ ...d, routerId: r.id, routerLabel: r.label });
+    }
+    for (const m of data.models ?? []) {
+      const existing = modelMap.get(m.model);
+      if (existing) {
+        existing.tokens += m.totalTokens;
+        existing.cost   += m.estimatedCost;
+      } else {
+        modelMap.set(m.model, { tokens: m.totalTokens, cost: m.estimatedCost });
+      }
+    }
+    byRouter.push({
+      routerId: r.id,
+      routerLabel: r.label,
+      totalTokens: routerTokens,
+      estimatedCost: parseFloat((routerTokens * 3 / 1_000_000).toFixed(6)),
+    });
   }
+
+  const byModel: ModelEntry[] = [...modelMap.entries()]
+    .map(([model, v]) => ({ model, totalTokens: v.tokens, estimatedCost: parseFloat(v.cost.toFixed(6)) }))
+    .sort((a, b) => b.totalTokens - a.totalTokens);
+
+  return NextResponse.json({ costs: allCosts, daily: allDaily, byRouter, byModel });
 }

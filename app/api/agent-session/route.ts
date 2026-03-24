@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { routerGet } from "@/lib/router-client";
-import { parseRouters } from "@/lib/router-config";
+import { parseRouters, resolveRouter } from "@/lib/router-config";
 import type { ActivityEvent } from "@/lib/parse-session";
 
 export async function GET(req: NextRequest) {
@@ -11,29 +11,27 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Missing agent parameter" }, { status: 400 });
   }
 
-  // Get router config
   const routerId = searchParams.get("routerId") ?? "legacy";
   const routers = parseRouters(req.cookies.get("routers")?.value);
-  let routerUrl: string | undefined;
-  let routerToken: string | undefined;
+  const resolved = resolveRouter(
+    routers, routerId,
+    req.cookies.get("routerUrl")?.value,
+    req.cookies.get("routerToken")?.value
+  );
 
-  if (routers.length > 0) {
-    const router = routers.find(r => r.id === routerId) ?? routers[0];
-    routerUrl = router.url;
-    routerToken = router.token;
-  } else {
-    // Legacy fallback
-    routerUrl = req.cookies.get("routerUrl")?.value;
-    routerToken = req.cookies.get("routerToken")?.value;
+  if (!resolved) {
+    return NextResponse.json({ error: `Router "${routerId}" not configured` }, { status: 404 });
   }
+  const { url: routerUrl, token: routerToken } = resolved;
 
-  if (!routerUrl || !routerToken) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  // Optional: fetch a specific session by key
+  const sessionKey = searchParams.get("sessionKey");
 
   try {
+    const params: Record<string, string> = { agentId };
+    if (sessionKey) params.sessionKey = sessionKey;
     const data = await routerGet<{ key: string; events: ActivityEvent[] }>(
-      routerUrl, routerToken, "/session", { agentId }
+      routerUrl, routerToken, "/session", params
     );
     return NextResponse.json(data.events ?? []);
   } catch (err: unknown) {

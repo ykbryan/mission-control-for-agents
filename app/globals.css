@@ -138,7 +138,7 @@ select {
   flex: 1;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) minmax(280px, 332px);
-  gap: 18px;
+  gap: 0;
   align-items: stretch;
 }
 
@@ -146,10 +146,11 @@ select {
   width: 88px;
   min-height: 0;
   padding: 16px 12px;
-  border-radius: 28px;
+  border-radius: 0;
   background: linear-gradient(180deg, rgba(14, 20, 29, 0.88), rgba(11, 18, 27, 0.72));
-  border: 1px solid var(--mc-stroke-faint);
-  box-shadow: var(--mc-shadow-float);
+  border: none;
+  border-right: 1px solid var(--mc-stroke-faint);
+  box-shadow: none;
   backdrop-filter: var(--mc-shell-blur);
   display: flex;
   flex-direction: column;
@@ -275,14 +276,14 @@ select {
   min-width: 0;
   min-height: 0;
   position: relative;
-  border-radius: 36px;
-  padding: 20px;
+  border-radius: 0;
+  padding: 0;
   background:
     radial-gradient(circle at 50% 28%, rgba(240, 120, 73, 0.12), transparent 28%),
     radial-gradient(circle at 22% 18%, rgba(106, 160, 255, 0.12), transparent 18%),
     linear-gradient(180deg, rgba(9, 16, 24, 0.92), rgba(8, 13, 20, 0.74));
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  box-shadow: var(--mc-shadow-shell);
+  border: none;
+  box-shadow: none;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -358,16 +359,17 @@ select {
 
 .mc-inspector {
   min-height: 0;
-  border-radius: 30px;
-  padding: 18px;
+  border-radius: 0;
+  padding: 0;
   background: linear-gradient(180deg, rgba(17, 24, 35, 0.84), rgba(14, 20, 30, 0.78));
-  border: 1px solid var(--mc-stroke-faint);
-  box-shadow: var(--mc-shadow-float);
+  border: none;
+  border-left: 1px solid var(--mc-stroke-faint);
+  box-shadow: none;
   backdrop-filter: blur(24px);
   overflow: auto;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 0;
 }
 
 .mc-inspector__hero {
@@ -430,6 +432,14 @@ select {
   color: var(--mc-accent-strong);
   border: 1px solid rgba(240, 120, 73, 0.14);
   font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  user-select: none;
+}
+
+.mc-skill-chip:hover {
+  background: rgba(240, 120, 73, 0.15);
+  border-color: rgba(240, 120, 73, 0.35);
 }
 
 .mc-skill-chip__dot {
@@ -438,6 +448,11 @@ select {
   border-radius: 999px;
   background: currentColor;
   opacity: 0.75;
+  transition: opacity 0.15s;
+}
+
+.mc-skill-chip:hover .mc-skill-chip__dot {
+  opacity: 1;
 }
 
 .mc-file-list {

@@ -13,14 +13,22 @@ export function filterAgents(agents: Agent[], query: string) {
   );
 }
 
-export function getSelectedAgent(agents: Agent[], agentId: string) {
-  return agents.find((agent) => agent.id === agentId) ?? agents[0];
+// nodeId is either a compound "routerId--agentId" key or a plain agentId
+export function getSelectedAgent(agents: Agent[], nodeId: string) {
+  const sep = nodeId.indexOf("--");
+  if (sep !== -1) {
+    const routerId = nodeId.slice(0, sep);
+    const agentId = nodeId.slice(sep + 2);
+    const found = agents.find(a => a.id === agentId && a.routerId === routerId);
+    if (found) return found;
+  }
+  return agents.find(a => a.id === nodeId) ?? agents[0];
 }
 
 export function getSystemStatusSummary(agents: Agent[], mode: "graph" | "workflow", selectedAgent?: Agent) {
+  const onlineCount = agents.filter(a => a.status === "online").length;
   return [
-    `${agents.length} agents online`,
-    mode === "graph" ? "graph stage" : "workflow stage",
+    `${onlineCount} online`,
     selectedAgent ? `${selectedAgent.name} focused` : null,
   ].filter(Boolean) as string[];
 }
