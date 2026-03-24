@@ -390,6 +390,7 @@ const CHECK_META = [
   { id: "subagent-creation",   icon: "🤖", title: "Subagent creation control" },
   { id: "suspicious-content",  icon: "🔍", title: "Suspicious content scan"   },
   { id: "direct-agent-attack", icon: "🎯", title: "Direct agent attack"       },
+  { id: "encoding-attack",     icon: "🔢", title: "Encoding attack"            },
 ];
 
 function CheckCard({ check, isScanning, scanIndex, myIndex }: {
@@ -562,7 +563,7 @@ function AuditTab({ onResult }: { onResult?: (r: SecurityAuditResponse | null) =
                 🛡️ Security Audit
               </h2>
               <p style={{ margin: 0, fontSize: "13px", color: "#555", lineHeight: "1.6" }}>
-                Runs 7 targeted checks across all agents and their config files — covering privilege abuse, plaintext secrets, prompt injection, exec access, subagent control, and direct agent attacks.
+                Runs 8 targeted checks across all agents and their config files — covering privilege abuse, plaintext secrets, prompt injection, exec access, subagent control, direct agent attacks, and encoding-based obfuscation.
               </p>
             </>
           )}
@@ -570,7 +571,7 @@ function AuditTab({ onResult }: { onResult?: (r: SecurityAuditResponse | null) =
             <>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
                 <span style={{ fontSize: "12px", color: "#888" }}>
-                  Running check {Math.min(scanIndex + 1, 7)} of 7…
+                  Running check {Math.min(scanIndex + 1, CHECK_META.length)} of {CHECK_META.length}…
                 </span>
                 <span style={{ fontSize: "12px", color: ORANGE, fontFamily: "ui-monospace,monospace" }}>{progress}%</span>
               </div>

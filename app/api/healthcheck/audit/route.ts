@@ -382,6 +382,156 @@ function checkSuspiciousContent(agents: RouterAgent[], fileMap: Map<string, Map<
   };
 }
 
+// ── Check 8: Encoding attack detection ───────────────────────────────────────
+
+// Decode helpers
+function decodeBase64Safe(s: string): string {
+  try { return Buffer.from(s, "base64").toString("utf8"); } catch { return ""; }
+}
+
+function decodeRot13(s: string): string {
+  return s.replace(/[a-zA-Z]/g, c => {
+    const base = c <= "Z" ? 65 : 97;
+    return String.fromCharCode(((c.charCodeAt(0) - base + 13) % 26) + base);
+  });
+}
+
+function decodeUnicodeEscapes(s: string): string {
+  return s
+    .replace(/\\u([0-9a-fA-F]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
+    .replace(/&#x([0-9a-fA-F]+);/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))
+    .replace(/&#([0-9]+);/g, (_, d) => String.fromCharCode(parseInt(d, 10)));
+}
+
+// Suspicious payloads to look for after decoding
+const ENCODED_PAYLOAD_PATTERNS: Array<{ re: RegExp; label: string }> = [
+  { re: /ignore\s+(?:previous|prior|above|all)\s+instructions?/gi, label: "Prompt injection" },
+  { re: /disregard\s+(?:all\s+)?(?:previous|prior|above)?\s*(?:instructions?|rules?)/gi, label: "Prompt injection" },
+  { re: /you\s+are\s+now\s+(?:free|jailbroken|unrestricted|DAN\b)/gi, label: "Jailbreak attempt" },
+  { re: /(?:reveal|show|print|output|repeat)\s+(?:your|the|my)\s+(?:system\s+)?(?:prompt|instructions?)/gi, label: "System prompt extraction" },
+  { re: /rm\s+-[rRfF]{1,3}\s+[\/~]/g, label: "Dangerous shell command" },
+  { re: /(?:exec|eval|system|passthru|shell_exec)\s*\(/gi, label: "Code execution" },
+];
+
+// Detects suspicious-length base64 blobs (≥32 chars of valid base64)
+const BASE64_BLOB = /(?:[A-Za-z0-9+/]{4}){8,}(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?/g;
+
+// ROT13 detection: looks for ROT13-encoded versions of key trigger words
+const ROT13_TRIGGERS = [
+  "vtzber",      // ignore
+  "qvfertneq",   // disregard
+  "vafgehpgvbaf", // instructions
+  "flfgrz cebzcg", // system prompt
+  "eryirny",     // reveal
+  "wnvyoebxra",  // jailbroken
+];
+
+// Unicode homoglyph / zero-width character injection
+const UNICODE_SUSPICIOUS = [
+  { re: /[\u200B-\u200D\uFEFF\u00AD]/g, label: "Zero-width / soft-hyphen characters (invisible injection)" },
+  { re: /[\u0430\u0435\u043E\u0440\u0441\u0445]/, label: "Cyrillic homoglyphs (visual spoofing)" },
+  { re: /\\u[0-9a-fA-F]{4}/, label: "Unicode escape sequences in config" },
+  { re: /&#[0-9]+;|&#x[0-9a-fA-F]+;/gi, label: "HTML entity encoding" },
+];
+
+function checkEncodingAttack(agents: RouterAgent[], fileMap: Map<string, Map<string, string>>): SecurityCheck {
+  const findings: AuditFinding[] = [];
+  const seen = new Set<string>();
+
+  for (const agent of agents) {
+    const agentFiles = fileMap.get(agent.id);
+    if (!agentFiles) continue;
+
+    for (const [filename, content] of agentFiles) {
+      // ── 1. Unicode / homoglyph checks (raw content) ─────────────────────
+      for (const { re, label } of UNICODE_SUSPICIOUS) {
+        const matches = content.match(new RegExp(re.source, re.flags));
+        if (!matches) continue;
+        const key = `${agent.id}:${filename}:unicode:${label}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        findings.push({
+          agentId: agent.id, agentName: agent.name,
+          detail: `[HIGH] "${agent.name}" — ${filename}: ${label} (${matches.length} occurrence${matches.length > 1 ? "s" : ""})`,
+          snippet: `${matches[0].slice(0, 30)}… (encoding attack vector)`,
+          file: filename,
+        });
+      }
+
+      // ── 2. ROT13 keyword scan ─────────────────────────────────────────────
+      const rot13Decoded = decodeRot13(content);
+      for (const trigger of ROT13_TRIGGERS) {
+        if (rot13Decoded.toLowerCase().includes(trigger)) {
+          const key = `${agent.id}:${filename}:rot13:${trigger}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          // Only flag if decoded result actually matches a payload pattern
+          if (ENCODED_PAYLOAD_PATTERNS.some(p => new RegExp(p.re.source, p.re.flags).test(rot13Decoded))) {
+            findings.push({
+              agentId: agent.id, agentName: agent.name,
+              detail: `[CRITICAL] "${agent.name}" — ${filename}: ROT13-encoded payload detected ("${trigger}" decodes to injection keyword)`,
+              snippet: `ROT13 obfuscation of: ${trigger}`,
+              file: filename,
+            });
+            break;
+          }
+        }
+      }
+
+      // ── 3. Base64 blob decode + scan ──────────────────────────────────────
+      const b64Matches = content.match(BASE64_BLOB) ?? [];
+      for (const blob of b64Matches) {
+        const decoded = decodeBase64Safe(blob);
+        if (!decoded || decoded.length < 10) continue;
+        // Must be mostly printable ASCII to be a real encoded string
+        const printable = decoded.replace(/[^\x20-\x7E]/g, "").length / decoded.length;
+        if (printable < 0.7) continue;
+        for (const { re, label } of ENCODED_PAYLOAD_PATTERNS) {
+          if (!new RegExp(re.source, re.flags).test(decoded)) continue;
+          const key = `${agent.id}:${filename}:b64:${label}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          findings.push({
+            agentId: agent.id, agentName: agent.name,
+            detail: `[CRITICAL] "${agent.name}" — ${filename}: Base64-encoded ${label} payload detected`,
+            snippet: `Decoded: "${decoded.slice(0, 60).trim()}…"`,
+            file: filename,
+          });
+        }
+      }
+
+      // ── 4. Unicode escape decode + scan ───────────────────────────────────
+      if (/\\u[0-9a-fA-F]{4}|&#/.test(content)) {
+        const uniDecoded = decodeUnicodeEscapes(content);
+        for (const { re, label } of ENCODED_PAYLOAD_PATTERNS) {
+          if (!new RegExp(re.source, re.flags).test(uniDecoded)) continue;
+          const key = `${agent.id}:${filename}:uni:${label}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          findings.push({
+            agentId: agent.id, agentName: agent.name,
+            detail: `[CRITICAL] "${agent.name}" — ${filename}: Unicode-encoded ${label} payload detected`,
+            snippet: `Decoded: "${uniDecoded.slice(0, 60).trim()}…"`,
+            file: filename,
+          });
+        }
+      }
+    }
+  }
+
+  const hasCritical = findings.some(f => f.detail.startsWith("[CRITICAL]"));
+  const status = hasCritical ? "fail" : findings.length > 0 ? "warn" : "pass";
+
+  return {
+    id: "encoding-attack", number: 8,
+    title: "Encoding attack",
+    description: "Decodes Base64, ROT13, and Unicode-escaped content in agent files to detect obfuscated payloads that bypass plain-text filters.",
+    status, severity: "critical", findings,
+    recommendation: "Never allow encoded blobs in agent config files without an explicit allowlist. Add a decode-then-filter step to any content pipeline. Treat invisible Unicode characters and homoglyphs as red flags.",
+    passLabel: "No encoded attack payloads detected",
+  };
+}
+
 // ── GET handler ───────────────────────────────────────────────────────────────
 
 export async function GET(req: NextRequest) {
@@ -445,6 +595,7 @@ export async function GET(req: NextRequest) {
     checkSubagentCreation(allAgents, fileMap),
     checkSuspiciousContent(allAgents, fileMap),
     checkDirectAgentAttack(allAgents, fileMap),
+    checkEncodingAttack(allAgents, fileMap),
   ];
 
   const overallStatus: "pass" | "warn" | "fail" =
