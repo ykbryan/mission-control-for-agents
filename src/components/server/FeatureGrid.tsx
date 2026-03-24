@@ -10,7 +10,7 @@ export function FeatureGrid() {
           {siteConfig.features.map((feature) => (
             <StaggerItem
               key={feature.id}
-              className="bg-zinc-950 p-8 flex flex-col gap-4"
+              className="bg-zinc-950 p-8 flex flex-col gap-4 border border-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] backdrop-blur-sm"
             >
               <h3 className="font-sans text-sm font-semibold uppercase tracking-widest text-accent">
                 {feature.title}
