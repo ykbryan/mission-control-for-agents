@@ -501,7 +501,7 @@ function CheckCard({ check, isScanning, scanIndex, myIndex }: {
   );
 }
 
-function AuditTab() {
+function AuditTab({ onResult }: { onResult?: (r: SecurityAuditResponse | null) => void }) {
   const [phase, setPhase]       = useState<"idle" | "scanning" | "done">("idle");
   const [scanIndex, setScanIndex] = useState(-1);
   const [progress, setProgress] = useState(0);
@@ -531,6 +531,7 @@ function AuditTab() {
     try {
       const data = await fetchPromise;
       setResult(data);
+      onResult?.(data);
       setProgress(100);
       setPhase("done");
     } catch (e: any) {
@@ -967,6 +968,7 @@ export default function AuditPage() {
   const [lastScannedAt, setLastScannedAt] = useState<number>(0);
   const [tab, setTab] = useState<Tab>("events");
   const [tick, setTick] = useState(0);
+  const [lastAuditResult, setLastAuditResult] = useState<SecurityAuditResponse | null>(null);
 
   const fetchData = useCallback(async (silent = false) => {
     if (!silent) setRefreshing(true);
@@ -1005,9 +1007,12 @@ export default function AuditPage() {
 
   if (loading) return <Skeleton />;
 
-  // Security posture label
-  const critCount = data?.summary.critical ?? 0;
-  const highCount = data?.summary.high ?? 0;
+  // Security posture label — combine event stream + audit check results
+  const auditCritFails = lastAuditResult?.checks.filter(c => c.status === "fail" && c.severity === "critical").length ?? 0;
+  const auditHighFails = lastAuditResult?.checks.filter(c => c.status === "fail" && (c.severity === "high" || c.severity === "critical")).length ?? 0;
+  const auditWarnCount = lastAuditResult?.checks.filter(c => c.status === "warn").length ?? 0;
+  const critCount = (data?.summary.critical ?? 0) + auditCritFails;
+  const highCount = (data?.summary.high ?? 0) + auditHighFails;
   const postureLabel = critCount > 0 ? "CRITICAL" : highCount > 0 ? "ELEVATED" : "NOMINAL";
   const postureColor = critCount > 0 ? "#ef4444" : highCount > 0 ? "#f97316" : "#22c55e";
 
@@ -1093,15 +1098,15 @@ export default function AuditPage() {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px" }}>
               <KpiCard
                 label="Critical Events"
-                value={data?.summary.critical ?? 0}
-                sub={`${data?.summary.high ?? 0} high severity`}
+                value={critCount}
+                sub={`${highCount} high severity`}
                 accent="#ef4444"
-                alert
+                alert={critCount > 0}
               />
               <KpiCard
                 label="High Severity"
-                value={data?.summary.high ?? 0}
-                sub={`${data?.summary.medium ?? 0} medium`}
+                value={highCount}
+                sub={lastAuditResult ? `${auditWarnCount} audit warn${auditWarnCount !== 1 ? "s" : ""}` : `${data?.summary.medium ?? 0} medium`}
                 accent="#f97316"
               />
               <KpiCard
@@ -1147,7 +1152,7 @@ export default function AuditPage() {
             {tab === "infrastructure" && data && <InfrastructureTab routers={data.routers} />}
             {tab === "agents" && data && <AgentRiskTab agents={data.agentRisk} />}
             {tab === "trends" && data && <LiveTrendsTab data={data} />}
-            {tab === "audit" && <AuditTab />}
+            {tab === "audit" && <AuditTab onResult={setLastAuditResult} />}
 
           </div>
         </div>
