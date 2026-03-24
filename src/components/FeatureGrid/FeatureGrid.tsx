@@ -1,24 +1,14 @@
-import React from 'react';
 import styles from './FeatureGrid.module.css';
+import { siteConfig } from '../../config/site';
 
-interface Feature {
-  id: string;
-  title: string;
-  description: string;
-}
-
-interface FeatureGridProps {
-  features: Feature[];
-}
-
-export const FeatureGrid: React.FC<FeatureGridProps> = ({ features }) => {
+export const FeatureGrid = () => {
   return (
     <section className={styles['feature-grid']}>
       <div className={styles['feature-grid__container']}>
-        {features.map((feature) => (
-          <div key={feature.id} className={styles['feature-grid__item']}>
-            <h2 className={styles['feature-grid__title']}>{feature.title}</h2>
-            <p className={styles['feature-grid__desc']}>{feature.description}</p>
+        {siteConfig.features.map((feature, index) => (
+          <div key={index} className={styles['feature-grid__item']}>
+            <h3 className={styles['feature-grid__item-title']}>{feature.title}</h3>
+            <p className={styles['feature-grid__item-desc']}>{feature.description}</p>
           </div>
         ))}
       </div>

@@ -1,43 +1,67 @@
 .feature-grid {
-  width: 100%;
-  padding: calc(var(--grid-unit) * 8) calc(var(--grid-unit) * 4);
-  display: flex;
-  justify-content: center;
+  padding: 4rem 2rem;
 }
 
 .feature-grid__container {
+  max-width: 1200px;
+  margin: 0 auto;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: calc(var(--grid-unit) * 4);
-  max-width: 1200px;
-  width: 100%;
-}
-
-.feature-grid__item {
-  border: 1px solid var(--border-color);
-  padding: calc(var(--grid-unit) * 4);
-  background-color: transparent;
-  display: flex;
-  flex-direction: column;
-}
-
-.feature-grid__title {
-  color: var(--primary-color);
-  font-size: 1.5rem;
-  margin-bottom: calc(var(--grid-unit) * 2);
-  border-bottom: 1px dashed var(--border-color);
-  padding-bottom: calc(var(--grid-unit) * 1);
-}
-
-.feature-grid__desc {
-  color: var(--primary-color);
-  font-size: 1rem;
-  line-height: 1.6;
-  opacity: 0.8;
+  gap: 2rem;
 }
 
 @media (max-width: 768px) {
   .feature-grid__container {
     grid-template-columns: 1fr;
   }
+}
+
+.feature-grid__item {
+  border: 1px solid var(--border-color);
+  padding: 2.5rem 2rem;
+  background-color: rgba(26, 27, 38, 0.4);
+  transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.feature-grid__item::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background-color: var(--accent-color);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.3s ease;
+}
+
+.feature-grid__item:hover::before {
+  transform: scaleX(1);
+}
+
+.feature-grid__item:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 10px 20px rgba(0, 255, 65, 0.1);
+  border-color: var(--accent-color);
+}
+
+.feature-grid__item-title {
+  font-size: 1.5rem;
+  margin-top: 0;
+  margin-bottom: 1.5rem;
+  color: var(--text-color);
+  border-bottom: 1px dashed var(--border-color);
+  padding-bottom: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05rem;
+}
+
+.feature-grid__item-desc {
+  color: var(--accent-color);
+  margin: 0;
+  font-size: 1.1rem;
+  line-height: 1.5;
 }
