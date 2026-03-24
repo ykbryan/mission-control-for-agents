@@ -482,7 +482,9 @@ const SKIP_PATTERNS = [
   /^your task is to continue/i,
   /^conversation info/i,
   /^untrusted metadata/i,
-  /^\s*\{.*"message_id"/i,   // raw Telegram JSON
+  /^\s*\{.*"message_id"/i,         // raw Telegram JSON starting with {
+  /^[`'"]+\s*json\s*\{/i,          // ```json { ... } code block
+  /^[`'"]+\s*\{.*"message_id"/i,   // quoted/backtick JSON with message_id
 ];
 
 // Find the most recent substantive user (💬) message — the current task
@@ -494,21 +496,30 @@ function extractTaskMessage(events: ActivityEvent[]): string | undefined {
     const text = msg.replace(/^💬\s*/, '').trim();
     if (text.length < 2) continue;
 
-    // Telegram metadata wrapper — try to extract actual message text
-    if (/^conversation info/i.test(text) || /^untrusted metadata/i.test(text)) {
-      // Try JSON extraction (look for text/message fields)
+    // Telegram/JSON metadata wrapper — try to extract actual message text
+    if (/^conversation info/i.test(text) || /^untrusted metadata/i.test(text) ||
+        /^[`'"]+\s*json\s*\{/i.test(text) || /^[`'"]*\s*\{.*"message_id"/i.test(text)) {
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         try {
           const parsed = JSON.parse(jsonMatch[0]);
-          const inner = parsed?.json?.text ?? parsed?.json?.message ?? parsed?.text ?? parsed?.message;
+          const j = parsed?.json ?? parsed;
+          // text/message fields first
+          const inner = j?.text ?? j?.message ?? parsed?.text ?? parsed?.message;
           if (inner && String(inner).trim().length > 2) return String(inner).trim().slice(0, 200);
+          // conversation_label often contains "SenderName: actual message"
+          const label = j?.conversation_label ?? '';
+          if (label) {
+            const colonIdx = String(label).indexOf(':');
+            const labelMsg = colonIdx >= 0 ? String(label).slice(colonIdx + 1).trim() : String(label).trim();
+            if (labelMsg.length > 2) return labelMsg.slice(0, 200);
+          }
         } catch { /* fall through */ }
-        // Try text appearing after the closing brace
-        const afterJson = text.slice(text.lastIndexOf('}') + 1).replace(/^['\s]+/, '').trim();
+        // Text after the JSON block
+        const afterJson = text.slice(text.lastIndexOf('}') + 1).replace(/^[`'"\s]+/, '').trim();
         if (afterJson.length > 5) return afterJson.slice(0, 200);
       }
-      // Try anything after a newline following the metadata line
+      // Text after first newline
       const afterNewline = text.split('\n').slice(1).join('\n').trim();
       if (afterNewline.length > 5) return afterNewline.slice(0, 200);
       continue;
