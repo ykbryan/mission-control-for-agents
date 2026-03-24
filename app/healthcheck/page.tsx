@@ -401,6 +401,7 @@ function CheckCard({ check, isScanning, scanIndex, myIndex }: {
 }) {
   const [expanded, setExpanded] = useState(false);
   const [iconHover, setIconHover] = useState(false);
+  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
   const meta = CHECK_META[myIndex];
   const isActive  = isScanning && scanIndex === myIndex;
   const isPending = isScanning && scanIndex < myIndex;
@@ -444,14 +445,18 @@ function CheckCard({ check, isScanning, scanIndex, myIndex }: {
 
         <span
           style={{ fontSize: "15px", flexShrink: 0, position: "relative", cursor: "help" }}
-          onMouseEnter={() => setIconHover(true)}
-          onMouseLeave={() => setIconHover(false)}
+          onMouseEnter={(e) => {
+            const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+            setTooltipPos({ x: r.right + 10, y: r.top + r.height / 2 });
+            setIconHover(true);
+          }}
+          onMouseLeave={() => { setIconHover(false); setTooltipPos(null); }}
         >
           {meta.icon}
-          {iconHover && (
+          {iconHover && tooltipPos && (
             <div style={{
-              position: "absolute", left: "30px", top: "50%", transform: "translateY(-50%)",
-              zIndex: 100, width: "280px", pointerEvents: "none",
+              position: "fixed", left: tooltipPos.x, top: tooltipPos.y, transform: "translateY(-50%)",
+              zIndex: 9999, width: "280px", pointerEvents: "none",
               background: "#111118", border: "1px solid #2a2a38",
               borderRadius: "10px", padding: "12px 14px", boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
             }}>
