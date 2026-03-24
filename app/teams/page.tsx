@@ -152,6 +152,23 @@ function detectOrchestrators(
     return found;
   }
 
+  // ── Pass 0: AGENTS.md — structural team definition ───────────────────────
+  // New orchestrators may not yet have a MEMORY.md (never run yet).
+  // AGENTS.md often declares the team structure explicitly, e.g.:
+  //   "Uma orchestrates. Roy pressure-tests…" / "manages Jelly, Deer, Queen and Roy"
+  // Heuristic: if AGENTS.md contains ≥2 known agent names AND an orchestration
+  // keyword near the top, treat those agents as outgoing members.
+  const ORCH_KEYWORDS = /\b(orchestrat|manages|coordinat|leads|assigns\s+to|delegates?\s+to|routes?\s+to|supervise|oversee|direct)\b/i;
+  for (const [, an] of analyses) {
+    const agentsMd = an.agentsMd ?? "";
+    if (!agentsMd) continue;
+    if (!ORCH_KEYWORDS.test(agentsMd)) continue;
+    const mentioned = extractMentionedAgents(agentsMd, an.agentId);
+    for (const targetId of mentioned) {
+      an.outgoing.add(targetId);
+    }
+  }
+
   // ── Pass 1: MEMORY.md — primary delegation evidence ──────────────────────
   // Parse the actual delegation patterns found in the MEMORY.md files.
   // Evelyn-style:  "Route all X to **Agent**"
