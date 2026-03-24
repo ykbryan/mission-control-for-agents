@@ -482,9 +482,10 @@ const SKIP_PATTERNS = [
   /^your task is to continue/i,
 ];
 
-// Find the first substantive user (💬) message — the real task assigned
+// Find the most recent substantive user (💬) message — the current task
 function extractTaskMessage(events: ActivityEvent[]): string | undefined {
-  for (const e of events) {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i];
     const msg = (e.fullMessage ?? e.message ?? '').trim();
     if (!msg.startsWith('💬')) continue;
     const text = msg.replace(/^💬\s*/, '').trim();
