@@ -32,7 +32,8 @@ export const agents: Agent[] = [
   {"id":"pat","name":"Pat","emoji":"🏷️","role":"Price Tracking Agent","soul":"Price tracker, deal hunter, and web scraper.","skills":["web_search","web_fetch","exec"],"files":["IDENTITY.md","SOUL.md","TOOLS.md","HEARTBEAT.md","AGENTS.md","USER.md"]},
   {"id":"queen","name":"Queen","emoji":"👑","role":"Marketing SEO Specialist","soul":"Data-driven search strategist who builds sustainable organic visibility.","skills":["web_search","web_fetch","notion"],"files":["IDENTITY.md","SOUL.md","TOOLS.md","HEARTBEAT.md","AGENTS.md","USER.md"]},
   {"id":"roy","name":"Roy","emoji":"💼","role":"Founder / CEO / Business Strategist","soul":"Founder, CEO, businessman.","skills":["web_search","notion","exec"],"files":["IDENTITY.md","SOUL.md","TOOLS.md","HEARTBEAT.md","AGENTS.md","USER.md"]},
-  {"id":"jelly","name":"Jelly","emoji":"✍️","role":"Blogging Developer & Writer","soul":"Blogging developer and writing partner for Bryan.","skills":["web_search","exec","github"],"files":["IDENTITY.md","SOUL.md","TOOLS.md","HEARTBEAT.md","AGENTS.md","USER.md"],"nodeHostname":"ubuntu-personal"}
+  {"id":"jelly","name":"Jelly","emoji":"✍️","role":"Blogging Developer & Writer","soul":"Blogging developer and writing partner for Bryan.","skills":["web_search","exec","github"],"files":["IDENTITY.md","SOUL.md","TOOLS.md","HEARTBEAT.md","AGENTS.md","USER.md"],"nodeHostname":"ubuntu-personal"},
+  {"id":"uma","name":"Uma","emoji":"🌊","role":"Content Lead, bryanchua.com","soul":"Content Lead for bryanchua.com — orchestrating the Octonauts to produce sharp, ambitious, SEO-ready blog posts in Bryan's voice.","skills":["message","cron"],"files":["IDENTITY.md","SOUL.md","TOOLS.md","HEARTBEAT.md","AGENTS.md","USER.md"],"tier":"orchestrator"}
 ];
 
 export const skillDescriptions: Record<string, string> = {
