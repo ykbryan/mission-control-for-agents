@@ -383,12 +383,31 @@ function EventsTab({ events, agentRisk }: { events: AuditEvent[]; agentRisk: Age
 // ── Audit Tab ─────────────────────────────────────────────────────────────────
 
 const CHECK_META = [
-  { id: "main-agent",         icon: "🔑", title: "Main agent usage"          },
-  { id: "skill-count",        icon: "⚡", title: "Over-privileged agents"    },
-  { id: "exec-privilege",     icon: "🖥️", title: "Exec / shell privilege"    },
-  { id: "credentials",        icon: "🔐", title: "Credentials in plaintext"  },
-  { id: "subagent-creation",  icon: "🤖", title: "Subagent creation control" },
-  { id: "suspicious-content", icon: "🔍", title: "Suspicious content scan"   },
+  { id: "main-agent",          icon: "🔑", title: "Main agent usage"          },
+  { id: "skill-count",         icon: "⚡", title: "Over-privileged agents"    },
+  { id: "exec-privilege",      icon: "🖥️", title: "Exec / shell privilege"    },
+  { id: "credentials",         icon: "🔐", title: "Credentials in plaintext"  },
+  { id: "subagent-creation",   icon: "🤖", title: "Subagent creation control" },
+  { id: "suspicious-content",  icon: "🔍", title: "Suspicious content scan"   },
+  { id: "direct-agent-attack", icon: "🎯", title: "Direct agent attack"       },
+  { id: "encoding-attack",     icon: "🔢", title: "Encoding attack"            },
+  { id: "persona-attack",      icon: "🎭", title: "Persona attack"             },
+  { id: "social-attack",       icon: "🧠", title: "Social engineering attack"  },
+  { id: "crescendo-attack",    icon: "📈", title: "Crescendo attack"           },
+  { id: "manyshot-attack",     icon: "📋", title: "Many-shot attack"           },
+  { id: "cot-hijack",          icon: "🧩", title: "CoT hijack"                },
+  { id: "policy-puppetry",     icon: "📄", title: "Policy puppetry"           },
+  { id: "injection-attack",   icon: "💉", title: "Injection attack"           },
+  { id: "tool-exploit",           icon: "🔧", title: "Tool-exploit attack"           },
+  { id: "credential-extraction", icon: "🗝️", title: "Credential-extraction attack" },
+  { id: "data-exfiltration",      icon: "📤", title: "Data-exfiltration attack"      },
+  { id: "jailbreak",             icon: "🔓", title: "Jailbreak attack"              },
+  { id: "multi-turn-manipulation", icon: "🔄", title: "Multi-turn manipulation"    },
+  { id: "context-confusion",    icon: "🌀", title: "Context-confusion attack"      },
+  { id: "role-hijack",          icon: "🎪", title: "Role-hijack attack"            },
+  { id: "policy-bypass",        icon: "⚖️", title: "Policy-bypass attack"         },
+  { id: "indirect-injection",   icon: "🕸️", title: "Indirect-injection attack"    },
+  { id: "boundary-testing",     icon: "📡", title: "Boundary-testing attack"      },
 ];
 
 function CheckCard({ check, isScanning, scanIndex, myIndex }: {
@@ -398,6 +417,8 @@ function CheckCard({ check, isScanning, scanIndex, myIndex }: {
   myIndex: number;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [iconHover, setIconHover] = useState(false);
+  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
   const meta = CHECK_META[myIndex];
   const isActive  = isScanning && scanIndex === myIndex;
   const isPending = isScanning && scanIndex < myIndex;
@@ -439,7 +460,58 @@ function CheckCard({ check, isScanning, scanIndex, myIndex }: {
           display: "flex", alignItems: "center", justifyContent: "center",
         }}>{myIndex + 1}</span>
 
-        <span style={{ fontSize: "15px", flexShrink: 0 }}>{meta.icon}</span>
+        <span
+          style={{ fontSize: "15px", flexShrink: 0, position: "relative", cursor: "help" }}
+          onMouseEnter={(e) => {
+            const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+            setTooltipPos({ x: r.right + 10, y: r.top + r.height / 2 });
+            setIconHover(true);
+          }}
+          onMouseLeave={() => { setIconHover(false); setTooltipPos(null); }}
+        >
+          {meta.icon}
+          {iconHover && tooltipPos && (
+            <div style={{
+              position: "fixed", left: tooltipPos.x, top: tooltipPos.y, transform: "translateY(-50%)",
+              zIndex: 9999, width: "280px", pointerEvents: "none",
+              background: "#111118", border: "1px solid #2a2a38",
+              borderRadius: "10px", padding: "12px 14px", boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+                <span style={{ fontSize: "16px" }}>{meta.icon}</span>
+                <span style={{ fontSize: "12px", fontWeight: 700, color: "#e0e0e0" }}>{meta.title}</span>
+                {check && (
+                  <span style={{
+                    marginLeft: "auto", fontSize: "9px", fontWeight: 700, letterSpacing: "0.08em",
+                    padding: "2px 7px", borderRadius: "4px",
+                    background: (check.status === "pass" ? "#22c55e" : check.status === "warn" ? "#f59e0b" : "#ef4444") + "22",
+                    color: check.status === "pass" ? "#22c55e" : check.status === "warn" ? "#f59e0b" : "#ef4444",
+                    border: `1px solid ${(check.status === "pass" ? "#22c55e" : check.status === "warn" ? "#f59e0b" : "#ef4444")}44`,
+                  }}>
+                    {check.severity.toUpperCase()}
+                  </span>
+                )}
+              </div>
+              {check?.description && (
+                <p style={{ margin: "0 0 8px", fontSize: "11px", color: "#888", lineHeight: 1.6 }}>
+                  {check.description}
+                </p>
+              )}
+              {check?.recommendation && (
+                <div style={{ borderTop: "1px solid #1e1e2a", paddingTop: "8px" }}>
+                  <p style={{ margin: 0, fontSize: "10px", color: "#555", lineHeight: 1.6 }}>
+                    <span style={{ color: "#f59e0b" }}>💡</span> {check.recommendation}
+                  </p>
+                </div>
+              )}
+              {!check && (
+                <p style={{ margin: 0, fontSize: "11px", color: "#444", fontStyle: "italic" }}>
+                  Run audit to see details
+                </p>
+              )}
+            </div>
+          )}
+        </span>
         <span style={{ fontSize: "13px", fontWeight: 600, flex: 1, color: isDone ? "#e0e0e0" : isPending ? "#333" : "#888" }}>
           {meta.title}
         </span>
@@ -500,7 +572,7 @@ function CheckCard({ check, isScanning, scanIndex, myIndex }: {
   );
 }
 
-function AuditTab() {
+function AuditTab({ onResult }: { onResult?: (r: SecurityAuditResponse | null) => void }) {
   const [phase, setPhase]       = useState<"idle" | "scanning" | "done">("idle");
   const [scanIndex, setScanIndex] = useState(-1);
   const [progress, setProgress] = useState(0);
@@ -519,9 +591,10 @@ function AuditTab() {
       return r.json() as Promise<SecurityAuditResponse>;
     });
 
-    for (let i = 0; i < 6; i++) {
+    const n = CHECK_META.length;
+    for (let i = 0; i < n; i++) {
       setScanIndex(i);
-      setProgress(Math.round(((i + 0.7) / 6) * 100));
+      setProgress(Math.round(((i + 0.7) / n) * 100));
       await new Promise(res => setTimeout(res, 520));
     }
     setProgress(98);
@@ -529,6 +602,7 @@ function AuditTab() {
     try {
       const data = await fetchPromise;
       setResult(data);
+      onResult?.(data);
       setProgress(100);
       setPhase("done");
     } catch (e: any) {
@@ -559,7 +633,7 @@ function AuditTab() {
                 🛡️ Security Audit
               </h2>
               <p style={{ margin: 0, fontSize: "13px", color: "#555", lineHeight: "1.6" }}>
-                Runs 6 targeted checks across all agents and their config files — covering privilege abuse, plaintext secrets, prompt injection, exec access, and subagent control.
+                Runs 25 targeted checks across all agents and their config files — covering privilege abuse, plaintext secrets, exec access, subagent control, direct attacks, encoding obfuscation, persona overrides, social engineering, crescendo escalation, many-shot priming, CoT injection, policy puppetry, document injection, MCP/tool-calling boundary attacks, credential extraction, structured data exfiltration, jailbreak framings, multi-turn manipulation, context confusion, role hijacking, policy-bypass via exception clauses, indirect RAG/web/email injection, and refusal-threshold boundary testing.
               </p>
             </>
           )}
@@ -567,7 +641,7 @@ function AuditTab() {
             <>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
                 <span style={{ fontSize: "12px", color: "#888" }}>
-                  Running check {Math.min(scanIndex + 1, 6)} of 6…
+                  Running check {Math.min(scanIndex + 1, CHECK_META.length)} of {CHECK_META.length}…
                 </span>
                 <span style={{ fontSize: "12px", color: ORANGE, fontFamily: "ui-monospace,monospace" }}>{progress}%</span>
               </div>
@@ -965,6 +1039,7 @@ export default function AuditPage() {
   const [lastScannedAt, setLastScannedAt] = useState<number>(0);
   const [tab, setTab] = useState<Tab>("events");
   const [tick, setTick] = useState(0);
+  const [lastAuditResult, setLastAuditResult] = useState<SecurityAuditResponse | null>(null);
 
   const fetchData = useCallback(async (silent = false) => {
     if (!silent) setRefreshing(true);
@@ -1003,9 +1078,12 @@ export default function AuditPage() {
 
   if (loading) return <Skeleton />;
 
-  // Security posture label
-  const critCount = data?.summary.critical ?? 0;
-  const highCount = data?.summary.high ?? 0;
+  // Security posture label — combine event stream + audit check results
+  const auditCritFails = lastAuditResult?.checks.filter(c => c.status === "fail" && c.severity === "critical").length ?? 0;
+  const auditHighFails = lastAuditResult?.checks.filter(c => c.status === "fail" && (c.severity === "high" || c.severity === "critical")).length ?? 0;
+  const auditWarnCount = lastAuditResult?.checks.filter(c => c.status === "warn").length ?? 0;
+  const critCount = (data?.summary.critical ?? 0) + auditCritFails;
+  const highCount = (data?.summary.high ?? 0) + auditHighFails;
   const postureLabel = critCount > 0 ? "CRITICAL" : highCount > 0 ? "ELEVATED" : "NOMINAL";
   const postureColor = critCount > 0 ? "#ef4444" : highCount > 0 ? "#f97316" : "#22c55e";
 
@@ -1091,15 +1169,15 @@ export default function AuditPage() {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px" }}>
               <KpiCard
                 label="Critical Events"
-                value={data?.summary.critical ?? 0}
-                sub={`${data?.summary.high ?? 0} high severity`}
+                value={critCount}
+                sub={`${highCount} high severity`}
                 accent="#ef4444"
-                alert
+                alert={critCount > 0}
               />
               <KpiCard
                 label="High Severity"
-                value={data?.summary.high ?? 0}
-                sub={`${data?.summary.medium ?? 0} medium`}
+                value={highCount}
+                sub={lastAuditResult ? `${auditWarnCount} audit warn${auditWarnCount !== 1 ? "s" : ""}` : `${data?.summary.medium ?? 0} medium`}
                 accent="#f97316"
               />
               <KpiCard
@@ -1145,7 +1223,7 @@ export default function AuditPage() {
             {tab === "infrastructure" && data && <InfrastructureTab routers={data.routers} />}
             {tab === "agents" && data && <AgentRiskTab agents={data.agentRisk} />}
             {tab === "trends" && data && <LiveTrendsTab data={data} />}
-            {tab === "audit" && <AuditTab />}
+            {tab === "audit" && <AuditTab onResult={setLastAuditResult} />}
 
           </div>
         </div>

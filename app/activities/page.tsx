@@ -457,17 +457,34 @@ function extractSpawnedAgentIds(events: ActivityEvent[]): string[] {
   return spawned;
 }
 
+function isMetadataMsg(text: string): boolean {
+  return (
+    /^conversation info/i.test(text) ||
+    /^untrusted metadata/i.test(text) ||
+    text.includes('"message_id"') ||
+    text.includes("'message_id'") ||
+    /^```\s*json/i.test(text) ||
+    /^\s*\{/.test(text)
+  );
+}
+
 function extractLastActivity(events: ActivityEvent[]): string | undefined {
   for (let i = events.length - 1; i >= 0; i--) {
     const e = events[i];
-    const msg = (e.fullMessage ?? e.message ?? '').trim();
+    const msg = e.message?.trim() ?? '';
     if (!msg || msg.length < 10) continue;
     // Prefer agent/user chat messages
     if (msg.startsWith('🤖') || msg.startsWith('💬')) {
-      return msg.replace(/^[🤖💬]\s*/, '').slice(0, 120);
+      // Use fullMessage if available (untruncated, no prefix), else strip prefix
+      const text = (e.fullMessage ?? msg.replace(/^[🤖💬]\s*/, '')).trim();
+      if (isMetadataMsg(text)) continue;
+      if (text.length < 2) continue;
+      return text.slice(0, 120);
     }
-    // Skip system noise
+    // Skip tool calls, model changes, system noise
+    if (msg.startsWith('🛠️') || msg.startsWith('🔄') || msg.startsWith('🧠')) continue;
     if (msg.startsWith('[') || msg.startsWith('{') || msg.includes('tool_use')) continue;
+    if (isMetadataMsg(msg)) continue;
     if (msg.length > 15) return msg.slice(0, 120);
   }
   return undefined;
@@ -491,38 +508,19 @@ const SKIP_PATTERNS = [
 function extractTaskMessage(events: ActivityEvent[]): string | undefined {
   for (let i = events.length - 1; i >= 0; i--) {
     const e = events[i];
-    const msg = (e.fullMessage ?? e.message ?? '').trim();
-    if (!msg.startsWith('💬')) continue;
-    const text = msg.replace(/^💬\s*/, '').trim();
+    // Always check the message field for the 💬 prefix
+    if (!e.message?.startsWith('💬')) continue;
+    // Use fullMessage (untruncated, no prefix) if available; otherwise strip prefix from message
+    const text = (e.fullMessage ?? e.message.replace(/^💬\s*/, '')).trim();
     if (text.length < 2) continue;
 
-    // Telegram/JSON metadata wrapper — try to extract actual message text
+    // Telegram/JSON metadata wrapper — the message field is truncated JSON;
+    // fullMessage (from updated router) stores the extracted real text after the block.
+    // If fullMessage is itself the JSON (old session), skip this event.
     if (/^conversation info/i.test(text) || /^untrusted metadata/i.test(text) ||
-        /^[`'"]+\s*json\s*\{/i.test(text) || /^[`'"]*\s*\{.*"message_id"/i.test(text)) {
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        try {
-          const parsed = JSON.parse(jsonMatch[0]);
-          const j = parsed?.json ?? parsed;
-          // text/message fields first
-          const inner = j?.text ?? j?.message ?? parsed?.text ?? parsed?.message;
-          if (inner && String(inner).trim().length > 2) return String(inner).trim().slice(0, 200);
-          // conversation_label often contains "SenderName: actual message"
-          const label = j?.conversation_label ?? '';
-          if (label) {
-            const colonIdx = String(label).indexOf(':');
-            const labelMsg = colonIdx >= 0 ? String(label).slice(colonIdx + 1).trim() : String(label).trim();
-            if (labelMsg.length > 2) return labelMsg.slice(0, 200);
-          }
-        } catch { /* fall through */ }
-        // Text after the JSON block
-        const afterJson = text.slice(text.lastIndexOf('}') + 1).replace(/^[`'"\s]+/, '').trim();
-        if (afterJson.length > 5) return afterJson.slice(0, 200);
-      }
-      // Text after first newline
-      const afterNewline = text.split('\n').slice(1).join('\n').trim();
-      if (afterNewline.length > 5) return afterNewline.slice(0, 200);
-      continue;
+        text.includes('"message_id"') || text.includes("'message_id'") ||
+        /^```\s*json/i.test(text)) {
+      continue; // skip, find earlier real message
     }
 
     if (SKIP_PATTERNS.some(p => p.test(text))) continue;
@@ -582,11 +580,10 @@ function SwarmTraceView({
           const res = await fetch(`/api/agent-session?${params}`);
           const events: ActivityEvent[] = await res.json();
 
-          // Capture task description (first user message) and current activity
-          const taskMsg = extractTaskMessage(events);
-          if (taskMsg) tasks.set(root.key, taskMsg);
-          const rootSummary = extractLastActivity(events);
-          if (rootSummary) summaries.set(root.key, rootSummary);
+          // Show the latest chat message as the task banner
+          const latestChat = extractLastActivity(events);
+          if (latestChat) tasks.set(root.key, latestChat);
+          if (latestChat) summaries.set(root.key, latestChat);
 
           const spawnedIds = extractSpawnedAgentIds(events);
 
@@ -690,8 +687,7 @@ function SwarmTraceView({
             const ev: ActivityEvent[] = await fetch(`/api/agent-session?${p}`).then(r => r.json());
             const sum = extractLastActivity(ev);
             if (sum) summaryUpdates.set(s.key, sum);
-            const task = extractTaskMessage(ev);
-            if (task) taskUpdates.set(s.key, task);
+            if (sum) taskUpdates.set(s.key, sum);
           } catch { /* ignore */ }
         }),
         ...liveDelegates.map(async s => {
@@ -745,8 +741,8 @@ function SwarmTraceView({
             {taskMsg && (
               <div className="px-4 pt-3 pb-2" style={{ borderBottom: "1px solid #111", background: "#09090d" }}>
                 <div className="flex items-start gap-2">
-                  <span className="text-[9px] font-bold uppercase tracking-widest mt-0.5 flex-shrink-0" style={{ color: "#e85d2760" }}>Task</span>
-                  <p className="text-[11px] leading-relaxed" style={{ color: "#c0b0a0" }}>
+                  <span className="text-[10px] font-bold uppercase tracking-widest mt-0.5 flex-shrink-0" style={{ color: "#e85d2760" }}>Task</span>
+                  <p className="text-sm leading-relaxed" style={{ color: "#c0b0a0" }}>
                     {taskMsg.length > 180 ? taskMsg.slice(0, 180) + "…" : taskMsg}
                   </p>
                 </div>
@@ -762,32 +758,32 @@ function SwarmTraceView({
               <span className="text-base flex-shrink-0">{chain.root.icon}</span>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs font-bold" style={{ color: "#e85d27" }}>
+                  <span className="text-sm font-bold" style={{ color: "#e85d27" }}>
                     {chain.root.agentId}
                   </span>
-                  <span className={`text-[10px] font-medium px-1.5 py-px rounded ${ts.bg} ${ts.text}`}>
+                  <span className={`text-xs font-medium px-1.5 py-px rounded ${ts.bg} ${ts.text}`}>
                     {chain.root.label}
                   </span>
                   {rootActive ? (
-                    <span className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 px-1.5 py-px rounded">
+                    <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 px-1.5 py-px rounded">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                       Active
                     </span>
                   ) : (
-                    <span className="text-[9px] text-zinc-600 uppercase tracking-wider">Done</span>
+                    <span className="text-[10px] text-zinc-600 uppercase tracking-wider">Done</span>
                   )}
-                  <span className="text-[10px] text-zinc-700">{timeAgo(chain.root.updatedAt)}</span>
+                  <span className="text-xs text-zinc-700">{timeAgo(chain.root.updatedAt)}</span>
                 </div>
               </div>
               {allDelegates.length > 0 && (
                 <div className="flex-shrink-0 flex items-center gap-3 text-right">
                   {activeCount > 0 && (
-                    <span className="text-[10px] text-emerald-500">{activeCount} working</span>
+                    <span className="text-xs text-emerald-500">{activeCount} working</span>
                   )}
                   {doneCount > 0 && (
-                    <span className="text-[10px] text-zinc-600">{doneCount} done</span>
+                    <span className="text-xs text-zinc-600">{doneCount} done</span>
                   )}
-                  <span className="text-[10px] text-zinc-700">↗</span>
+                  <span className="text-xs text-zinc-700">↗</span>
                 </div>
               )}
             </button>
@@ -795,14 +791,14 @@ function SwarmTraceView({
             {/* Team status bar */}
             {allDelegates.length > 0 && (
               <div className="flex items-center gap-3 px-4 py-2" style={{ background: "#080810", borderBottom: "1px solid #111" }}>
-                <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: "#e85d2750" }}>Team</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#e85d2750" }}>Team</span>
                 <div className="flex items-center gap-1.5 flex-wrap flex-1">
                   {allDelegates.map(s => {
                     const sActive = Date.now() - s.updatedAt < ACTIVE_MS;
                     return (
                       <span
                         key={s.key}
-                        className="flex items-center gap-1 text-[10px] px-1.5 py-px rounded"
+                        className="flex items-center gap-1 text-xs px-1.5 py-px rounded"
                         style={{ background: sActive ? "rgba(74,222,128,0.06)" : "rgba(255,255,255,0.03)", color: sActive ? "#4ade8099" : "#444" }}
                       >
                         {s.icon} {s.agentId}
@@ -829,28 +825,28 @@ function SwarmTraceView({
                     >
                       <div className="flex items-center gap-2 mb-1.5">
                         <span className="text-base flex-shrink-0">{s.icon}</span>
-                        <span className="text-xs font-semibold text-zinc-200">{s.agentId}</span>
+                        <span className="text-sm font-semibold text-zinc-200">{s.agentId}</span>
                         {sActive ? (
-                          <span className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-emerald-400">
+                          <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-emerald-400">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                             Active
                           </span>
                         ) : (
-                          <span className="text-[9px] text-zinc-600">✓ Done</span>
+                          <span className="text-[10px] text-zinc-600">✓ Done</span>
                         )}
-                        <span className="ml-auto text-[9px] text-zinc-800 opacity-0 group-hover:opacity-100 transition-opacity">↗</span>
+                        <span className="ml-auto text-[10px] text-zinc-800 opacity-0 group-hover:opacity-100 transition-opacity">↗</span>
                       </div>
                       {summary ? (
-                        <div className="text-[10px] leading-relaxed line-clamp-2" style={{ color: "#6a6a8a" }}>
+                        <div className="text-xs leading-relaxed line-clamp-2" style={{ color: "#6a6a8a" }}>
                           {summary}
                         </div>
                       ) : (
-                        <div className="text-[10px] text-zinc-800 italic">
+                        <div className="text-xs text-zinc-800 italic">
                           {sActive ? "Working…" : timeAgo(s.updatedAt)}
                         </div>
                       )}
                       {s.totalTokens > 0 && (
-                        <div className="text-[9px] font-mono text-zinc-800 mt-1.5">{fmtTokens(s.totalTokens)} tok</div>
+                        <div className="text-[10px] font-mono text-zinc-800 mt-1.5">{fmtTokens(s.totalTokens)} tok</div>
                       )}
                     </button>
                   );
