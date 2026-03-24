@@ -643,25 +643,36 @@ function SwarmTraceView({
     buildChains();
   }, [activeSessions, allSessions]);
 
-  // Poll summaries every 5s for any active session in the chains
+  // Poll summaries + task messages every 5s for active sessions
   useEffect(() => {
-    const liveKeys = [
-      ...chains.filter(c => Date.now() - c.root.updatedAt < ACTIVE_MS).map(c => c.root),
-      ...chains.flatMap(c => c.steps.flatMap(s => s.sessions)).filter(s => Date.now() - s.updatedAt < ACTIVE_MS),
-    ];
-    if (liveKeys.length === 0) return;
+    const liveRoots = chains.filter(c => Date.now() - c.root.updatedAt < ACTIVE_MS).map(c => c.root);
+    const liveDelegates = chains.flatMap(c => c.steps.flatMap(s => s.sessions)).filter(s => Date.now() - s.updatedAt < ACTIVE_MS);
+    if (liveRoots.length === 0 && liveDelegates.length === 0) return;
     const poll = async () => {
-      const updates = new Map<string, string>();
-      await Promise.all(liveKeys.map(async s => {
-        try {
-          const p = new URLSearchParams({ agent: s.agentId, routerId: s.routerId, sessionKey: s.key });
-          const r = await fetch(`/api/agent-session?${p}`);
-          const ev: ActivityEvent[] = await r.json();
-          const sum = extractLastActivity(ev);
-          if (sum) updates.set(s.key, sum);
-        } catch { /* ignore */ }
-      }));
-      if (updates.size > 0) setSessionSummaries(prev => new Map([...prev, ...updates]));
+      const summaryUpdates = new Map<string, string>();
+      const taskUpdates = new Map<string, string>();
+      await Promise.all([
+        ...liveRoots.map(async s => {
+          try {
+            const p = new URLSearchParams({ agent: s.agentId, routerId: s.routerId, sessionKey: s.key });
+            const ev: ActivityEvent[] = await fetch(`/api/agent-session?${p}`).then(r => r.json());
+            const sum = extractLastActivity(ev);
+            if (sum) summaryUpdates.set(s.key, sum);
+            const task = extractTaskMessage(ev);
+            if (task) taskUpdates.set(s.key, task);
+          } catch { /* ignore */ }
+        }),
+        ...liveDelegates.map(async s => {
+          try {
+            const p = new URLSearchParams({ agent: s.agentId, routerId: s.routerId, sessionKey: s.key });
+            const ev: ActivityEvent[] = await fetch(`/api/agent-session?${p}`).then(r => r.json());
+            const sum = extractLastActivity(ev);
+            if (sum) summaryUpdates.set(s.key, sum);
+          } catch { /* ignore */ }
+        }),
+      ]);
+      if (summaryUpdates.size > 0) setSessionSummaries(prev => new Map([...prev, ...summaryUpdates]));
+      if (taskUpdates.size > 0) setTaskMessages(prev => new Map([...prev, ...taskUpdates]));
     };
     const iv = setInterval(poll, 5_000);
     return () => clearInterval(iv);
