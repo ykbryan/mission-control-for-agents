@@ -480,6 +480,9 @@ const SKIP_PATTERNS = [
   /^resuming previous session/i,
   /^picking up where/i,
   /^your task is to continue/i,
+  /^conversation info/i,
+  /^untrusted metadata/i,
+  /^\s*\{.*"message_id"/i,   // raw Telegram JSON
 ];
 
 // Find the most recent substantive user (💬) message — the current task
