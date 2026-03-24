@@ -1,32 +1,25 @@
 :root {
   --bg-color: #090a0f;
-  --primary-color: #00ff41;
+  --text-color: #00ff41;
   --border-color: #1a1b26;
   --accent-color: #00cc33;
-  --font-family: 'Courier New', Courier, monospace;
-  --grid-unit: 8px;
+  --font-mono: "Courier New", Courier, monospace;
+}
+
+body {
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  font-family: var(--font-mono);
+  margin: 0;
+  padding: 0;
+  line-height: 1.6;
 }
 
 * {
   box-sizing: border-box;
-  margin: 0;
-  padding: 0;
 }
 
-html,
-body {
-  background-color: var(--bg-color);
-  color: var(--primary-color);
-  font-family: var(--font-family);
-  width: 100%;
-  min-height: 100vh;
-}
-
-a {
-  color: var(--accent-color);
-  text-decoration: none;
-}
-
-a:hover {
-  text-decoration: underline;
+::selection {
+  background-color: var(--accent-color);
+  color: var(--bg-color);
 }
