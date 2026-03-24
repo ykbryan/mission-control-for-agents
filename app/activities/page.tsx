@@ -470,6 +470,7 @@ function SwarmTraceView({
   const [orphans, setOrphans] = useState<ActivitySession[]>([]);
   const [loading, setLoading] = useState(true);
   const [sessionSummaries, setSessionSummaries] = useState<Map<string, string>>(new Map());
+  const hasLoadedRef = useRef(false);
 
   useEffect(() => {
     // Prefer telegram sessions as roots (triggered by external message);
@@ -486,7 +487,8 @@ function SwarmTraceView({
       return;
     }
 
-    setLoading(true);
+    // Only show spinner on first load; subsequent rebuilds (every 5s poll) are silent.
+    if (!hasLoadedRef.current) setLoading(true);
 
     async function buildChains() {
       const builtChains: SwarmChain[] = [];
@@ -586,6 +588,7 @@ function SwarmTraceView({
 
       // Sessions not part of any chain
       const remainingOrphans = activeSessions.filter(s => !claimedKeys.has(s.key));
+      hasLoadedRef.current = true;
       setChains(builtChains);
       setOrphans(remainingOrphans);
       setLoading(false);
