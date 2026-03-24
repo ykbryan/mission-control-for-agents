@@ -1,45 +1,96 @@
 .hero {
-  padding: 6rem 2rem;
-  border-bottom: 1px solid var(--border-color);
+  padding: 8rem 2rem;
+  border-bottom: 2px solid var(--border-color);
   text-align: center;
-  background: radial-gradient(circle at center, rgba(0, 204, 51, 0.05) 0%, transparent 70%);
+  position: relative;
+  background: radial-gradient(circle at center, rgba(0, 204, 51, 0.1) 0%, var(--bg-color) 70%);
+  overflow: hidden;
+}
+
+.hero::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 100%;
+  background: 
+    linear-gradient(90deg, var(--border-color) 1px, transparent 1px) 0 0 / 50px 50px,
+    linear-gradient(var(--border-color) 1px, transparent 1px) 0 0 / 50px 50px;
+  opacity: 0.2;
+  z-index: 0;
 }
 
 .hero__container {
   max-width: 1200px;
   margin: 0 auto;
+  position: relative;
+  z-index: 1;
 }
 
 .hero__title {
-  font-size: 4rem;
+  font-size: 5rem;
   margin-bottom: 1rem;
-  text-shadow: 0 0 15px var(--text-color);
+  color: var(--text-color);
+  text-shadow: 0 0 10px var(--text-color), 0 0 20px var(--accent-color);
   text-transform: uppercase;
-  letter-spacing: 0.2rem;
+  letter-spacing: 0.3rem;
+  position: relative;
+  display: inline-block;
+  animation: glitch 3s infinite alternate;
+}
+
+@keyframes glitch {
+  0% { text-shadow: 0 0 10px var(--text-color); }
+  5% { text-shadow: -2px 0 var(--glitch-color1), 2px 0 var(--glitch-color2); }
+  10% { text-shadow: 0 0 10px var(--text-color); }
+  15% { text-shadow: 2px 0 var(--glitch-color1), -2px 0 var(--glitch-color2); }
+  20% { text-shadow: 0 0 10px var(--text-color); }
+  100% { text-shadow: 0 0 10px var(--text-color); }
 }
 
 .hero__subtitle {
   font-size: 1.5rem;
   margin-bottom: 3rem;
-  color: var(--accent-color);
+  color: #fff;
+  opacity: 0.8;
+  letter-spacing: 0.1rem;
 }
 
 .hero__button {
-  background-color: transparent;
+  background-color: rgba(0, 255, 65, 0.05);
   color: var(--text-color);
   border: 1px solid var(--text-color);
-  padding: 1rem 3rem;
+  padding: 1.2rem 3.5rem;
   font-family: inherit;
   font-size: 1.25rem;
   font-weight: bold;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: all 0.2s ease;
   text-transform: uppercase;
-  letter-spacing: 0.1rem;
+  letter-spacing: 0.15rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.hero__button::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(0, 255, 65, 0.4), transparent);
+  transition: all 0.4s ease;
+}
+
+.hero__button:hover::before {
+  left: 100%;
 }
 
 .hero__button:hover {
   background-color: var(--text-color);
   color: var(--bg-color);
-  box-shadow: 0 0 20px var(--accent-color);
+  box-shadow: 0 0 20px var(--accent-color), 0 0 40px var(--text-color);
+  text-shadow: none;
 }
