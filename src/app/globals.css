@@ -3,23 +3,28 @@
   --text-color: #00ff41;
   --border-color: #1a1b26;
   --accent-color: #00cc33;
-  --font-mono: "Courier New", Courier, monospace;
+  --font-family: 'Courier New', Courier, monospace;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
 
 body {
   background-color: var(--bg-color);
   color: var(--text-color);
-  font-family: var(--font-mono);
-  margin: 0;
-  padding: 0;
-  line-height: 1.6;
+  font-family: var(--font-family);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-* {
-  box-sizing: border-box;
+a {
+  color: var(--accent-color);
+  text-decoration: none;
 }
 
-::selection {
-  background-color: var(--accent-color);
-  color: var(--bg-color);
+a:hover {
+  text-decoration: underline;
 }
