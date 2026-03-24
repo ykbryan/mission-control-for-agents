@@ -1,11 +1,12 @@
-import { Hero } from "../components/Hero/Hero";
-import { FeatureGrid } from "../components/FeatureGrid/FeatureGrid";
+// Marketing entry — Server Component (default)
+import { Hero } from '@/components/server/Hero'
+import { FeatureGrid } from '@/components/server/FeatureGrid'
 
-export default function Home() {
+export default function MarketingHomePage() {
   return (
-    <main>
+    <main className="min-h-screen bg-zinc-950">
       <Hero />
       <FeatureGrid />
     </main>
-  );
+  )
 }
