@@ -563,7 +563,7 @@ function SwarmTraceView({
             const candidates = activeSessions.filter(s =>
               !rootKeys.has(s.key) &&
               !stepMap.has(s.agentId) &&
-              Math.abs(s.updatedAt - root.updatedAt) < 5 * 60 * 1000
+              Math.abs(s.updatedAt - root.updatedAt) < 15 * 60 * 1000
             );
             for (const c of candidates) {
               stepMap.set(c.agentId, [c]);
