@@ -400,6 +400,7 @@ function CheckCard({ check, isScanning, scanIndex, myIndex }: {
   myIndex: number;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [iconHover, setIconHover] = useState(false);
   const meta = CHECK_META[myIndex];
   const isActive  = isScanning && scanIndex === myIndex;
   const isPending = isScanning && scanIndex < myIndex;
@@ -441,7 +442,54 @@ function CheckCard({ check, isScanning, scanIndex, myIndex }: {
           display: "flex", alignItems: "center", justifyContent: "center",
         }}>{myIndex + 1}</span>
 
-        <span style={{ fontSize: "15px", flexShrink: 0 }}>{meta.icon}</span>
+        <span
+          style={{ fontSize: "15px", flexShrink: 0, position: "relative", cursor: "help" }}
+          onMouseEnter={() => setIconHover(true)}
+          onMouseLeave={() => setIconHover(false)}
+        >
+          {meta.icon}
+          {iconHover && (
+            <div style={{
+              position: "absolute", left: "30px", top: "50%", transform: "translateY(-50%)",
+              zIndex: 100, width: "280px", pointerEvents: "none",
+              background: "#111118", border: "1px solid #2a2a38",
+              borderRadius: "10px", padding: "12px 14px", boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+                <span style={{ fontSize: "16px" }}>{meta.icon}</span>
+                <span style={{ fontSize: "12px", fontWeight: 700, color: "#e0e0e0" }}>{meta.title}</span>
+                {check && (
+                  <span style={{
+                    marginLeft: "auto", fontSize: "9px", fontWeight: 700, letterSpacing: "0.08em",
+                    padding: "2px 7px", borderRadius: "4px",
+                    background: (check.status === "pass" ? "#22c55e" : check.status === "warn" ? "#f59e0b" : "#ef4444") + "22",
+                    color: check.status === "pass" ? "#22c55e" : check.status === "warn" ? "#f59e0b" : "#ef4444",
+                    border: `1px solid ${(check.status === "pass" ? "#22c55e" : check.status === "warn" ? "#f59e0b" : "#ef4444")}44`,
+                  }}>
+                    {check.severity.toUpperCase()}
+                  </span>
+                )}
+              </div>
+              {check?.description && (
+                <p style={{ margin: "0 0 8px", fontSize: "11px", color: "#888", lineHeight: 1.6 }}>
+                  {check.description}
+                </p>
+              )}
+              {check?.recommendation && (
+                <div style={{ borderTop: "1px solid #1e1e2a", paddingTop: "8px" }}>
+                  <p style={{ margin: 0, fontSize: "10px", color: "#555", lineHeight: 1.6 }}>
+                    <span style={{ color: "#f59e0b" }}>💡</span> {check.recommendation}
+                  </p>
+                </div>
+              )}
+              {!check && (
+                <p style={{ margin: 0, fontSize: "11px", color: "#444", fontStyle: "italic" }}>
+                  Run audit to see details
+                </p>
+              )}
+            </div>
+          )}
+        </span>
         <span style={{ fontSize: "13px", fontWeight: 600, flex: 1, color: isDone ? "#e0e0e0" : isPending ? "#333" : "#888" }}>
           {meta.title}
         </span>
