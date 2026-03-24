@@ -492,7 +492,28 @@ function extractTaskMessage(events: ActivityEvent[]): string | undefined {
     const msg = (e.fullMessage ?? e.message ?? '').trim();
     if (!msg.startsWith('💬')) continue;
     const text = msg.replace(/^💬\s*/, '').trim();
-    if (text.length < 10) continue;
+    if (text.length < 2) continue;
+
+    // Telegram metadata wrapper — try to extract actual message text
+    if (/^conversation info/i.test(text) || /^untrusted metadata/i.test(text)) {
+      // Try JSON extraction (look for text/message fields)
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          const parsed = JSON.parse(jsonMatch[0]);
+          const inner = parsed?.json?.text ?? parsed?.json?.message ?? parsed?.text ?? parsed?.message;
+          if (inner && String(inner).trim().length > 2) return String(inner).trim().slice(0, 200);
+        } catch { /* fall through */ }
+        // Try text appearing after the closing brace
+        const afterJson = text.slice(text.lastIndexOf('}') + 1).replace(/^['\s]+/, '').trim();
+        if (afterJson.length > 5) return afterJson.slice(0, 200);
+      }
+      // Try anything after a newline following the metadata line
+      const afterNewline = text.split('\n').slice(1).join('\n').trim();
+      if (afterNewline.length > 5) return afterNewline.slice(0, 200);
+      continue;
+    }
+
     if (SKIP_PATTERNS.some(p => p.test(text))) continue;
     return text.slice(0, 200);
   }
