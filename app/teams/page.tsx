@@ -33,8 +33,10 @@ interface Team {
   orchestratorId: string;
   orchestratorRouterId: string;
   members: { agentId: string; routerId: string }[];
-  workflow: string;         // extracted summary from AGENTS.md
-  teamName?: string;        // extracted from "## Name — Team …" heading in AGENTS.md
+  workflow: string;
+  teamName?: string;           // extracted from "## Name — Team …" heading
+  teamDescription?: string;    // first paragraph under the team heading
+  memberRoles: Map<string, string>; // agentId.toLowerCase() → role from AGENTS.md table
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -85,15 +87,64 @@ function extractPipelineSteps(content: string): string[] {
   return steps.slice(0, 8);
 }
 
-// Extract a named team from a heading like "## The Octonauts — Team & Responsibilities"
+// Extract a named team from a heading like:
+//   "## The Octonauts — Team & Responsibilities"
+//   "## Shelldon Swarm Protocol — Brainy's Operating Law"
 // Checks both AGENTS.md and MEMORY.md
 function extractTeamName(agentsMd: string | null, memoryMd?: string | null): string | undefined {
-  const PATTERN = /^#{1,3}\s+(.+?)\s*(?:—|--|–|-)\s*(?:team|squad|crew|members?|roster|group|responsibilities)/im;
+  // [^\n]* allows arbitrary words (including apostrophes) before the keyword on the same line
+  const PATTERN = /^#{1,3}\s+(.+?)\s*(?:—|--|–|-)[^\n]*\b(?:team|squad|crew|members?|roster|group|responsibilities|protocol|operating|law|framework|swarm)\b/im;
   const fromAgents = agentsMd?.match(PATTERN);
   if (fromAgents) return fromAgents[1].trim();
   const fromMemory = memoryMd?.match(PATTERN);
   if (fromMemory) return fromMemory[1].trim();
   return undefined;
+}
+
+// Extract a short description from the section immediately following the team-name heading
+function extractTeamDescription(agentsMd: string | null, teamName: string | undefined): string | undefined {
+  if (!agentsMd || !teamName) return undefined;
+  const escapedName = teamName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // Find the heading line containing the team name, then grab the first non-empty paragraph after it
+  const afterHeading = agentsMd.replace(new RegExp(`^.*${escapedName}.*$`, "im"), "");
+  const lines = afterHeading.split("\n");
+  const paras: string[] = [];
+  for (const line of lines) {
+    const t = line.trim();
+    if (!t) { if (paras.length) break; continue; }
+    if (/^#{1,4}\s/.test(t)) break; // stop at next heading
+    if (/^\|/.test(t)) break;       // stop at table
+    paras.push(t.replace(/\*\*/g, ""));
+  }
+  const text = paras.join(" ").trim();
+  return text.length > 10 ? text.slice(0, 200) : undefined;
+}
+
+// Extract member roles from a markdown table in AGENTS.md (| Agent | Role | ... |)
+function extractMemberRoles(agentsMd: string | null): Map<string, string> {
+  const roles = new Map<string, string>();
+  if (!agentsMd) return roles;
+  const lines = agentsMd.split("\n");
+  let inTable = false;
+  let agentCol = -1, roleCol = -1;
+  for (const line of lines) {
+    const t = line.trim();
+    if (!t.startsWith("|")) { inTable = false; agentCol = -1; roleCol = -1; continue; }
+    const cells = t.split("|").map(c => c.trim()).filter((_, i, arr) => i > 0 && i < arr.length - 1);
+    if (!inTable) {
+      // header row — find Agent and Role columns
+      agentCol = cells.findIndex(c => /^agent$/i.test(c));
+      roleCol  = cells.findIndex(c => /^role$/i.test(c));
+      if (agentCol >= 0 && roleCol >= 0) inTable = true;
+      continue;
+    }
+    if (/^[-|]+$/.test(t.replace(/\s/g, ""))) continue; // separator row
+    if (agentCol < 0 || roleCol < 0 || cells.length <= Math.max(agentCol, roleCol)) continue;
+    const name = cells[agentCol].replace(/\*\*/g, "").toLowerCase();
+    const role = cells[roleCol].replace(/\*\*/g, "");
+    if (name && role) roles.set(name, role);
+  }
+  return roles;
 }
 
 // Extract task-routing lines from an orchestrator's MEMORY.md for a specific member agent
@@ -405,12 +456,16 @@ export default function TeamsPage() {
 
       const workflow = extractWorkflow(orch.agentsMd ?? "");
       const teamName = extractTeamName(orch.agentsMd, orch.memoryMd);
+      const teamDescription = extractTeamDescription(orch.agentsMd, teamName);
+      const memberRoles = extractMemberRoles(orch.agentsMd);
       return {
         orchestratorId: orch.agentId,
         orchestratorRouterId: orch.routerId,
         members,
         workflow,
         teamName,
+        teamDescription,
+        memberRoles,
       };
     });
 
@@ -444,7 +499,7 @@ export default function TeamsPage() {
 
   // ── agent mini-card ─────────────────────────────────────────────────────────
 
-  function MemberCard({ agentId, routerId, taskLines }: { agentId: string; routerId: string; taskLines?: string[] }) {
+  function MemberCard({ agentId, routerId, taskLines, roleOverride }: { agentId: string; routerId: string; taskLines?: string[]; roleOverride?: string }) {
     const live = getLiveAgent(agentId, routerId);
     const stat = getStatic(agentId);
     const dot  = statusColor(live?.lastActiveAt);
@@ -466,8 +521,8 @@ export default function TeamsPage() {
             <p style={{ margin: 0, fontSize: "13px", fontWeight: 600, color: "#d0d0d0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {stat?.name ?? agentId}
             </p>
-            <p style={{ margin: 0, fontSize: "10px", color: "#555", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {stat?.role ?? "Agent"}
+            <p style={{ margin: 0, fontSize: "10px", color: roleOverride ? ORANGE + "99" : "#555", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {roleOverride ?? stat?.role ?? "Agent"}
             </p>
           </div>
           <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: dot, flexShrink: 0 }} />
@@ -633,7 +688,9 @@ export default function TeamsPage() {
     onPipelineToggle: () => void;
   }) {
     const orchMemory = orchAn?.memoryMd ?? "";
-    const pipelineSteps = extractPipelineSteps(orchAn?.agentsMd ?? "");
+    const pipelineSteps = extractPipelineSteps(orchAn?.agentsMd ?? "").length >= 3
+      ? extractPipelineSteps(orchAn?.agentsMd ?? "")
+      : extractPipelineSteps(orchMemory);
 
     return (
       <div style={{
@@ -641,6 +698,13 @@ export default function TeamsPage() {
         borderTop: "none", borderRadius: "0 0 10px 10px",
         overflow: "hidden",
       }}>
+        {/* Team description */}
+        {team.teamDescription && (
+          <div style={{ padding: "12px 20px 10px", borderBottom: "1px solid #0e0e14" }}>
+            <p style={{ margin: 0, fontSize: "11px", color: "#444", lineHeight: 1.6 }}>{team.teamDescription}</p>
+          </div>
+        )}
+
         {/* Pipeline toggle bar */}
         {pipelineSteps.length > 0 && (
           <div style={{ borderBottom: "1px solid #111116" }}>
@@ -688,12 +752,15 @@ export default function TeamsPage() {
               {team.members.map(m => {
                 const mStat = getStatic(m.agentId);
                 const taskLines = extractMemberTaskLines(orchMemory, m.agentId, mStat?.name);
+                const roleOverride = team.memberRoles.get(m.agentId.toLowerCase())
+                  ?? (mStat?.name ? team.memberRoles.get(mStat.name.toLowerCase()) : undefined);
                 return (
                   <MemberCard
                     key={`${m.routerId}--${m.agentId}`}
                     agentId={m.agentId}
                     routerId={m.routerId}
                     taskLines={taskLines}
+                    roleOverride={roleOverride}
                   />
                 );
               })}
