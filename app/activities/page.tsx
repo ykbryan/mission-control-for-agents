@@ -568,11 +568,10 @@ function SwarmTraceView({
           }
 
           // Always add timing-based candidates that weren't detected via sessions_spawn.
-          // Any active session started within 5 min of root and not yet claimed counts as a delegate.
-          if (roots.length === 1) {
-            const rootKeys = new Set(roots.map(r => r.key));
+          // Any active session within 15 min of this root and not yet claimed by another root.
+          {
             const candidates = activeSessions.filter(s =>
-              !rootKeys.has(s.key) &&
+              !claimedKeys.has(s.key) &&
               !stepMap.has(s.agentId) &&
               Math.abs(s.updatedAt - root.updatedAt) < 15 * 60 * 1000
             );
