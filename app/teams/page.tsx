@@ -86,10 +86,13 @@ function extractPipelineSteps(content: string): string[] {
 }
 
 // Extract a named team from a heading like "## The Octonauts — Team & Responsibilities"
-function extractTeamName(agentsMd: string | null): string | undefined {
-  if (!agentsMd) return undefined;
-  const m = agentsMd.match(/^#{1,3}\s+(.+?)\s*(?:—|--|–|-)\s*(?:team|squad|crew|members?|roster|group|responsibilities)/im);
-  if (m) return m[1].trim();
+// Checks both AGENTS.md and MEMORY.md
+function extractTeamName(agentsMd: string | null, memoryMd?: string | null): string | undefined {
+  const PATTERN = /^#{1,3}\s+(.+?)\s*(?:—|--|–|-)\s*(?:team|squad|crew|members?|roster|group|responsibilities)/im;
+  const fromAgents = agentsMd?.match(PATTERN);
+  if (fromAgents) return fromAgents[1].trim();
+  const fromMemory = memoryMd?.match(PATTERN);
+  if (fromMemory) return fromMemory[1].trim();
   return undefined;
 }
 
@@ -401,7 +404,7 @@ export default function TeamsPage() {
         .filter(Boolean) as { agentId: string; routerId: string }[];
 
       const workflow = extractWorkflow(orch.agentsMd ?? "");
-      const teamName = extractTeamName(orch.agentsMd);
+      const teamName = extractTeamName(orch.agentsMd, orch.memoryMd);
       return {
         orchestratorId: orch.agentId,
         orchestratorRouterId: orch.routerId,
