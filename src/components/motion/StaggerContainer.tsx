@@ -20,8 +20,8 @@ const itemVariants: Variants = {
     y: 0,
     transition: {
       type: 'spring',
-      stiffness: 280,
-      damping: 24,
+      stiffness: 100,
+      damping: 20,
     },
   },
 }

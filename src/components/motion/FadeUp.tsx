@@ -10,8 +10,8 @@ const fadeUpVariants: Variants = {
     y: 0,
     transition: {
       type: 'spring',
-      stiffness: 260,
-      damping: 22,
+      stiffness: 100,
+      damping: 20,
     },
   },
 }
