@@ -303,12 +303,24 @@ export default function SpendingPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
 
+  interface WinStats { requests: number; tokens: number; cost: number; }
+  interface RequestStats {
+    windows:     Record<string, WinStats>;
+    dailySeries: { date: string; requests: number; tokens: number; cost: number }[];
+    totals:      WinStats;
+  }
+  const [reqStats, setReqStats] = useState<RequestStats | null>(null);
+
   const fetchData = useCallback(async (silent = false) => {
     if (!silent) setRefreshing(true);
     try {
-      const res = await fetch("/api/telemetry/agent-costs");
-      if (!res.ok) throw new Error("Failed to load telemetry");
-      setData(await res.json());
+      const [costsRes, statsRes] = await Promise.all([
+        fetch("/api/telemetry/agent-costs"),
+        fetch("/api/telemetry/request-stats"),
+      ]);
+      if (!costsRes.ok) throw new Error("Failed to load telemetry");
+      setData(await costsRes.json());
+      if (statsRes.ok) setReqStats(await statsRes.json());
       setLastRefresh(new Date());
     } catch (e: any) {
       setError(e.message);
@@ -320,7 +332,7 @@ export default function SpendingPage() {
 
   useEffect(() => {
     fetchData();
-    const t = setInterval(() => fetchData(true), 30_000);
+    const t = setInterval(() => fetchData(true), 60_000);
     return () => clearInterval(t);
   }, [fetchData]);
 
@@ -522,6 +534,119 @@ export default function SpendingPage() {
           <KpiCard label="Active Agents"     value={String((data?.costs ?? []).filter(c => c.estimatedCost > 0).length)} sub="with recorded spend" accent="#38bdf8" />
         </div>
 
+        {/* Cost trend chart — always visible above telemetry */}
+        <div style={{ background: "#0f0f12", border: "1px solid #1e1e26", borderRadius: "10px", padding: "24px" }}>
+          <SectionHead>Cost trend — {period === "all" ? "all time" : PERIODS.find(p => p.id === period)?.label.toLowerCase() + " period"}</SectionHead>
+          <ResponsiveContainer width="100%" height={240}>
+            <AreaChart data={areaSeries} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id="aGradTop" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%"  stopColor={ORANGE} stopOpacity={0.2} />
+                  <stop offset="95%" stopColor={ORANGE} stopOpacity={0}   />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#1a1a22" vertical={false} />
+              <XAxis dataKey="date" stroke="#333" tick={{ fontSize: 11, fill: "#555", fontFamily: "ui-monospace,monospace" }} tickLine={false} axisLine={{ stroke: "#222" }} tickFormatter={fmtDate} />
+              <YAxis stroke="#333" tick={{ fontSize: 11, fill: "#555", fontFamily: "ui-monospace,monospace" }} tickLine={false} axisLine={false} tickFormatter={v => `$${v.toFixed(3)}`} width={64} />
+              <Tooltip content={<ChartTooltip />} />
+              <Area type="monotone" dataKey="cost" stroke={ORANGE} strokeWidth={2} fill="url(#aGradTop)" dot={false} activeDot={{ r: 4, fill: ORANGE, stroke: "#0f0f12", strokeWidth: 2 }} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Permanent telemetry panel — requests + costs from rolling log */}
+        {reqStats && (() => {
+          const WINS = [
+            { label: "Last 1 h",    key: "h1" },
+            { label: "Last 5 h",    key: "h5" },
+            { label: "Last 24 h",   key: "d1" },
+            { label: "Last 5 days", key: "d5" },
+            { label: "Last week",   key: "w1" },
+            { label: "Last month",  key: "m1" },
+          ] as const;
+          const hasData = reqStats.totals.requests > 0 || reqStats.totals.tokens > 0;
+          return (
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+
+              {/* Section label */}
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+                <p style={{ fontSize: "10px", fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "#444", margin: 0 }}>
+                  Permanent Telemetry <span style={{ color: "#2a2a35", fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>— persisted log, independent of OpenClaw session retention</span>
+                </p>
+                <span style={{ fontSize: "10px", color: "#333", fontFamily: "ui-monospace,monospace" }}>
+                  {reqStats.totals.requests.toLocaleString()} req · {fmtTokens(reqStats.totals.tokens)} tokens · {fmtCost(reqStats.totals.cost)} logged
+                </span>
+              </div>
+
+              {/* Requests row */}
+              <div style={{ background: "#0f0f12", border: "1px solid #1e1e26", borderRadius: "10px", padding: "16px 20px" }}>
+                <p style={{ fontSize: "9px", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "#555", margin: "0 0 12px 0" }}>AI Requests (turns)</p>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: "10px" }}>
+                  {WINS.map(({ label, key }) => {
+                    const val = reqStats.windows[key]?.requests ?? 0;
+                    return (
+                      <div key={key} style={{ textAlign: "center", padding: "10px 6px", borderRadius: "8px", background: "#0a0a0d", border: `1px solid ${val > 0 ? "rgba(232,93,39,0.2)" : "#1a1a22"}` }}>
+                        <p style={{ fontSize: "9px", fontWeight: 600, letterSpacing: "0.07em", textTransform: "uppercase", color: "#444", margin: "0 0 5px 0" }}>{label}</p>
+                        <p style={{ fontSize: "20px", fontWeight: 700, fontFamily: "ui-monospace,monospace", color: val > 0 ? ORANGE : "#2a2a35", margin: 0, letterSpacing: "-0.02em" }}>{val.toLocaleString()}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Tokens + cost row */}
+              <div style={{ background: "#0f0f12", border: "1px solid #1e1e26", borderRadius: "10px", padding: "16px 20px" }}>
+                <p style={{ fontSize: "9px", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "#555", margin: "0 0 12px 0" }}>Token Cost (USD)</p>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: "10px" }}>
+                  {WINS.map(({ label, key }) => {
+                    const w = reqStats.windows[key];
+                    const cost = w?.cost ?? 0;
+                    const tokens = w?.tokens ?? 0;
+                    return (
+                      <div key={key} style={{ textAlign: "center", padding: "10px 6px", borderRadius: "8px", background: "#0a0a0d", border: `1px solid ${cost > 0 ? "rgba(139,92,246,0.2)" : "#1a1a22"}` }}>
+                        <p style={{ fontSize: "9px", fontWeight: 600, letterSpacing: "0.07em", textTransform: "uppercase", color: "#444", margin: "0 0 5px 0" }}>{label}</p>
+                        <p style={{ fontSize: "16px", fontWeight: 700, fontFamily: "ui-monospace,monospace", color: cost > 0 ? "#8b5cf6" : "#2a2a35", margin: "0 0 2px 0", letterSpacing: "-0.01em" }}>
+                          {cost > 0 ? fmtCost(cost) : "—"}
+                        </p>
+                        {tokens > 0 && <p style={{ fontSize: "9px", color: "#444", margin: 0, fontFamily: "ui-monospace,monospace" }}>{fmtTokens(tokens)}</p>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Daily bar chart — dual series */}
+              {reqStats.dailySeries.length > 1 && (
+                <div style={{ background: "#0f0f12", border: "1px solid #1e1e26", borderRadius: "10px", padding: "16px 20px" }}>
+                  <p style={{ fontSize: "9px", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "#555", margin: "0 0 12px 0" }}>Daily Trend (last 31 days)</p>
+                  <ResponsiveContainer width="100%" height={80}>
+                    <BarChart data={reqStats.dailySeries} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+                      <Bar dataKey="requests" fill={ORANGE}    opacity={0.75} radius={[2,2,0,0]} name="Requests" />
+                      <Bar dataKey="tokens"   fill="#8b5cf6"   opacity={0.4}  radius={[2,2,0,0]} name="Tokens" yAxisId="t" />
+                      <YAxis yAxisId="t" hide domain={[0, "auto"]} />
+                      <Tooltip
+                        content={({ active, payload, label }) => active && payload?.length ? (
+                          <div style={{ background: "#0f0f12", border: "1px solid #1e1e26", borderRadius: "6px", padding: "8px 12px", fontSize: "11px" }}>
+                            <p style={{ color: "#666", margin: "0 0 4px 0" }}>{label}</p>
+                            <p style={{ color: ORANGE, fontFamily: "ui-monospace,monospace", fontWeight: 700, margin: "0 0 2px 0" }}>{(payload.find(p=>p.dataKey==="requests")?.value ?? 0).toLocaleString()} req</p>
+                            <p style={{ color: "#8b5cf6", fontFamily: "ui-monospace,monospace", fontWeight: 700, margin: 0 }}>{fmtTokens(Number(payload.find(p=>p.dataKey==="tokens")?.value ?? 0))}</p>
+                          </div>
+                        ) : null}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
+              {!hasData && (
+                <p style={{ fontSize: "11px", color: "#333", margin: 0, textAlign: "center" }}>
+                  Tracking starts now — data accumulates as agents run (first data in ~60 s).
+                </p>
+              )}
+            </div>
+          );
+        })()}
+
         {/* Tab bar + Period picker on the same row */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", gap: "4px", background: "#0f0f12", border: "1px solid #1e1e26", borderRadius: "8px", padding: "4px" }}>
@@ -563,24 +688,6 @@ export default function SpendingPage() {
         {/* ── By Agent ── */}
         {view === "agents" && (
           <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-            <div style={{ background: "#0f0f12", border: "1px solid #1e1e26", borderRadius: "10px", padding: "24px" }}>
-              <SectionHead>Cost trend — {period === "all" ? "all time" : PERIODS.find(p => p.id === period)?.label.toLowerCase() + " period"}</SectionHead>
-              <ResponsiveContainer width="100%" height={240}>
-                <AreaChart data={areaSeries} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="aGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%"  stopColor={ORANGE} stopOpacity={0.2} />
-                      <stop offset="95%" stopColor={ORANGE} stopOpacity={0}   />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1a1a22" vertical={false} />
-                  <XAxis dataKey="date" stroke="#333" tick={{ fontSize: 11, fill: "#555", fontFamily: "ui-monospace,monospace" }} tickLine={false} axisLine={{ stroke: "#222" }} tickFormatter={fmtDate} />
-                  <YAxis stroke="#333" tick={{ fontSize: 11, fill: "#555", fontFamily: "ui-monospace,monospace" }} tickLine={false} axisLine={false} tickFormatter={v => `$${v.toFixed(3)}`} width={64} />
-                  <Tooltip content={<ChartTooltip />} />
-                  <Area type="monotone" dataKey="cost" stroke={ORANGE} strokeWidth={2} fill="url(#aGrad)" dot={false} activeDot={{ r: 4, fill: ORANGE, stroke: "#0f0f12", strokeWidth: 2 }} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
             <SectionHead>Top 10 spenders — {period === "all" ? "all time" : PERIODS.find(p => p.id === period)?.label.toLowerCase() + " period"}</SectionHead>
             <AgentTable
               rows={agentRows}
