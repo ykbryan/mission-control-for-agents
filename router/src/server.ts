@@ -962,6 +962,215 @@ async function handleDebugSession(res: http.ServerResponse, params: URLSearchPar
 }
 
 // ---------------------------------------------------------------------------
+// Telemetry event log (Option C: append-only rolling .jsonl file)
+//
+// A background poller fires every 60 s. For each session whose updatedAt
+// changed it:
+//   • counts new assistant turns from the transcript .jsonl (= requests)
+//   • records delta totalTokens from OpenClaw              (= token cost)
+//   • estimates USD cost via the pricing table
+//
+// Events are appended to agent-telemetry.jsonl and pruned to 31 days on
+// startup. The /request-stats endpoint reads and buckets this log into
+// rolling time windows for both requests AND costs.
+// ---------------------------------------------------------------------------
+
+const TELEMETRY_LOG_FILE    = path.join(__dirname, "..", "agent-telemetry.jsonl");
+const TELEMETRY_RETENTION   = 31 * 24 * 60 * 60 * 1000; // 31 days in ms
+const POLL_INTERVAL_MS      = 60_000; // 60 s
+
+interface TelemetryEvent {
+  ts: number;   // detection time (ms)
+  a:  string;   // agentId
+  n:  number;   // new assistant turns (requests)
+  tk: number;   // delta tokens consumed
+  c:  number;   // estimated USD cost for these tokens
+}
+
+// In-memory snapshot of each session's last-seen state
+const pollState = new Map<string, { updatedAt: number; lineCount: number; totalTokens: number }>();
+
+function countAssistantLines(transcriptPath: string): number {
+  if (!fs.existsSync(transcriptPath)) return 0;
+  try {
+    let count = 0;
+    for (const line of fs.readFileSync(transcriptPath, "utf8").split("\n")) {
+      const t = line.trim();
+      if (!t) continue;
+      try {
+        const obj = JSON.parse(t);
+        if ((obj.message ?? obj).role === "assistant") count++;
+      } catch { /* skip malformed */ }
+    }
+    return count;
+  } catch { return 0; }
+}
+
+function readTelemetryLog(): TelemetryEvent[] {
+  // Support both old request-events.jsonl and new agent-telemetry.jsonl
+  const cutoff = Date.now() - TELEMETRY_RETENTION;
+  const events: TelemetryEvent[] = [];
+  const files = [TELEMETRY_LOG_FILE, path.join(__dirname, "..", "request-events.jsonl")];
+  for (const file of files) {
+    if (!fs.existsSync(file)) continue;
+    try {
+      for (const line of fs.readFileSync(file, "utf8").split("\n")) {
+        const t = line.trim();
+        if (!t) continue;
+        try {
+          const ev = JSON.parse(t) as TelemetryEvent;
+          // Backfill missing fields from old format (n only, no tk/c)
+          if (ev.ts >= cutoff && ev.a && ev.n > 0) {
+            events.push({ ...ev, tk: ev.tk ?? 0, c: ev.c ?? 0 });
+          }
+        } catch { /* skip */ }
+      }
+    } catch { /* skip */ }
+  }
+  return events;
+}
+
+function pruneTelemetryLog() {
+  const kept = readTelemetryLog().filter(e => e.ts >= Date.now() - TELEMETRY_RETENTION);
+  try {
+    fs.writeFileSync(
+      TELEMETRY_LOG_FILE,
+      kept.map(e => JSON.stringify(e)).join("\n") + (kept.length ? "\n" : ""),
+      { flag: "w" }
+    );
+  } catch { /* best-effort */ }
+}
+
+function appendTelemetryEvents(events: TelemetryEvent[]) {
+  if (!events.length) return;
+  try {
+    fs.appendFileSync(TELEMETRY_LOG_FILE, events.map(e => JSON.stringify(e)).join("\n") + "\n");
+  } catch { /* best-effort */ }
+}
+
+function startRequestPoller() {
+  // Prune stale entries once on startup
+  pruneTelemetryLog();
+
+  const poll = async () => {
+    try {
+      const sessions = await getAllSessions();
+      const newEvents: TelemetryEvent[] = [];
+
+      for (const s of sessions) {
+        const parts   = s.key?.split(":");
+        const agentId = parts?.[0] === "agent" ? parts[1] : null;
+        if (!agentId || !s.transcriptPath) continue;
+
+        const raw = s.updatedAt ?? 0;
+        const updatedAtMs = raw > 0 && raw < 1e12 ? raw * 1000 : raw;
+        if (!updatedAtMs) continue;
+
+        const known = pollState.get(s.key);
+
+        // Nothing changed since last poll — skip expensive file read
+        if (known && updatedAtMs <= known.updatedAt) continue;
+
+        // Count new assistant turns (requests)
+        const currentLines  = countAssistantLines(s.transcriptPath);
+        const prevLines     = known?.lineCount ?? 0;
+        const newTurns      = Math.max(0, currentLines - prevLines);
+
+        // Delta tokens and estimated cost
+        const currentTokens = s.totalTokens ?? 0;
+        const prevTokens    = known?.totalTokens ?? 0;
+        const deltaTokens   = Math.max(0, currentTokens - prevTokens);
+        const deltaCost     = parseFloat(estimateCost(deltaTokens, s.model ?? "").toFixed(8));
+
+        pollState.set(s.key, { updatedAt: updatedAtMs, lineCount: currentLines, totalTokens: currentTokens });
+
+        if (newTurns > 0 || deltaTokens > 0) {
+          newEvents.push({ ts: Date.now(), a: agentId, n: newTurns, tk: deltaTokens, c: deltaCost });
+        }
+      }
+
+      appendTelemetryEvents(newEvents);
+    } catch (e) {
+      console.error("[router] telemetry poller error:", e instanceof Error ? e.message : e);
+    }
+  };
+
+  // Run immediately then on interval
+  poll();
+  setInterval(poll, POLL_INTERVAL_MS);
+}
+
+function handleRequestStats(res: http.ServerResponse) {
+  const now = Date.now();
+  const WINDOWS = [
+    { key: "h1", ms: 1  * 60 * 60 * 1000 },
+    { key: "h5", ms: 5  * 60 * 60 * 1000 },
+    { key: "d1", ms: 24 * 60 * 60 * 1000 },
+    { key: "d5", ms: 5  * 24 * 60 * 60 * 1000 },
+    { key: "w1", ms: 7  * 24 * 60 * 60 * 1000 },
+    { key: "m1", ms: 30 * 24 * 60 * 60 * 1000 },
+  ];
+
+  const events = readTelemetryLog();
+
+  type WindowStats = { requests: number; tokens: number; cost: number };
+  const windows: Record<string, WindowStats> = {
+    h1: { requests: 0, tokens: 0, cost: 0 },
+    h5: { requests: 0, tokens: 0, cost: 0 },
+    d1: { requests: 0, tokens: 0, cost: 0 },
+    d5: { requests: 0, tokens: 0, cost: 0 },
+    w1: { requests: 0, tokens: 0, cost: 0 },
+    m1: { requests: 0, tokens: 0, cost: 0 },
+  };
+
+  // byAgent: windowKey → agentId → { requests, tokens, cost }
+  const byAgent: Record<string, Record<string, WindowStats>> = {};
+
+  // Daily series map: date → { requests, tokens, cost }
+  const dailyMap = new Map<string, WindowStats>();
+
+  for (const ev of events) {
+    const age = now - ev.ts;
+    for (const w of WINDOWS) {
+      if (age <= w.ms) {
+        windows[w.key].requests += ev.n;
+        windows[w.key].tokens   += ev.tk;
+        windows[w.key].cost     += ev.c;
+        if (!byAgent[w.key]) byAgent[w.key] = {};
+        const ag = byAgent[w.key][ev.a] ?? { requests: 0, tokens: 0, cost: 0 };
+        ag.requests += ev.n;
+        ag.tokens   += ev.tk;
+        ag.cost     += ev.c;
+        byAgent[w.key][ev.a] = ag;
+      }
+    }
+    const date = new Date(ev.ts).toISOString().split("T")[0];
+    const day  = dailyMap.get(date) ?? { requests: 0, tokens: 0, cost: 0 };
+    day.requests += ev.n;
+    day.tokens   += ev.tk;
+    day.cost     += ev.c;
+    dailyMap.set(date, day);
+  }
+
+  // Round cost values
+  for (const w of Object.values(windows)) w.cost = parseFloat(w.cost.toFixed(6));
+  for (const agents of Object.values(byAgent)) {
+    for (const w of Object.values(agents)) w.cost = parseFloat(w.cost.toFixed(6));
+  }
+
+  const dailySeries = [...dailyMap.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, s]) => ({ date, requests: s.requests, tokens: s.tokens, cost: parseFloat(s.cost.toFixed(6)) }));
+
+  const totals = events.reduce((acc, e) => {
+    acc.requests += e.n; acc.tokens += e.tk; acc.cost += e.c; return acc;
+  }, { requests: 0, tokens: 0, cost: 0 });
+  totals.cost = parseFloat(totals.cost.toFixed(6));
+
+  json(res, 200, { windows, byAgent, dailySeries, totals });
+}
+
+// ---------------------------------------------------------------------------
 // Server
 // ---------------------------------------------------------------------------
 
@@ -1005,6 +1214,7 @@ const server = http.createServer(async (req, res) => {
     if (urlPath === "/info") { await handleInfo(res); return; }
     if (urlPath === "/debug") { await handleDebug(res); return; }
     if (urlPath === "/debug-session") { await handleDebugSession(res, params); return; }
+    if (urlPath === "/request-stats") { handleRequestStats(res); return; }
     json(res, 404, { error: "Not found" });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -1012,6 +1222,9 @@ const server = http.createServer(async (req, res) => {
     json(res, 502, { error: message });
   }
 });
+
+// Start the background request poller after the event loop is ready
+startRequestPoller();
 
 server.listen(ROUTER_PORT, () => {
   const b = '\x1b[1m', r = '\x1b[0m', dim = '\x1b[2m', cyan = '\x1b[36m', green = '\x1b[32m', orange = '\x1b[38;5;208m';

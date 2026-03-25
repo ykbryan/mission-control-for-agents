@@ -69,7 +69,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col items-center justify-center p-6">
+    <div className="h-screen overflow-y-auto bg-zinc-950 text-zinc-100 flex flex-col items-center justify-center p-6">
       <div className="w-full max-w-lg">
         {/* Header */}
         <div className="mb-8 text-center">

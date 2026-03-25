@@ -5,6 +5,7 @@ import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
+import { fmtCost, fmtTokens, fmtDate, isoWeek } from "@/lib/formatters";
 
 // ─── types ────────────────────────────────────────────────────────────────────
 
@@ -46,32 +47,6 @@ const ORANGE = "#e85d27";
 const GREEN  = "#22c55e";
 const RED    = "#ef4444";
 const COLORS = [ORANGE, "#8b5cf6", "#38bdf8", "#f59e0b", "#ec4899", "#14b8a6", "#a3e635", "#fb923c"];
-
-function fmtCost(n: number): string {
-  if (n === 0) return "$0.0000";
-  if (n < 0.0001) return `< $0.0001`;
-  return `$${n.toFixed(4)}`;
-}
-
-function fmtTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
-  if (n >= 1_000)     return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
-}
-
-function fmtDate(s: string): string {
-  const d = new Date(s + "T12:00:00Z");
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
-
-function isoWeek(dateStr: string): string {
-  const d = new Date(dateStr + "T12:00:00Z");
-  const jan4 = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
-  const dow  = jan4.getUTCDay() || 7;
-  const weekStart = new Date(jan4.getTime() - (dow - 1) * 86400000);
-  const weekNum   = Math.ceil((d.getTime() - weekStart.getTime()) / (7 * 86400000)) + 1;
-  return `${d.getUTCFullYear()}-W${String(weekNum).padStart(2, "0")}`;
-}
 
 function daysAgo(n: number) {
   return new Date(Date.now() - n * 86400000).toISOString().split("T")[0];

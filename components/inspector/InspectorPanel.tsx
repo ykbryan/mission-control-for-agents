@@ -7,6 +7,7 @@ import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import type { SessionGroup, SessionDetail } from "@/app/api/agent-sessions/route";
 import type { NodeInfo } from "@/app/api/node-info/route";
+import { timeAgo } from "@/lib/formatters";
 
 interface Props {
   agent: Agent;
@@ -120,18 +121,6 @@ function useSessionTypeModels(agentId: string, routerId: string | undefined, gro
   }, [agentId, routerId, groups]);
 
   return typeModels;
-}
-
-function timeAgo(ms: number): string {
-  if (!ms) return "";
-  const diff = Date.now() - ms;
-  const m = Math.floor(diff / 60000);
-  const h = Math.floor(diff / 3600000);
-  const d = Math.floor(diff / 86400000);
-  if (m < 2) return "just now";
-  if (h < 1) return `${m}m ago`;
-  if (d < 1) return `${h}h ago`;
-  return `${d}d ago`;
 }
 
 const PROVIDER_COLORS: Record<string, string> = {
