@@ -445,13 +445,21 @@ async function handleAgents(res: http.ServerResponse) {
           }
         }
       }
-      // Pass 2: SOUL.md — skip bare identity openers
+      // Pass 2: SOUL.md — skip bare identity openers and italic/underscore lines
       const soulMd = readAgentFile(agentDir, "SOUL.md");
       if (soulMd) {
         const IDENTITY_LINE = /^(you are|i am)\s+\S+\.?$/i;
         for (const line of soulMd.split("\n")) {
           const trimmed = line.trim();
-          if (trimmed && !trimmed.startsWith("#") && !IDENTITY_LINE.test(trimmed)) return trimmed;
+          if (trimmed && !trimmed.startsWith("#") && !trimmed.startsWith("_") && !IDENTITY_LINE.test(trimmed)) return trimmed;
+        }
+      }
+      // Pass 3: IDENTITY.md — first non-empty, non-heading line
+      const identityMd = readAgentFile(agentDir, "IDENTITY.md");
+      if (identityMd) {
+        for (const line of identityMd.split("\n")) {
+          const trimmed = line.trim();
+          if (trimmed && !trimmed.startsWith("#") && !trimmed.startsWith("_")) return trimmed;
         }
       }
       return undefined;
