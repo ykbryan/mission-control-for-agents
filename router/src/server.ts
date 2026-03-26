@@ -238,6 +238,23 @@ function resolveFilesDir(agentDir: string): string {
   return agentDir;
 }
 
+/**
+ * Resolve the best agent workspace directory for a given agent ID.
+ * Priority:
+ *  1. Provided baseDir (derived from transcript path) if it has .md files
+ *  2. ~/.openclaw/workspace-{agentId}   (named workspace, most agents)
+ *  3. ~/.openclaw/workspace             (bare workspace — "main" agent only)
+ */
+function resolveAgentWorkspaceDir(agentId: string, baseDir: string | null): string | null {
+  if (baseDir && listAgentFiles(baseDir).length > 0) return baseDir;
+  const ocDir = path.join(os.homedir(), ".openclaw");
+  const namedWs = path.join(ocDir, `workspace-${agentId}`);
+  if (fs.existsSync(namedWs) && listAgentFiles(namedWs).length > 0) return namedWs;
+  const bareWs = path.join(ocDir, "workspace");
+  if (fs.existsSync(bareWs) && listAgentFiles(bareWs).length > 0) return bareWs;
+  return baseDir; // return original even if empty, so callers can report correct path
+}
+
 /** List markdown files in an agent directory (checks workspace/ subdir too). */
 function listAgentFiles(agentDir: string): string[] {
   const dir = resolveFilesDir(agentDir);
@@ -363,10 +380,11 @@ async function handleAgents(res: http.ServerResponse) {
   for (const a of gatewayAgents) {
     if (BAK_RE.test(a.id)) continue;
     const sess = latestSession.get(a.id);
-    const agentDir: string | null =
+    const baseDir: string | null =
       typeof a.workspaceDir === "string" ? a.workspaceDir
       : sess?.transcriptPath ? agentDirFromTranscript(sess.transcriptPath)
       : null;
+    const agentDir = resolveAgentWorkspaceDir(a.id, baseDir);
     const files = agentDir ? listAgentFiles(agentDir) : [];
     // Skip known CLI tools that OpenClaw registers as sessions but aren't real agents.
     // Use an explicit blocklist rather than a blanket configured+files check so that
@@ -443,7 +461,9 @@ async function handleAgents(res: http.ServerResponse) {
   for (const [id, sess] of latestSession) {
     if (BAK_RE.test(id)) continue;
     if (!agentMap.has(id)) {
-      const files = sess.transcriptPath ? listAgentFiles(agentDirFromTranscript(sess.transcriptPath)) : [];
+      const sessBaseDir = sess.transcriptPath ? agentDirFromTranscript(sess.transcriptPath) : null;
+      const sessDir = resolveAgentWorkspaceDir(id, sessBaseDir);
+      const files = sessDir ? listAgentFiles(sessDir) : [];
       // Only surface session-derived entries that have a real agent directory
       // (at least one markdown file). Tool/CLI sessions (claude-code, gemini,
       // codex, gemini-cli, etc.) leave transcripts but have no agent files.
@@ -654,16 +674,10 @@ async function handleFile(res: http.ServerResponse, params: URLSearchParams) {
     .filter((s) => { const p = s.key?.split(":"); return p?.[0] === "agent" && p[1] === agentId; })
     .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))[0];
 
-  let agentDir: string | null = latestSess?.transcriptPath
+  const baseDir: string | null = latestSess?.transcriptPath
     ? agentDirFromTranscript(latestSess.transcriptPath)
     : null;
-
-  // If the transcript-derived dir has no .md files, try workspace-{agentId}/
-  // (new OpenClaw layout where markdown files live in workspace-{id}/ not agents/{id}/)
-  if (!agentDir || listAgentFiles(agentDir).length === 0) {
-    const wsDir = path.join(os.homedir(), ".openclaw", `workspace-${agentId}`);
-    if (fs.existsSync(wsDir) && listAgentFiles(wsDir).length > 0) agentDir = wsDir;
-  }
+  const agentDir = resolveAgentWorkspaceDir(agentId, baseDir);
 
   if (!agentDir) {
     console.warn(`[router] /file: no dir found for agent=${agentId}`);
