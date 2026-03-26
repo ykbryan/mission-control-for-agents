@@ -427,7 +427,21 @@ async function handleAgents(res: http.ServerResponse) {
           if (isToolId(after)) found.push(after);
         }
       }
-      return found.length > 0 ? [...new Set(found)] : undefined;
+      if (found.length > 0) return [...new Set(found)];
+      // Fallback: extract from ## section headings when no list items match.
+      // Takes the first lowercase word of each heading (strips emoji/symbols).
+      // e.g. "## 🌐 Playwright Browser Access" → "playwright"
+      //      "## 🔐 LinkedIn Session"          → "linkedin"
+      const headingFound: string[] = [];
+      for (const line of stripped.split("\n")) {
+        const hm = line.match(/^#{1,3}\s+(.+)/);
+        if (!hm) continue;
+        const words = hm[1].replace(/[^\w\s-]/g, " ").trim().toLowerCase().split(/\s+/);
+        for (const w of words) {
+          if (isToolId(w) && w.length >= 4) { headingFound.push(w); break; }
+        }
+      }
+      return headingFound.length > 0 ? [...new Set(headingFound)] : undefined;
     })() : undefined;
     // Extract a one-line soul summary from the agent's markdown files.
     // Strategy:
