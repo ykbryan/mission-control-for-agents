@@ -378,7 +378,7 @@ async function handleAgents(res: http.ServerResponse) {
   }
 
   // Merge gateway agents with session-derived ids
-  type AgentEntry = { id: string; name: string; configured: boolean; files: string[]; skills?: string[]; soul?: string; lastActiveAt?: number; tier?: string; nodeHostname?: string };
+  type AgentEntry = { id: string; name: string; configured: boolean; files: string[]; skills?: string[]; soul?: string; role?: string; lastActiveAt?: number; tier?: string; nodeHostname?: string };
   // Filter out backup/deleted agent directories (e.g. "chatty.bak_deleted_20260314")
   const BAK_RE = /\.bak[_.]|_deleted_|\.deleted\b/i;
   const agentMap = new Map<string, AgentEntry>();
@@ -441,6 +441,32 @@ async function handleAgents(res: http.ServerResponse) {
       return s.replace(/^[-*]\s+/, "").replace(/^\*\*[^*]+\*\*:\s*/, "").trim();
     }
 
+    /** Extract role from IDENTITY.md or SOUL.md.
+     *  Looks for: "**Role:** value", "## Role\nvalue", or the h1 subtitle line. */
+    function extractRole(dir: string): string | undefined {
+      const ROLE_LABEL = /^\*\*Role\*\*:\s*(.+)/i;
+      const ROLE_HEADING = /^#{1,3}\s*role\s*$/i;
+      for (const fname of ["IDENTITY.md", "SOUL.md", "AGENTS.md"]) {
+        const content = readAgentFile(dir, fname);
+        if (!content) continue;
+        const lines = content.split("\n");
+        for (let i = 0; i < lines.length; i++) {
+          const trimmed = lines[i].trim();
+          // "**Role:** Senior Developer"
+          const labelMatch = trimmed.match(ROLE_LABEL);
+          if (labelMatch) return labelMatch[1].replace(/\*\*/g, "").trim();
+          // "## Role\nSenior Developer"
+          if (ROLE_HEADING.test(trimmed)) {
+            for (let j = i + 1; j < lines.length; j++) {
+              const next = cleanSoulLine(lines[j].trim());
+              if (next && !next.startsWith("#")) return next;
+            }
+          }
+        }
+      }
+      return undefined;
+    }
+
     const soul: string | undefined = agentDir ? (() => {
       // Pass 1: AGENTS.md core-job section
       const agentsMd = readAgentFile(agentDir, "AGENTS.md");
@@ -478,7 +504,8 @@ async function handleAgents(res: http.ServerResponse) {
       }
       return undefined;
     })() : undefined;
-    agentMap.set(a.id, { ...a, files, ...(skills ? { skills } : {}), ...(soul ? { soul } : {}), lastActiveAt: sess?.updatedAt, nodeHostname: agentNodeMap.get(a.id) });
+    const role = agentDir ? extractRole(agentDir) : undefined;
+    agentMap.set(a.id, { ...a, files, ...(skills ? { skills } : {}), ...(soul ? { soul } : {}), ...(role ? { role } : {}), lastActiveAt: sess?.updatedAt, nodeHostname: agentNodeMap.get(a.id) });
   }
   for (const [id, sess] of latestSession) {
     if (BAK_RE.test(id)) continue;
