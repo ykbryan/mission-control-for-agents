@@ -26,6 +26,7 @@ interface RouterAgent {
   files?: string[];
   skills?: string[];
   soul?: string;
+  role?: string;
   lastActiveAt?: number;
   tier?: string;
   nodeHostname?: string;
@@ -70,7 +71,7 @@ export async function fetchAgentsFromRouter(
       id: ra.id,
       name: ra.name || ra.id,
       emoji: "🤖",
-      role: "AI Agent",
+      role: ra.role || "AI Agent",
       soul: ra.soul || "A capable AI agent.",
       skills: ra.skills ?? [],
       files,
