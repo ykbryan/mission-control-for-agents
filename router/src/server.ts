@@ -250,8 +250,13 @@ function resolveAgentWorkspaceDir(agentId: string, baseDir: string | null): stri
   const ocDir = path.join(os.homedir(), ".openclaw");
   const namedWs = path.join(ocDir, `workspace-${agentId}`);
   if (fs.existsSync(namedWs) && listAgentFiles(namedWs).length > 0) return namedWs;
-  const bareWs = path.join(ocDir, "workspace");
-  if (fs.existsSync(bareWs) && listAgentFiles(bareWs).length > 0) return bareWs;
+  // The bare ~/.openclaw/workspace directory belongs exclusively to the "main" agent.
+  // Do NOT use it as a fallback for other agents — it would give them wrong files
+  // and bypass the CLI-tool blocklist (gemini, codex, etc. would appear to have files).
+  if (agentId === "main") {
+    const bareWs = path.join(ocDir, "workspace");
+    if (fs.existsSync(bareWs) && listAgentFiles(bareWs).length > 0) return bareWs;
+  }
   return baseDir; // return original even if empty, so callers can report correct path
 }
 
