@@ -429,6 +429,13 @@ async function handleAgents(res: http.ServerResponse) {
     //  1. AGENTS.md — first paragraph under a "Core job", "Purpose", "Mission", or "Role" heading
     //  2. SOUL.md   — first non-empty, non-heading line that isn't a bare identity declaration
     //                 ("You are X." / "I am X." add no value as a summary)
+    //  3. IDENTITY.md — first non-empty, non-heading line
+
+    /** Strip markdown list prefix ("- ") and bold label prefix ("**Key:** ") */
+    function cleanSoulLine(s: string): string {
+      return s.replace(/^[-*]\s+/, "").replace(/^\*\*[^*]+\*\*:\s*/, "").trim();
+    }
+
     const soul: string | undefined = agentDir ? (() => {
       // Pass 1: AGENTS.md core-job section
       const agentsMd = readAgentFile(agentDir, "AGENTS.md");
@@ -440,7 +447,7 @@ async function handleAgents(res: http.ServerResponse) {
           if (CORE_HEADING.test(line.trim())) { inSection = true; continue; }
           if (inSection) {
             if (line.trim().startsWith("#")) break; // next heading — stop
-            const trimmed = line.trim();
+            const trimmed = cleanSoulLine(line.trim());
             if (trimmed) return trimmed;
           }
         }
@@ -451,7 +458,9 @@ async function handleAgents(res: http.ServerResponse) {
         const IDENTITY_LINE = /^(you are|i am)\s+\S+\.?$/i;
         for (const line of soulMd.split("\n")) {
           const trimmed = line.trim();
-          if (trimmed && !trimmed.startsWith("#") && !trimmed.startsWith("_") && !IDENTITY_LINE.test(trimmed)) return trimmed;
+          if (trimmed && !trimmed.startsWith("#") && !trimmed.startsWith("_") && !IDENTITY_LINE.test(trimmed)) {
+            return cleanSoulLine(trimmed);
+          }
         }
       }
       // Pass 3: IDENTITY.md — first non-empty, non-heading line
@@ -459,7 +468,7 @@ async function handleAgents(res: http.ServerResponse) {
       if (identityMd) {
         for (const line of identityMd.split("\n")) {
           const trimmed = line.trim();
-          if (trimmed && !trimmed.startsWith("#") && !trimmed.startsWith("_")) return trimmed;
+          if (trimmed && !trimmed.startsWith("#") && !trimmed.startsWith("_")) return cleanSoulLine(trimmed);
         }
       }
       return undefined;
