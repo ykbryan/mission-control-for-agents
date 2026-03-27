@@ -450,9 +450,15 @@ async function handleAgents(res: http.ServerResponse) {
     //                 ("You are X." / "I am X." add no value as a summary)
     //  3. IDENTITY.md — first non-empty, non-heading line
 
-    /** Strip markdown list prefix ("- ") and bold label prefix ("**Key:** ") */
+    /** Strip markdown noise: list bullets, bold labels, leading/trailing underscores, backticks */
     function cleanSoulLine(s: string): string {
-      return s.replace(/^[-*]\s+/, "").replace(/^\*\*[^*]+\*\*:\s*/, "").trim();
+      return s
+        .replace(/^[-*]\s+/, "")           // "- " or "* " list bullet
+        .replace(/^\*\*[^*]+\*\*:\s*/, "") // "**Label:** " bold prefix
+        .replace(/^_{1,3}/, "")            // leading _ italic markers
+        .replace(/_{1,3}$/, "")            // trailing _ italic markers
+        .replace(/^`{1,3}\s*/, "")         // leading backtick/code fence
+        .trim();
     }
 
     /** Extract role from IDENTITY.md or SOUL.md.
