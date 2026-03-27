@@ -21,7 +21,7 @@ type Tab = "active" | "cron" | "tasks" | "all" | "scheduled";
 export default function ActivitiesPage() {
   const [sessions, setSessions] = useState<ActivitySession[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<Tab>("scheduled");
+  const [tab, setTab] = useState<Tab>("active");
   const [agentFilter, setAgentFilter] = useState<string>("all");
   const [detailSession, setDetailSession] = useState<ActivitySession | null>(null);
   const [swarmTrace, setSwarmTrace] = useState(true);
@@ -86,8 +86,8 @@ export default function ActivitiesPage() {
   }
 
   const tabList: { key: Tab; label: string; count: number }[] = [
-    { key: "scheduled", label: "Scheduled Crons", count: -1 },
     { key: "active",    label: "Active Now",      count: active.length },
+    { key: "scheduled", label: "Scheduled Crons", count: -1 },
     { key: "cron",      label: "Cron History",    count: cronGroups.length },
     { key: "tasks",     label: "Delegated Tasks", count: tasks.length },
     { key: "all",       label: "All Activity",    count: sessions.length },
@@ -203,7 +203,7 @@ export default function ActivitiesPage() {
                         filtered(active).length === 0 ? (
                           <Empty label="No active sessions in the last 10 minutes" />
                         ) : (
-                          filtered(active).map(s => <SessionRow key={s.key} s={s} onClick={() => setDetailSession(s)} />)
+                          filtered(active).map(s => <SessionRow key={`${s.routerId}:${s.key}`} s={s} onClick={() => setDetailSession(s)} />)
                         )
                       )}
                     </div>
@@ -233,7 +233,7 @@ export default function ActivitiesPage() {
                       {filtered(tasks).length === 0 ? (
                         <Empty label="No delegated task sessions found" />
                       ) : (
-                        filtered(tasks).map(s => <SessionRow key={s.key} s={s} onClick={() => setDetailSession(s)} />)
+                        filtered(tasks).map(s => <SessionRow key={`${s.routerId}:${s.key}`} s={s} onClick={() => setDetailSession(s)} />)
                       )}
                     </div>
                   )}
@@ -244,7 +244,7 @@ export default function ActivitiesPage() {
                       {filtered(sessions).length === 0 ? (
                         <Empty label="No sessions found" />
                       ) : (
-                        filtered(sessions).map(s => <SessionRow key={s.key} s={s} onClick={() => setDetailSession(s)} />)
+                        filtered(sessions).map(s => <SessionRow key={`${s.routerId}:${s.key}`} s={s} onClick={() => setDetailSession(s)} />)
                       )}
                     </div>
                   )}
