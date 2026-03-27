@@ -48,7 +48,10 @@ function isMetadataMsg(text: string): boolean {
     text.includes('"message_id"') ||
     text.includes("'message_id'") ||
     /^```\s*json/i.test(text) ||
-    /^\s*\{/.test(text)
+    /^\s*\{/.test(text) ||
+    // XML control tags like <final>NO_REPLY</final>, <result>...</result>
+    /^<[a-z_]+>[^<]*<\/[a-z_]+>$/i.test(text.trim()) ||
+    /^<[a-z_]+\s*\/>$/i.test(text.trim())
   );
 }
 
