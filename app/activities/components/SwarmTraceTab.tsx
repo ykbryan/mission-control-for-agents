@@ -426,7 +426,7 @@ export function SwarmTraceView({
                     const sActive = Date.now() - s.updatedAt < ACTIVE_MS;
                     return (
                       <span
-                        key={s.key}
+                        key={`${s.routerId}:${s.key}`}
                         className="flex items-center gap-1 text-xs px-1.5 py-px rounded"
                         style={{ background: sActive ? "rgba(74,222,128,0.06)" : "rgba(255,255,255,0.03)", color: sActive ? "#4ade8099" : "#444" }}
                       >
@@ -447,7 +447,7 @@ export function SwarmTraceView({
                   const summary = sessionSummaries.get(s.key);
                   return (
                     <button
-                      key={s.key}
+                      key={`${s.routerId}:${s.key}`}
                       onClick={() => onOpen(s)}
                       className="group text-left rounded-md p-3 hover:bg-white/[0.04] transition-colors"
                       style={{ background: "#0f0f14", border: "1px solid #1a1a22" }}
