@@ -499,7 +499,7 @@ export function SwarmTraceView({
             Other active sessions
           </div>
           {orphans.map(s => (
-            <SessionRow key={s.key} s={s} onClick={() => onOpen(s)} />
+            <SessionRow key={`${s.routerId}:${s.key}`} s={s} onClick={() => onOpen(s)} />
           ))}
         </>
       )}
