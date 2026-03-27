@@ -52,24 +52,38 @@ function isMetadataMsg(text: string): boolean {
   );
 }
 
+/** Strip leading markdown noise: underscores, backtick fences, bold labels, list bullets */
+function cleanResponseText(text: string): string {
+  return text
+    .replace(/^_{1,3}/, '')           // leading _italic_ markers
+    .replace(/_{1,3}$/, '')           // trailing _italic_ markers
+    .replace(/^`{1,3}\s*/, '')        // leading backticks / code fences
+    .replace(/^[-*]\s+/, '')          // leading list bullet "- " or "* "
+    .replace(/^\*\*[^*]+\*\*:\s*/, '') // bold label prefix "**Role:** "
+    .trim();
+}
+
 function extractLastActivity(events: ActivityEvent[]): string | undefined {
+  // First pass: agent messages only (🤖) — "Last Response" should be from the agent
   for (let i = events.length - 1; i >= 0; i--) {
     const e = events[i];
     const msg = e.message?.trim() ?? '';
     if (!msg || msg.length < 10) continue;
-    // Prefer agent/user chat messages
-    if (msg.startsWith('🤖') || msg.startsWith('💬')) {
-      // Use fullMessage if available (untruncated, no prefix), else strip prefix
-      const text = (e.fullMessage ?? msg.replace(/^[🤖💬]\s*/, '')).trim();
-      if (isMetadataMsg(text)) continue;
-      if (text.length < 2) continue;
-      return text.slice(0, 120);
-    }
-    // Skip tool calls, model changes, system noise
-    if (msg.startsWith('🛠️') || msg.startsWith('🔄') || msg.startsWith('🧠')) continue;
+    if (!msg.startsWith('🤖')) continue;
+    const text = cleanResponseText((e.fullMessage ?? msg.replace(/^🤖\s*/, '')).trim());
+    if (isMetadataMsg(text)) continue;
+    if (text.length < 2) continue;
+    return text.slice(0, 120);
+  }
+  // Second pass: any non-tool message as fallback (excludes user 💬)
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i];
+    const msg = e.message?.trim() ?? '';
+    if (!msg || msg.length < 10) continue;
+    if (msg.startsWith('🛠️') || msg.startsWith('🔄') || msg.startsWith('🧠') || msg.startsWith('💬')) continue;
     if (msg.startsWith('[') || msg.startsWith('{') || msg.includes('tool_use')) continue;
     if (isMetadataMsg(msg)) continue;
-    if (msg.length > 15) return msg.slice(0, 120);
+    if (msg.length > 15) return cleanResponseText(msg.slice(0, 120));
   }
   return undefined;
 }
@@ -380,6 +394,11 @@ export function SwarmTraceView({
                     <span className="text-[10px] text-zinc-600 uppercase tracking-wider">Done</span>
                   )}
                   <span className="text-xs text-zinc-700">{timeAgo(chain.root.updatedAt)}</span>
+                  {chain.root.routerLabel && (
+                    <span className="text-[9px] font-medium px-1.5 py-px rounded" style={{ background: "#1a1a2a", color: "#5a5a8a" }}>
+                      🛰️ {chain.root.routerLabel}
+                    </span>
+                  )}
                 </div>
               </div>
               {allDelegates.length > 0 && (
