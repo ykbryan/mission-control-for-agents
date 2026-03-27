@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const params: Record<string, string> = { agentId };
-    if (sessionKey) params.sessionKey = sessionKey;
+    if (sessionKey) params.key = sessionKey;  // router expects "key", not "sessionKey"
     const data = await routerGet<{ key: string; events: ActivityEvent[] }>(
       routerUrl, routerToken, "/session", params
     );
