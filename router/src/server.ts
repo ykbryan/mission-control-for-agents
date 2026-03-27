@@ -147,7 +147,13 @@ function supplementSessionsFromDisk(knownSessions: GatewaySession[]): GatewaySes
     agentsBaseDirs.add(path.dirname(path.dirname(path.dirname(s.transcriptPath))));
   }
 
-  if (agentsBaseDirs.size === 0) return [];
+  // Fallback: if no transcript paths came from the API (e.g. gateway-only sessions),
+  // scan the well-known ~/.openclaw/agents directory so we can still find transcripts.
+  if (agentsBaseDirs.size === 0) {
+    const fallback = path.join(os.homedir(), ".openclaw", "agents");
+    if (fs.existsSync(fallback)) agentsBaseDirs.add(fallback);
+    else return [];
+  }
 
   const now = Date.now();
   const SCAN_WINDOW_MS = 30 * 60 * 1000; // 30 min look-back
