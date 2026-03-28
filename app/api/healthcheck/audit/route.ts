@@ -3,7 +3,6 @@ import { parseRouters } from "@/lib/router-config";
 import type { SecurityAuditResponse } from "./lib/types";
 import { loadAgents, loadAgentFiles } from "./lib/loader";
 import {
-  checkMainAgentUsage,
   checkTooManySkills,
   checkExecPrivilege,
   checkCredentials,
@@ -34,7 +33,6 @@ export async function GET(req: NextRequest) {
   const { fileMap, filesScanned } = await loadAgentFiles(allAgents, routers);
 
   const checks = [
-    checkMainAgentUsage(allAgents),
     checkTooManySkills(allAgents),
     checkExecPrivilege(allAgents),
     checkCredentials(allAgents, fileMap),

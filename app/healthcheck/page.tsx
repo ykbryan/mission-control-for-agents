@@ -355,7 +355,6 @@ function EventsTab({ events, agentRisk }: { events: AuditEvent[]; agentRisk: Age
 // ── Audit Tab ─────────────────────────────────────────────────────────────────
 
 const CHECK_META = [
-  { id: "main-agent",          icon: "🔑", title: "Main agent usage"          },
   { id: "skill-count",         icon: "⚡", title: "Over-privileged agents"    },
   { id: "exec-privilege",      icon: "🖥️", title: "Exec / shell privilege"    },
   { id: "credentials",         icon: "🔐", title: "Credentials in plaintext"  },
