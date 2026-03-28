@@ -104,36 +104,7 @@ const UNICODE_SUSPICIOUS = [
   { re: /&#[0-9]+;|&#x[0-9a-fA-F]+;/gi, label: "HTML entity encoding" },
 ];
 
-// ── Check 1: Main agent usage ─────────────────────────────────────────────────
-
-export function checkMainAgentUsage(agents: RouterAgent[]): SecurityCheck {
-  const mainAgents = agents.filter(a => a.id === "main" || a.name?.toLowerCase() === "main");
-  const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
-  const findings: AuditFinding[] = [];
-
-  for (const a of mainAgents) {
-    const recentlyActive = a.lastActiveAt != null && a.lastActiveAt > Date.now() - SEVEN_DAYS;
-    if (recentlyActive) {
-      findings.push({
-        agentId: a.id,
-        agentName: a.name,
-        detail: `"${a.name}" was active within the last 7 days. Like the root AWS account, the main agent should be reserved for setup — not day-to-day tasks.`,
-      });
-    }
-  }
-
-  const status = findings.length > 0 ? "warn" : "pass";
-  return {
-    id: "main-agent", number: 1,
-    title: "Main agent usage",
-    description: "The 'main' agent is like a root account. Using it for daily tasks increases blast radius if it is compromised.",
-    status, severity: "high", findings,
-    recommendation: "Create a named specialist agent for your daily tasks. Reserve 'main' for one-time setup and administration only.",
-    passLabel: "Main agent not recently active",
-  };
-}
-
-// ── Check 2: Over-privileged agents ──────────────────────────────────────────
+// ── Check 1: Over-privileged agents ──────────────────────────────────────────
 
 export function checkTooManySkills(agents: RouterAgent[]): SecurityCheck {
   const MAX = 3;
