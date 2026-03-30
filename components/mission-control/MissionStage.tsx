@@ -6,6 +6,7 @@ import "@xyflow/react/dist/style.css";
 import { Agent } from "@/lib/agents";
 import { RouterConfig } from "@/lib/router-config";
 import AgentNode from "@/components/canvas/AgentNode";
+import OrgNode from "@/components/canvas/OrgNode";
 import GatewayNode from "@/components/canvas/GatewayNode";
 import CanvasControls from "@/components/canvas/CanvasControls";
 import type { NodeInfo } from "@/app/api/node-info/route";
@@ -23,9 +24,11 @@ interface Props {
 
 const nodeTypes = {
   agentNode: AgentNode,
+  orgNode: OrgNode,
   gatewayNode: GatewayNode,
 };
 
+// ── Canvas mode constants ──────────────────────────────────────────────────
 const AGENT_W = 240;  // must match card w-[240px] in AgentNode
 const AGENT_H = 116;  // name + role + model badge + router/node row + padding
 const AGENT_COL_GAP = 20;
@@ -36,7 +39,18 @@ const GATEWAY_MARGIN_TOP = 60;
 const CLUSTER_GAP = 120;     // horizontal gap between gateway clusters
 const AGENTS_TOP_OFFSET = 128; // vertical space below gateway node
 
+// ── Org mode constants ─────────────────────────────────────────────────────
+const ORG_W = 280;
+const ORG_H = 100;
+const ORG_COL_GAP = 24;
+const ORG_ROW_GAP = 60;
+const ORG_COLS = 5;
+const ORG_ORCH_Y = 40;
+const ORG_SPECIALIST_Y = ORG_ORCH_Y + ORG_H + 80;
+
 export default function MissionStage({ agents, selectedAgentId, onSelectAgent, onNodeDoubleClick, mode, darkMode, onModeChange, routerConfigs }: Props) {
+
+  const [viewMode, setViewMode] = useState<"canvas" | "org">("canvas");
 
   // Node info: routerId → NodeInfo (fetched once)
   const [nodeInfoMap, setNodeInfoMap] = useState<Map<string, NodeInfo>>(new Map());
@@ -237,11 +251,90 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, o
     return { initialNodes: nodes, initialEdges: edges };
   }, [agents, selectedAgentId, routerConfigs, nodeInfoMap, agentModelMap]);
 
+  // ── Org layout ──────────────────────────────────────────────────────────
+  const { orgNodes, orgEdges } = useMemo(() => {
+    const oNodes: any[] = [];
+    const oEdges: any[] = [];
+
+    // All agents flattened, sorted: orchestrators first, then specialists alpha
+    const orchestrators = agents.filter(a => a.tier === "orchestrator");
+    const specialists   = agents.filter(a => a.tier !== "orchestrator")
+                                .sort((a, b) => (a.name ?? a.id).localeCompare(b.name ?? b.id));
+
+    const makeOrgNode = (agent: Agent, x: number, y: number) => {
+      const routerId = agent.routerId ?? "default";
+      const ni = nodeInfoMap.get(routerId);
+      const label = routerConfigs.find(r => r.id === routerId)?.label ?? routerId;
+      const nodeId = `${routerId}--${agent.id}`;
+      return {
+        id: nodeId,
+        type: "orgNode",
+        position: { x, y },
+        data: {
+          id: agent.id,
+          name: agent.name,
+          emoji: agent.emoji,
+          role: agent.role,
+          status: (agent.status ?? "online") as "online" | "offline" | "idle",
+          isSelected: nodeId === selectedAgentId,
+          tier: agent.tier ?? "specialist",
+          routerLabel: label,
+          nodeHostname: agent.nodeHostname,
+          platformIcon: ni?.platformIcon,
+          machineLabel: ni?.machineLabel,
+          model: agentModelMap.get(`${routerId}--${agent.id}`) ?? agentModelMap.get(agent.id),
+        },
+      };
+    };
+
+    // Row 0: Orchestrators — centered
+    const totalOrchW = orchestrators.length * ORG_W + (orchestrators.length - 1) * ORG_COL_GAP;
+    const totalSpecW = Math.min(specialists.length, ORG_COLS) * ORG_W + (Math.min(specialists.length, ORG_COLS) - 1) * ORG_COL_GAP;
+    const canvasW = Math.max(totalOrchW, totalSpecW);
+    const orchStartX = (canvasW - totalOrchW) / 2;
+
+    const orchIds: string[] = [];
+    orchestrators.forEach((agent, i) => {
+      const x = orchStartX + i * (ORG_W + ORG_COL_GAP);
+      oNodes.push(makeOrgNode(agent, x, ORG_ORCH_Y));
+      orchIds.push(`${agent.routerId ?? "default"}--${agent.id}`);
+    });
+
+    // Row 1+: Specialists — grid, centered under orchestrators
+    const specStartX = (canvasW - totalSpecW) / 2;
+    specialists.forEach((agent, i) => {
+      const col = i % ORG_COLS;
+      const row = Math.floor(i / ORG_COLS);
+      const x = specStartX + col * (ORG_W + ORG_COL_GAP);
+      const y = ORG_SPECIALIST_Y + row * (ORG_H + ORG_ROW_GAP);
+      const nodeId = `${agent.routerId ?? "default"}--${agent.id}`;
+      oNodes.push(makeOrgNode(agent, x, y));
+
+      // Connect each specialist to nearest orchestrator (or all if just 1)
+      const parentId = orchIds.length === 1
+        ? orchIds[0]
+        : orchIds[Math.floor(col / Math.ceil(ORG_COLS / Math.max(orchIds.length, 1)))] ?? orchIds[0];
+
+      oEdges.push({
+        id: `org-e-${parentId}-${nodeId}`,
+        source: parentId ?? orchIds[0],
+        target: nodeId,
+        type: "smoothstep",
+        style: { stroke: "#2a2a3a", strokeWidth: 1.5, opacity: 0.7 },
+        animated: false,
+      });
+    });
+
+    return { orgNodes: oNodes, orgEdges: oEdges };
+  }, [agents, selectedAgentId, routerConfigs, nodeInfoMap, agentModelMap]);
+
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
 
-  useEffect(() => { setNodes(initialNodes); }, [initialNodes, setNodes]);
-  useEffect(() => { setEdges(initialEdges); }, [initialEdges, setEdges]);
+  useEffect(() => {
+    setNodes(viewMode === "org" ? orgNodes : initialNodes);
+    setEdges(viewMode === "org" ? orgEdges : initialEdges);
+  }, [viewMode, initialNodes, initialEdges, orgNodes, orgEdges, setNodes, setEdges]);
 
   // Sync selection highlight — compare by compound node.id ("routerId--agentId")
   useEffect(() => {
@@ -275,13 +368,33 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, o
       <div className="mc-stage__toolbar p-4 flex justify-between items-center bg-[#111] z-10 border-b border-[#333]">
         <div>
           <h2 className="text-xl font-semibold text-[#f0f0f0] m-0">
-            Agent Canvas
+            {viewMode === "org" ? "Org Chart" : "Agent Canvas"}
             {routerConfigs.length > 0 && (
               <span className="ml-3 text-sm font-normal text-[#666]">
-                {routerConfigs.length} gateway{routerConfigs.length !== 1 ? "s" : ""} · {agents.length} agent{agents.length !== 1 ? "s" : ""}
+                {viewMode === "org"
+                  ? `${agents.length} agent${agents.length !== 1 ? "s" : ""}`
+                  : `${routerConfigs.length} gateway${routerConfigs.length !== 1 ? "s" : ""} · ${agents.length} agent${agents.length !== 1 ? "s" : ""}`}
               </span>
             )}
           </h2>
+        </div>
+        {/* View toggle */}
+        <div style={{ display: "flex", gap: 2, background: "#0e0e0e", border: "1px solid #222", borderRadius: 8, padding: 3 }}>
+          {(["canvas", "org"] as const).map(v => (
+            <button
+              key={v}
+              onClick={() => setViewMode(v)}
+              style={{
+                fontSize: 11, fontWeight: 600, padding: "5px 14px", borderRadius: 6,
+                border: "none", cursor: "pointer", transition: "all 0.15s",
+                background: viewMode === v ? "#1e1e1e" : "transparent",
+                color: viewMode === v ? "#e0e0e0" : "#555",
+                boxShadow: viewMode === v ? "0 1px 3px #00000044" : "none",
+              }}
+            >
+              {v === "canvas" ? "⬡ Canvas" : "🏢 Org"}
+            </button>
+          ))}
         </div>
       </div>
 
