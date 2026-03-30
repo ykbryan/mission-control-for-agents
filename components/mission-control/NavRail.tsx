@@ -1,8 +1,8 @@
 import { Agent } from "@/lib/agents";
 
 interface Props {
-  activeView: "mission" | "swarms" | "activities" | "spending" | "healthcheck";
-  onViewChange: (view: "mission" | "swarms" | "activities" | "spending" | "healthcheck") => void;
+  activeView: "mission" | "swarms" | "activities" | "spending" | "healthcheck" | "status";
+  onViewChange: (view: "mission" | "swarms" | "activities" | "spending" | "healthcheck" | "status") => void;
 }
 
 export default function NavRail({ activeView, onViewChange }: Props) {
@@ -46,6 +46,10 @@ export default function NavRail({ activeView, onViewChange }: Props) {
         <a href="/healthcheck" className={navLink("healthcheck")} title="Agent Healthcheck">
           {activeView === "healthcheck" && <span className="absolute left-0 top-1 bottom-1 w-[2px] bg-[#e85d27] rounded-none" />}
           <span className="text-xl">🔐</span>
+        </a>
+        <a href="/status" className={navLink("status")} title="Agent Status & Incidents">
+          {activeView === "status" && <span className="absolute left-0 top-1 bottom-1 w-[2px] bg-[#e85d27] rounded-none" />}
+          <span className="text-xl">🛡️</span>
         </a>
       </nav>
 
