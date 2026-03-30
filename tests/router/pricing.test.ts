@@ -7,7 +7,7 @@ import { describe, it, expect } from "vitest";
 import {
   estimateCost,
   DEFAULT_PRICE_PER_1M,
-} from "../../../../../router/src/pricing";
+} from "../../router/src/pricing";
 
 describe("router/pricing — estimateCost", () => {
   it("returns 0 for 0 tokens", () => {

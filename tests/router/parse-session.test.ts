@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { parseMessages } from "../../../../../router/src/parse-session";
-import type { GatewayMessage } from "../../../../../router/src/parse-session";
+import { parseMessages } from "../../router/src/parse-session";
+import type { GatewayMessage } from "../../router/src/parse-session";
 
 /**
  * Tests for router/src/parse-session.ts (server-side parsing).
