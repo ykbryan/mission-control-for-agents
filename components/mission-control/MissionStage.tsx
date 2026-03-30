@@ -6,7 +6,7 @@ import "@xyflow/react/dist/style.css";
 import { Agent } from "@/lib/agents";
 import { RouterConfig } from "@/lib/router-config";
 import AgentNode from "@/components/canvas/AgentNode";
-import OrgNode from "@/components/canvas/OrgNode";
+import OrgNode, { gatewayColor } from "@/components/canvas/OrgNode";
 import GatewayNode from "@/components/canvas/GatewayNode";
 import CanvasControls from "@/components/canvas/CanvasControls";
 import type { NodeInfo } from "@/app/api/node-info/route";
@@ -256,110 +256,166 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, o
     const oNodes: any[] = [];
     const oEdges: any[] = [];
 
-    // All agents flattened, sorted: orchestrators first, then specialists alpha
-    const orchestrators = agents.filter(a => a.tier === "orchestrator");
-    const specialists   = agents.filter(a => a.tier !== "orchestrator")
-                                .sort((a, b) => (a.name ?? a.id).localeCompare(b.name ?? b.id));
+    // ── Group agents by gateway ──────────────────────────────────────────────
+    // Use routerConfigs order so gateways appear in consistent order
+    const gatewayOrder = routerConfigs.length > 0
+      ? routerConfigs.map(rc => rc.id)
+      : [...new Set(agents.map(a => a.routerId ?? "default"))];
 
-    // ── Pass 1: compute positions and parent→children map ───────────────────
-    const totalOrchW = orchestrators.length * ORG_W + (orchestrators.length - 1) * ORG_COL_GAP;
-    const totalSpecW = Math.min(specialists.length, ORG_COLS) * ORG_W + (Math.min(specialists.length, ORG_COLS) - 1) * ORG_COL_GAP;
-    const canvasW    = Math.max(totalOrchW, totalSpecW);
-    const orchStartX = (canvasW - totalOrchW) / 2;
-    const specStartX = (canvasW - totalSpecW) / 2;
+    interface GwCluster {
+      routerId: string;
+      label: string;
+      color: string;
+      orchestrators: Agent[];
+      specialists: Agent[];
+    }
+    const clusters: GwCluster[] = gatewayOrder.map(rid => {
+      const rc    = routerConfigs.find(r => r.id === rid);
+      const label = rc?.label ?? rid;
+      const gwAgents = agents.filter(a => (a.routerId ?? "default") === rid);
+      return {
+        routerId: rid,
+        label,
+        color: gatewayColor(label),
+        orchestrators: gwAgents.filter(a => a.tier === "orchestrator"),
+        specialists: gwAgents.filter(a => a.tier !== "orchestrator")
+          .sort((a, b) => (a.name ?? a.id).localeCompare(b.name ?? b.id)),
+      };
+    }).filter(c => c.orchestrators.length + c.specialists.length > 0);
 
-    const orchIds: string[] = [];
-    orchestrators.forEach(a => orchIds.push(`${a.routerId ?? "default"}--${a.id}`));
-
-    // childrenOf: orchestratorId → Set<specialistId>
+    // ── Build parent maps (within-gateway only) ──────────────────────────────
     const childrenOf = new Map<string, Set<string>>();
-    // parentOf: specialistId → orchestratorId
     const parentOf   = new Map<string, string>();
-    orchIds.forEach(id => childrenOf.set(id, new Set()));
 
-    specialists.forEach((agent, i) => {
-      const col    = i % ORG_COLS;
-      const nodeId = `${agent.routerId ?? "default"}--${agent.id}`;
-      const pId    = orchIds.length === 1
-        ? orchIds[0]
-        : orchIds[Math.floor(col / Math.ceil(ORG_COLS / Math.max(orchIds.length, 1)))] ?? orchIds[0];
-      childrenOf.get(pId)?.add(nodeId);
-      parentOf.set(nodeId, pId);
-    });
+    for (const cluster of clusters) {
+      const orchIds = cluster.orchestrators.map(a => `${cluster.routerId}--${a.id}`);
+      orchIds.forEach(id => childrenOf.set(id, new Set()));
+      cluster.specialists.forEach((agent, i) => {
+        const nodeId = `${cluster.routerId}--${agent.id}`;
+        if (orchIds.length === 0) return; // no manager in this gateway
+        const col = i % ORG_COLS;
+        const pId = orchIds.length === 1
+          ? orchIds[0]
+          : orchIds[Math.floor(col / Math.ceil(ORG_COLS / orchIds.length))] ?? orchIds[0];
+        childrenOf.get(pId)?.add(nodeId);
+        parentOf.set(nodeId, pId);
+      });
+    }
 
-    // ── Pass 2: compute highlight/dim sets based on selection ────────────────
-    const anySelected = !!selectedAgentId;
+    // ── Highlight/dim based on selection ────────────────────────────────────
+    const anySelected  = !!selectedAgentId;
+    const allOrchIds   = [...childrenOf.keys()];
     const highlightedIds = new Set<string>();
-
     if (anySelected) {
       highlightedIds.add(selectedAgentId);
-      if (orchIds.includes(selectedAgentId)) {
-        // Selected is an orchestrator → highlight all its direct reports
+      if (allOrchIds.includes(selectedAgentId)) {
         childrenOf.get(selectedAgentId)?.forEach(id => highlightedIds.add(id));
       } else {
-        // Selected is a specialist → highlight its manager
         const mgr = parentOf.get(selectedAgentId);
         if (mgr) highlightedIds.add(mgr);
       }
     }
 
-    // ── Pass 3: build nodes ──────────────────────────────────────────────────
-    const makeOrgNode = (agent: Agent, x: number, y: number) => {
-      const routerId = agent.routerId ?? "default";
+    // ── Layout: stack clusters vertically with section headers ───────────────
+    const SECTION_HEADER_H = 32; // space for gateway label above each cluster
+    const SECTION_GAP      = 48; // vertical gap between clusters
+    let cursorY = 0;
+
+    for (const cluster of clusters) {
+      const { routerId, label, color, orchestrators, specialists } = cluster;
       const ni    = nodeInfoMap.get(routerId);
-      const label = routerConfigs.find(r => r.id === routerId)?.label ?? routerId;
-      const nodeId = `${routerId}--${agent.id}`;
-      const isSelected    = nodeId === selectedAgentId;
-      const isHighlighted = !isSelected && highlightedIds.has(nodeId);
-      const isDimmed      = anySelected && !isSelected && !isHighlighted;
-      return {
-        id: nodeId,
+      const gwC   = color;
+
+      // Compute cluster width from max of orch row and spec grid
+      const orchCols = orchestrators.length;
+      const specCols = Math.min(specialists.length, ORG_COLS);
+      const orchRowW = orchCols  * ORG_W + Math.max(orchCols - 1, 0)  * ORG_COL_GAP;
+      const specRowW = specCols  * ORG_W + Math.max(specCols - 1, 0)  * ORG_COL_GAP;
+      const clusterW = Math.max(orchRowW, specRowW, ORG_W);
+
+      // Section header node (non-interactive label)
+      oNodes.push({
+        id: `gw-label-${routerId}`,
         type: "orgNode",
-        position: { x, y },
+        position: { x: 0, y: cursorY },
+        draggable: false,
+        selectable: false,
         data: {
-          id: agent.id, name: agent.name, emoji: agent.emoji, role: agent.role,
-          status: (agent.status ?? "online") as "online" | "offline" | "idle",
-          isSelected, isHighlighted, isDimmed,
-          tier: agent.tier ?? "specialist",
-          routerLabel: label,
-          nodeHostname: agent.nodeHostname,
-          platformIcon: ni?.platformIcon,
-          machineLabel: ni?.machineLabel,
-          model: agentModelMap.get(`${routerId}--${agent.id}`) ?? agentModelMap.get(agent.id),
+          _isLabel: true,
+          label,
+          color: gwC,
+          width: clusterW,
         },
-      };
-    };
-
-    orchestrators.forEach((agent, i) => {
-      const x = orchStartX + i * (ORG_W + ORG_COL_GAP);
-      oNodes.push(makeOrgNode(agent, x, ORG_ORCH_Y));
-    });
-
-    specialists.forEach((agent, i) => {
-      const col = i % ORG_COLS;
-      const row = Math.floor(i / ORG_COLS);
-      const x   = specStartX + col * (ORG_W + ORG_COL_GAP);
-      const y   = ORG_SPECIALIST_Y + row * (ORG_H + ORG_ROW_GAP);
-      const nodeId = `${agent.routerId ?? "default"}--${agent.id}`;
-      oNodes.push(makeOrgNode(agent, x, y));
-
-      const pId = parentOf.get(nodeId) ?? orchIds[0];
-      // Edge styling: bright when both endpoints are highlighted, faded otherwise
-      const edgeHighlighted = anySelected && highlightedIds.has(nodeId) && highlightedIds.has(pId);
-      oEdges.push({
-        id: `org-e-${pId}-${nodeId}`,
-        source: pId,
-        target: nodeId,
-        type: "smoothstep",
-        style: {
-          stroke: edgeHighlighted ? "#e85d27" : "#2a2a3a",
-          strokeWidth: edgeHighlighted ? 2 : 1.5,
-          opacity: anySelected ? (edgeHighlighted ? 0.9 : 0.08) : 0.7,
-          transition: "stroke 0.2s, opacity 0.2s",
-        },
-        animated: edgeHighlighted,
       });
-    });
+      cursorY += SECTION_HEADER_H;
+
+      const makeOrgNode = (agent: Agent, x: number, y: number) => {
+        const nodeId = `${routerId}--${agent.id}`;
+        const isSelected    = nodeId === selectedAgentId;
+        const isHighlighted = !isSelected && highlightedIds.has(nodeId);
+        const isDimmed      = anySelected && !isSelected && !isHighlighted;
+        return {
+          id: nodeId,
+          type: "orgNode",
+          position: { x, y },
+          data: {
+            id: agent.id, name: agent.name, emoji: agent.emoji, role: agent.role,
+            status: (agent.status ?? "online") as "online" | "offline" | "idle",
+            isSelected, isHighlighted, isDimmed,
+            tier: agent.tier ?? "specialist",
+            routerLabel: label,
+            gatewayColor: gwC,
+            nodeHostname: agent.nodeHostname,
+            platformIcon: ni?.platformIcon,
+            machineLabel: ni?.machineLabel,
+            model: agentModelMap.get(`${routerId}--${agent.id}`) ?? agentModelMap.get(agent.id),
+          },
+        };
+      };
+
+      // Orchestrators row
+      if (orchestrators.length > 0) {
+        const orchStartX = (clusterW - orchRowW) / 2;
+        orchestrators.forEach((agent, i) => {
+          oNodes.push(makeOrgNode(agent, orchStartX + i * (ORG_W + ORG_COL_GAP), cursorY));
+        });
+        cursorY += ORG_H + ORG_ROW_GAP;
+      }
+
+      // Specialists grid
+      if (specialists.length > 0) {
+        const specStartX = (clusterW - specRowW) / 2;
+        specialists.forEach((agent, i) => {
+          const col = i % ORG_COLS;
+          const row = Math.floor(i / ORG_COLS);
+          const x   = specStartX + col * (ORG_W + ORG_COL_GAP);
+          const y   = cursorY + row * (ORG_H + ORG_ROW_GAP);
+          const nodeId = `${routerId}--${agent.id}`;
+          oNodes.push(makeOrgNode(agent, x, y));
+
+          const pId = parentOf.get(nodeId);
+          if (pId) {
+            const edgeOn = anySelected && highlightedIds.has(nodeId) && highlightedIds.has(pId);
+            oEdges.push({
+              id: `org-e-${pId}-${nodeId}`,
+              source: pId, target: nodeId,
+              type: "smoothstep",
+              style: {
+                stroke: edgeOn ? gwC : "#2a2a3a",
+                strokeWidth: edgeOn ? 2 : 1.5,
+                opacity: anySelected ? (edgeOn ? 0.9 : 0.08) : 0.6,
+                transition: "stroke 0.2s, opacity 0.2s",
+              },
+              animated: edgeOn,
+            });
+          }
+        });
+        const specRows = Math.ceil(specialists.length / ORG_COLS);
+        cursorY += specRows * (ORG_H + ORG_ROW_GAP);
+      }
+
+      cursorY += SECTION_GAP;
+    }
 
     return { orgNodes: oNodes, orgEdges: oEdges };
   }, [agents, selectedAgentId, routerConfigs, nodeInfoMap, agentModelMap]);
