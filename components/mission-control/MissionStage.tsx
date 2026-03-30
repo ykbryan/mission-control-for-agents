@@ -10,6 +10,13 @@ import OrgNode, { gatewayColor } from "@/components/canvas/OrgNode";
 import GatewayNode from "@/components/canvas/GatewayNode";
 import CanvasControls from "@/components/canvas/CanvasControls";
 import type { NodeInfo } from "@/app/api/node-info/route";
+import {
+  detectOrchestrators,
+  buildTeamStructure,
+  type AgentAnalysis,
+  type RouterAgent as TARouterAgent,
+} from "@/lib/team-analysis";
+
 
 interface Props {
   agents: Agent[];
@@ -47,6 +54,24 @@ const ORG_ROW_GAP = 60;
 const ORG_COLS = 5;
 const ORG_ORCH_Y = 40;
 const ORG_SPECIALIST_Y = ORG_ORCH_Y + ORG_H + 80;
+
+// ── Team data types ────────────────────────────────────────────────────────
+interface SimpleTeam {
+  orchestratorId: string;
+  orchestratorRouterId: string;
+  teamName?: string;
+  members: { agentId: string; routerId: string }[];
+}
+interface TeamData {
+  teams: SimpleTeam[];
+  specialized: Array<{ id: string; routerId: string }>;
+}
+
+// Module-level cache — survives React state resets within the same browser session.
+// Version tag: bump when the cache schema changes to auto-invalidate stale data.
+const CACHE_VERSION = 2;
+let _teamDataCacheVersion = 0;
+let _teamDataCache: TeamData | null = null;
 
 export default function MissionStage({ agents, selectedAgentId, onSelectAgent, onNodeDoubleClick, mode, darkMode, onModeChange, routerConfigs }: Props) {
 
@@ -101,6 +126,70 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, o
     buildModelMap();
     return () => { active = false; };
   }, []);
+
+  // ── Team data state & fetch ────────────────────────────────────────────────
+  const [teamData, setTeamData] = useState<TeamData | null>(
+    _teamDataCacheVersion === CACHE_VERSION ? _teamDataCache : null
+  );
+  const [teamLoading, setTeamLoading] = useState(false);
+
+  useEffect(() => {
+    if (viewMode !== "org" || teamData || teamLoading) return;
+    setTeamLoading(true);
+    (async () => {
+      try {
+        // Fetch agents list
+        const res = await fetch("/api/agents");
+        const json = await res.json();
+        const agentList: TARouterAgent[] = json.agents ?? [];
+
+        // Build analyses map
+        const map = new Map<string, AgentAnalysis>();
+        for (const a of agentList) {
+          map.set(`${a.routerId}--${a.id}`, {
+            agentId: a.id, routerId: a.routerId,
+            agentsMd: null, memoryMd: null,
+            outgoing: new Set(), incoming: new Set(), orchScore: 0,
+          });
+        }
+
+        // Fetch AGENTS.md + MEMORY.md for each agent that has them
+        const agentsWithFiles = agentList.filter(a => (a.files ?? []).some(f => f === "AGENTS.md" || f === "MEMORY.md"));
+        const tasks: Promise<void>[] = [];
+        for (const agent of agentsWithFiles) {
+          const files = agent.files ?? [];
+          const fetchFile = async (file: string) => {
+            try {
+              const r = await fetch(`/api/agent-file?agent=${encodeURIComponent(agent.id)}&file=${encodeURIComponent(file)}&routerId=${encodeURIComponent(agent.routerId)}`);
+              if (!r.ok) return;
+              const j = await r.json();
+              const an = map.get(`${agent.routerId}--${agent.id}`);
+              if (!an) return;
+              if (file === "AGENTS.md") an.agentsMd = j.content ?? null;
+              else an.memoryMd = j.content ?? null;
+            } catch { /* ignore */ }
+          };
+          if (files.includes("AGENTS.md")) tasks.push(fetchFile("AGENTS.md"));
+          if (files.includes("MEMORY.md")) tasks.push(fetchFile("MEMORY.md"));
+        }
+        // Run in batches of 8
+        for (let i = 0; i < tasks.length; i += 8) {
+          await Promise.allSettled(tasks.slice(i, i + 8));
+        }
+
+        detectOrchestrators(agentList, map);
+        const result = buildTeamStructure(agentList, map);
+        const td: TeamData = {
+          teams: result.teams,
+          specialized: result.specialized.map(a => ({ id: a.id, routerId: a.routerId })),
+        };
+        _teamDataCache = td;
+        _teamDataCacheVersion = CACHE_VERSION;
+        setTeamData(td);
+      } catch { /* ignore */ }
+      finally { setTeamLoading(false); }
+    })();
+  }, [viewMode, teamData, teamLoading]);
 
   const { initialNodes, initialEdges } = useMemo(() => {
     // Group agents by routerId
@@ -251,10 +340,160 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, o
     return { initialNodes: nodes, initialEdges: edges };
   }, [agents, selectedAgentId, routerConfigs, nodeInfoMap, agentModelMap]);
 
-  // ── Org layout ──────────────────────────────────────────────────────────
+  // ── Org layout ──────────────────────────────────────────────────────────────
   const { orgNodes, orgEdges } = useMemo(() => {
     const oNodes: any[] = [];
     const oEdges: any[] = [];
+
+    if (teamData) {
+      // ── Team-based layout (matches /teams page) ──────────────────────────
+      const TEAM_ORCH_Y_OFFSET = 32;   // section header height
+      const TEAM_MEMBER_Y_OFFSET = 32 + ORG_H + ORG_ROW_GAP; // header + orch + gap
+      const SECTION_GAP = 60;
+      const SPECIALIZED_LABEL_H = 32;
+
+      let cursorY = 0;
+
+      // Highlight/dim logic (reuse existing logic)
+      const anySelected = !!selectedAgentId;
+      const highlightSet = new Set<string>();
+      if (anySelected) {
+        highlightSet.add(selectedAgentId);
+        for (const team of teamData.teams) {
+          const orchId = `${team.orchestratorRouterId}--${team.orchestratorId}`;
+          if (orchId === selectedAgentId) {
+            team.members.forEach(m => highlightSet.add(`${m.routerId}--${m.agentId}`));
+          } else if (team.members.some(m => `${m.routerId}--${m.agentId}` === selectedAgentId)) {
+            highlightSet.add(orchId);
+          }
+        }
+      }
+
+      const seenNodeIds = new Set<string>();
+      const makeNode = (agent: Agent | undefined, nodeId: string, x: number, y: number, tier: "orchestrator" | "specialist", routerLabel: string) => {
+        if (!agent) return null;
+        if (seenNodeIds.has(nodeId)) return null;
+        seenNodeIds.add(nodeId);
+        const isSelected = nodeId === selectedAgentId;
+        const isHighlighted = !isSelected && highlightSet.has(nodeId);
+        const isDimmed = anySelected && !isSelected && !isHighlighted;
+        const ni = nodeInfoMap.get(agent.routerId ?? "");
+        return {
+          id: nodeId,
+          type: "orgNode",
+          position: { x, y },
+          data: {
+            id: agent.id, name: agent.name, emoji: agent.emoji, role: agent.role,
+            status: (agent.status ?? "online") as "online" | "offline" | "idle",
+            isSelected, isHighlighted, isDimmed,
+            tier,
+            routerLabel,
+            gatewayColor: routerConfigs.length > 0 ? gatewayColor(routerLabel) : "#555",
+            model: agentModelMap.get(nodeId) ?? agentModelMap.get(agent.id),
+            nodeHostname: agent.nodeHostname,
+            platformIcon: ni?.platformIcon,
+            machineLabel: ni?.machineLabel,
+          },
+        };
+      };
+
+      for (const team of teamData.teams) {
+        const orchAgent = agents.find(a => a.id === team.orchestratorId);
+        const orchNodeId = `${team.orchestratorRouterId}--${team.orchestratorId}`;
+        const rc = routerConfigs.find(r => r.id === team.orchestratorRouterId);
+        const routerLabel = rc?.label ?? team.orchestratorRouterId;
+        const gwColor = gatewayColor(routerLabel);
+
+        // How many member columns: min(members.length, ORG_COLS)
+        const memberCols = Math.min(team.members.length, ORG_COLS);
+        const memberRows = Math.ceil(team.members.length / ORG_COLS);
+        const memberRowW = memberCols * ORG_W + Math.max(memberCols - 1, 0) * ORG_COL_GAP;
+        const clusterW = Math.max(ORG_W, memberRowW);
+
+        // Section header
+        oNodes.push({
+          id: `team-label-${team.orchestratorId}`,
+          type: "orgNode",
+          position: { x: 0, y: cursorY },
+          draggable: false, selectable: false,
+          data: {
+            _isLabel: true,
+            label: team.teamName ? `${team.teamName} — ${routerLabel}` : routerLabel,
+            color: gwColor,
+            width: clusterW,
+          },
+        });
+        cursorY += TEAM_ORCH_Y_OFFSET;
+
+        // Orchestrator centered
+        const orchX = (clusterW - ORG_W) / 2;
+        const orchNode = makeNode(orchAgent, orchNodeId, orchX, cursorY, "orchestrator", routerLabel);
+        if (orchNode) oNodes.push(orchNode);
+        cursorY += ORG_H + ORG_ROW_GAP;
+
+        // Members grid
+        const memberStartX = (clusterW - memberRowW) / 2;
+        team.members.forEach((m, i) => {
+          const memberAgent = agents.find(a => a.id === m.agentId);
+          const memberNodeId = `${m.routerId}--${m.agentId}`;
+          const col = i % ORG_COLS;
+          const row = Math.floor(i / ORG_COLS);
+          const x = memberStartX + col * (ORG_W + ORG_COL_GAP);
+          const y = cursorY + row * (ORG_H + ORG_ROW_GAP);
+          const memberNode = makeNode(memberAgent, memberNodeId, x, y, "specialist", routerLabel);
+          if (memberNode) oNodes.push(memberNode);
+
+          // Edge: orchestrator → member
+          const edgeOn = anySelected && highlightSet.has(memberNodeId) && highlightSet.has(orchNodeId);
+          oEdges.push({
+            id: `org-e-${orchNodeId}-${memberNodeId}`,
+            source: orchNodeId, target: memberNodeId,
+            type: "smoothstep",
+            style: {
+              stroke: edgeOn ? gwColor : "#2a2a3a",
+              strokeWidth: edgeOn ? 2 : 1.5,
+              opacity: anySelected ? (edgeOn ? 0.9 : 0.08) : 0.5,
+              transition: "stroke 0.2s, opacity 0.2s",
+            },
+            animated: edgeOn,
+          });
+        });
+
+        cursorY += memberRows * (ORG_H + ORG_ROW_GAP) + SECTION_GAP;
+      }
+
+      // Specialized agents section
+      if (teamData.specialized.length > 0) {
+        const specCols = Math.min(teamData.specialized.length, ORG_COLS);
+        const specRowW = specCols * ORG_W + Math.max(specCols - 1, 0) * ORG_COL_GAP;
+        oNodes.push({
+          id: "specialized-label",
+          type: "orgNode",
+          position: { x: 0, y: cursorY },
+          draggable: false, selectable: false,
+          data: { _isLabel: true, label: `Specialized Agents — ${teamData.specialized.length}`, color: "#555", width: specRowW },
+        });
+        cursorY += SPECIALIZED_LABEL_H;
+
+        const specStartX = 0;
+        teamData.specialized.forEach((s, i) => {
+          const specAgent = agents.find(a => a.id === s.id);
+          const specNodeId = `${s.routerId}--${s.id}`;
+          const rc = routerConfigs.find(r => r.id === s.routerId);
+          const routerLabel = rc?.label ?? s.routerId;
+          const col = i % ORG_COLS;
+          const row = Math.floor(i / ORG_COLS);
+          const x = specStartX + col * (ORG_W + ORG_COL_GAP);
+          const y = cursorY + row * (ORG_H + ORG_ROW_GAP);
+          const specNode = makeNode(specAgent, specNodeId, x, y, "specialist", routerLabel);
+          if (specNode) oNodes.push(specNode);
+        });
+      }
+
+      return { orgNodes: oNodes, orgEdges: oEdges };
+    }
+
+    // ── Fallback: old gateway/tier layout (when teamData not yet loaded) ──
 
     // ── Group agents by gateway ──────────────────────────────────────────────
     // Use routerConfigs order so gateways appear in consistent order
@@ -418,7 +657,7 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, o
     }
 
     return { orgNodes: oNodes, orgEdges: oEdges };
-  }, [agents, selectedAgentId, routerConfigs, nodeInfoMap, agentModelMap]);
+  }, [agents, selectedAgentId, routerConfigs, nodeInfoMap, agentModelMap, teamData]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -491,6 +730,15 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, o
       </div>
 
       <div className="flex-1 w-full h-full relative" style={{ minHeight: 0 }}>
+        {viewMode === "org" && teamLoading && (
+          <div style={{
+            position: "absolute", inset: 0, display: "flex",
+            alignItems: "center", justifyContent: "center",
+            background: "#0a0a0a", zIndex: 10,
+          }}>
+            <span style={{ color: "#555", fontSize: 14 }}>Analysing team structure…</span>
+          </div>
+        )}
         <ReactFlowProvider>
           <ReactFlow
             nodes={nodes}
@@ -512,4 +760,3 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, o
     </section>
   );
 }
-
