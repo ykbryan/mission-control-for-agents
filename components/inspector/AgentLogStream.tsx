@@ -62,6 +62,40 @@ function isToolCall(msg: string) {
   );
 }
 
+/** Extract a human-readable summary from a tool-call message like exec({...}) */
+function formatToolCall(msg: string): { name: string; summary: string } {
+  // Strip leading emoji
+  const clean = msg.replace(/^[🛠⚙️\s]+/, "").trim();
+  // Extract tool name and JSON args
+  const m = clean.match(/^([\w.-]+)\s*\((.+)\)$/s);
+  if (!m) return { name: clean.slice(0, 30), summary: clean };
+  const [, toolName, argsRaw] = m;
+  try {
+    const args = JSON.parse(argsRaw);
+    // Known high-signal fields in priority order
+    const sig =
+      args.command ?? args.cmd ??
+      args.query ?? args.input ?? args.text ??
+      args.url ?? args.path ?? args.file ??
+      args.action ?? args.node ??
+      args.message ?? args.content;
+    const sigStr = sig != null
+      ? String(sig).replace(/\s+/g, " ").trim().slice(0, 120)
+      : argsRaw.slice(0, 80);
+    return { name: toolName, summary: sigStr };
+  } catch {
+    return { name: toolName, summary: argsRaw.slice(0, 100) };
+  }
+}
+
+function fmtLogDate(ts: Date): string {
+  return ts.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
+}
+
+function fmtLogTime(ts: Date): string {
+  return ts.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
 export default function AgentLogStream({
   agentId,
   routerId,
@@ -231,69 +265,67 @@ export default function AgentLogStream({
               const cfg = TYPE_CFG[log.type];
               const tool = isToolCall(log.message);
               const ts = new Date(log.timestamp);
-              const timeStr = ts.toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-                second: "2-digit",
-              });
-
+              const dateStr = fmtLogDate(ts);
+              const timeStr = fmtLogTime(ts);
+              const prevTs = i > 0 ? new Date(filteredLogs[i - 1].timestamp) : null;
+              const showDateSep = !prevTs || fmtLogDate(prevTs) !== dateStr;
               const expandable = !!(log.fullMessage);
+              const toolFmt = tool ? formatToolCall(log.message) : null;
               return (
-                <div
-                  key={log.id}
-                  onClick={() => expandable && setExpandedLog(log)}
-                  className={`group relative border-l-2 px-3 pt-2 pb-2.5 transition-colors ${cfg.bar} ${expandable ? "cursor-pointer hover:bg-white/[0.02]" : ""}`}
-                  style={{
-                    background:
-                      i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.008)",
-                    borderBottom: "1px solid #0f0f0f",
-                  }}
-                >
-                  {/* Meta row */}
-                  <div className="flex items-center gap-2 mb-1">
-                    <span
-                      className="text-[10px] tabular-nums select-none"
-                      style={{ color: "#444" }}
-                    >
-                      {timeStr}
-                    </span>
-                    {log.model && (
-                      <span
-                        className="text-[9px] font-mono px-1.5 py-px rounded border"
-                        style={{
-                          color: "#555",
-                          background: "#111",
-                          borderColor: "#1e1e1e",
-                        }}
-                      >
-                        {log.model.split("/").pop()}
+                <div key={log.id}>
+                  {/* Date separator */}
+                  {showDateSep && (
+                    <div className="flex items-center gap-2 px-3 py-1.5 sticky top-8 z-[1]" style={{ background: "#080808" }}>
+                      <div className="flex-1 h-px" style={{ background: "#1a1a1a" }} />
+                      <span className="text-[9px] font-semibold uppercase tracking-widest" style={{ color: "#333" }}>{dateStr}</span>
+                      <div className="flex-1 h-px" style={{ background: "#1a1a1a" }} />
+                    </div>
+                  )}
+                  <div
+                    onClick={() => expandable && setExpandedLog(log)}
+                    className={`group relative border-l-2 px-3 pt-2 pb-2.5 transition-colors ${cfg.bar} ${expandable ? "cursor-pointer hover:bg-white/[0.02]" : ""}`}
+                    style={{
+                      background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.008)",
+                      borderBottom: "1px solid #0f0f0f",
+                    }}
+                  >
+                    {/* Meta row */}
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-[10px] tabular-nums select-none font-mono" style={{ color: "#444" }}>
+                        {timeStr}
                       </span>
-                    )}
-                    {expandable && (
-                      <span className="ml-auto text-[9px] opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: "#e85d27" }}>
-                        expand ↗
-                      </span>
-                    )}
-                    {!expandable && (
-                      <span className={`ml-auto w-1.5 h-1.5 rounded-full flex-shrink-0 ${cfg.dot2}`} />
+                      {log.model && (
+                        <span className="text-[9px] font-mono px-1.5 py-px rounded border" style={{ color: "#555", background: "#111", borderColor: "#1e1e1e" }}>
+                          {log.model.split("/").pop()}
+                        </span>
+                      )}
+                      {expandable && (
+                        <span className="ml-auto text-[9px] opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: "#e85d27" }}>
+                          expand ↗
+                        </span>
+                      )}
+                      {!expandable && (
+                        <span className={`ml-auto w-1.5 h-1.5 rounded-full flex-shrink-0 ${cfg.dot2}`} />
+                      )}
+                    </div>
+                    {/* Message */}
+                    {toolFmt ? (
+                      <div className="rounded px-2 py-1.5" style={{ background: "#0d0d0d", border: "1px solid #161616" }}>
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <span className="text-[9px] font-bold font-mono px-1 py-px rounded" style={{ background: "#181818", color: "#e85d2799" }}>
+                            {toolFmt.name}
+                          </span>
+                        </div>
+                        <p className={`text-[10px] font-mono ${cfg.text} break-words leading-relaxed`}>
+                          {toolFmt.summary}
+                        </p>
+                      </div>
+                    ) : (
+                      <p className={`text-[11px] ${cfg.text} leading-relaxed break-words`}>
+                        {log.message}
+                      </p>
                     )}
                   </div>
-                  {/* Message */}
-                  {tool ? (
-                    <pre
-                      className={`text-[10px] font-mono ${cfg.text} whitespace-pre-wrap break-all leading-relaxed rounded px-2 py-1.5`}
-                      style={{
-                        background: "#0d0d0d",
-                        border: "1px solid #161616",
-                      }}
-                    >
-                      {log.message}
-                    </pre>
-                  ) : (
-                    <p className={`text-[11px] ${cfg.text} leading-relaxed break-words`}>
-                      {log.message}
-                    </p>
-                  )}
                 </div>
               );
             })}
@@ -356,8 +388,8 @@ export default function AgentLogStream({
             <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: "#1a1a1a" }}>
               <div className="flex items-center gap-2">
                 <span className={`w-2 h-2 rounded-full ${TYPE_CFG[expandedLog.type].dot}`} />
-                <span className="text-[11px] tabular-nums" style={{ color: "#555" }}>
-                  {new Date(expandedLog.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                <span className="text-[11px] tabular-nums font-mono" style={{ color: "#555" }}>
+                  {fmtLogDate(new Date(expandedLog.timestamp))} {fmtLogTime(new Date(expandedLog.timestamp))}
                 </span>
                 {expandedLog.model && (
                   <span className="text-[9px] font-mono px-1.5 py-px rounded border" style={{ color: "#555", background: "#161616", borderColor: "#222" }}>

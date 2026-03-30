@@ -141,7 +141,7 @@ export async function GET(req: NextRequest) {
               try {
                 const evData = await routerGet<{ key: string; events: ActivityEvent[] }>(
                   router.url, router.token, "/session",
-                  { agentId, key: sess.key }
+                  { agentId, key: sess.key }  // router reads "key", not "sessionKey"
                 );
                 const evs = (evData.events ?? []).filter(
                   (e) => now - new Date(e.timestamp).getTime() < LOOKBACK_MS
