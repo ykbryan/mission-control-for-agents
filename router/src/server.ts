@@ -26,6 +26,7 @@ import {
   listAgents,
   listNodes,
   listCrons,
+  getSession,
   GatewaySession,
   GatewayMessage,
 } from "./openclaw";
@@ -689,8 +690,21 @@ async function handleSession(res: http.ServerResponse, params: URLSearchParams) 
   // Single session by key
   if (key) {
     const target = sessions.find((s) => s.key === key);
-    if (!target?.transcriptPath) { json(res, 404, { error: "No session found" }); return; }
-    const messages = readTranscript(target.transcriptPath);
+    if (!target) { json(res, 404, { error: "No session found" }); return; }
+    let messages = target.transcriptPath ? readTranscript(target.transcriptPath) : [];
+    // Fallback: if disk transcript is empty (e.g. Docker volume not mounted on host),
+    // try fetching messages directly from the OpenClaw gateway via WebSocket RPC.
+    if (messages.length === 0) {
+      try {
+        const rpcMessages = await getSession(OPENCLAW_URL, OPENCLAW_TOKEN, key);
+        if (rpcMessages.length > 0) {
+          console.log(`[router] disk transcript empty for ${key}, got ${rpcMessages.length} messages via WS RPC`);
+          messages = rpcMessages as GatewayMessage[];
+        }
+      } catch (e) {
+        console.warn(`[router] WS RPC fallback failed for ${key}:`, (e as Error).message);
+      }
+    }
     const events = parseMessages(messages as Parameters<typeof parseMessages>[0]);
     json(res, 200, { key: target.key, events });
     return;
@@ -717,8 +731,22 @@ async function handleSession(res: http.ServerResponse, params: URLSearchParams) 
   for (const s of agentSessions) {
     if (!s.transcriptPath) { noPathCount++; continue; }
     const msgs = readTranscript(s.transcriptPath);
-    if (msgs.length === 0) { emptyTranscriptCount++; continue; }
-    allMessages.push(...msgs);
+    if (msgs.length > 0) {
+      allMessages.push(...msgs);
+      continue;
+    }
+    emptyTranscriptCount++;
+    // Fallback: when disk transcript is empty (e.g. Docker volume not mounted),
+    // try fetching messages from OpenClaw gateway via WebSocket RPC.
+    if (s.key) {
+      try {
+        const rpcMessages = await getSession(OPENCLAW_URL, OPENCLAW_TOKEN, s.key);
+        if (rpcMessages.length > 0) {
+          console.log(`[router] disk empty for ${s.key}, got ${rpcMessages.length} msgs via WS RPC`);
+          allMessages.push(...(rpcMessages as GatewayMessage[]));
+        }
+      } catch { /* gateway may not have this session in memory */ }
+    }
   }
 
   if (allMessages.length === 0) {
