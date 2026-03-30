@@ -261,22 +261,65 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, o
     const specialists   = agents.filter(a => a.tier !== "orchestrator")
                                 .sort((a, b) => (a.name ?? a.id).localeCompare(b.name ?? b.id));
 
+    // ── Pass 1: compute positions and parent→children map ───────────────────
+    const totalOrchW = orchestrators.length * ORG_W + (orchestrators.length - 1) * ORG_COL_GAP;
+    const totalSpecW = Math.min(specialists.length, ORG_COLS) * ORG_W + (Math.min(specialists.length, ORG_COLS) - 1) * ORG_COL_GAP;
+    const canvasW    = Math.max(totalOrchW, totalSpecW);
+    const orchStartX = (canvasW - totalOrchW) / 2;
+    const specStartX = (canvasW - totalSpecW) / 2;
+
+    const orchIds: string[] = [];
+    orchestrators.forEach(a => orchIds.push(`${a.routerId ?? "default"}--${a.id}`));
+
+    // childrenOf: orchestratorId → Set<specialistId>
+    const childrenOf = new Map<string, Set<string>>();
+    // parentOf: specialistId → orchestratorId
+    const parentOf   = new Map<string, string>();
+    orchIds.forEach(id => childrenOf.set(id, new Set()));
+
+    specialists.forEach((agent, i) => {
+      const col    = i % ORG_COLS;
+      const nodeId = `${agent.routerId ?? "default"}--${agent.id}`;
+      const pId    = orchIds.length === 1
+        ? orchIds[0]
+        : orchIds[Math.floor(col / Math.ceil(ORG_COLS / Math.max(orchIds.length, 1)))] ?? orchIds[0];
+      childrenOf.get(pId)?.add(nodeId);
+      parentOf.set(nodeId, pId);
+    });
+
+    // ── Pass 2: compute highlight/dim sets based on selection ────────────────
+    const anySelected = !!selectedAgentId;
+    const highlightedIds = new Set<string>();
+
+    if (anySelected) {
+      highlightedIds.add(selectedAgentId);
+      if (orchIds.includes(selectedAgentId)) {
+        // Selected is an orchestrator → highlight all its direct reports
+        childrenOf.get(selectedAgentId)?.forEach(id => highlightedIds.add(id));
+      } else {
+        // Selected is a specialist → highlight its manager
+        const mgr = parentOf.get(selectedAgentId);
+        if (mgr) highlightedIds.add(mgr);
+      }
+    }
+
+    // ── Pass 3: build nodes ──────────────────────────────────────────────────
     const makeOrgNode = (agent: Agent, x: number, y: number) => {
       const routerId = agent.routerId ?? "default";
-      const ni = nodeInfoMap.get(routerId);
+      const ni    = nodeInfoMap.get(routerId);
       const label = routerConfigs.find(r => r.id === routerId)?.label ?? routerId;
       const nodeId = `${routerId}--${agent.id}`;
+      const isSelected    = nodeId === selectedAgentId;
+      const isHighlighted = !isSelected && highlightedIds.has(nodeId);
+      const isDimmed      = anySelected && !isSelected && !isHighlighted;
       return {
         id: nodeId,
         type: "orgNode",
         position: { x, y },
         data: {
-          id: agent.id,
-          name: agent.name,
-          emoji: agent.emoji,
-          role: agent.role,
+          id: agent.id, name: agent.name, emoji: agent.emoji, role: agent.role,
           status: (agent.status ?? "online") as "online" | "offline" | "idle",
-          isSelected: nodeId === selectedAgentId,
+          isSelected, isHighlighted, isDimmed,
           tier: agent.tier ?? "specialist",
           routerLabel: label,
           nodeHostname: agent.nodeHostname,
@@ -287,41 +330,34 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, o
       };
     };
 
-    // Row 0: Orchestrators — centered
-    const totalOrchW = orchestrators.length * ORG_W + (orchestrators.length - 1) * ORG_COL_GAP;
-    const totalSpecW = Math.min(specialists.length, ORG_COLS) * ORG_W + (Math.min(specialists.length, ORG_COLS) - 1) * ORG_COL_GAP;
-    const canvasW = Math.max(totalOrchW, totalSpecW);
-    const orchStartX = (canvasW - totalOrchW) / 2;
-
-    const orchIds: string[] = [];
     orchestrators.forEach((agent, i) => {
       const x = orchStartX + i * (ORG_W + ORG_COL_GAP);
       oNodes.push(makeOrgNode(agent, x, ORG_ORCH_Y));
-      orchIds.push(`${agent.routerId ?? "default"}--${agent.id}`);
     });
 
-    // Row 1+: Specialists — grid, centered under orchestrators
-    const specStartX = (canvasW - totalSpecW) / 2;
     specialists.forEach((agent, i) => {
       const col = i % ORG_COLS;
       const row = Math.floor(i / ORG_COLS);
-      const x = specStartX + col * (ORG_W + ORG_COL_GAP);
-      const y = ORG_SPECIALIST_Y + row * (ORG_H + ORG_ROW_GAP);
+      const x   = specStartX + col * (ORG_W + ORG_COL_GAP);
+      const y   = ORG_SPECIALIST_Y + row * (ORG_H + ORG_ROW_GAP);
       const nodeId = `${agent.routerId ?? "default"}--${agent.id}`;
       oNodes.push(makeOrgNode(agent, x, y));
 
-      // Connect each specialist to nearest orchestrator (or all if just 1)
-      const parentId = orchIds.length === 1
-        ? orchIds[0]
-        : orchIds[Math.floor(col / Math.ceil(ORG_COLS / Math.max(orchIds.length, 1)))] ?? orchIds[0];
-
+      const pId = parentOf.get(nodeId) ?? orchIds[0];
+      // Edge styling: bright when both endpoints are highlighted, faded otherwise
+      const edgeHighlighted = anySelected && highlightedIds.has(nodeId) && highlightedIds.has(pId);
       oEdges.push({
-        id: `org-e-${parentId}-${nodeId}`,
-        source: parentId ?? orchIds[0],
+        id: `org-e-${pId}-${nodeId}`,
+        source: pId,
         target: nodeId,
         type: "smoothstep",
-        style: { stroke: "#2a2a3a", strokeWidth: 1.5, opacity: 0.7 },
-        animated: false,
+        style: {
+          stroke: edgeHighlighted ? "#e85d27" : "#2a2a3a",
+          strokeWidth: edgeHighlighted ? 2 : 1.5,
+          opacity: anySelected ? (edgeHighlighted ? 0.9 : 0.08) : 0.7,
+          transition: "stroke 0.2s, opacity 0.2s",
+        },
+        animated: edgeHighlighted,
       });
     });
 

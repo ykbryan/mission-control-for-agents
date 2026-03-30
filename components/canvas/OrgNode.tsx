@@ -37,6 +37,8 @@ interface OrgNodeProps {
     role: string;
     status: "online" | "offline" | "idle";
     isSelected: boolean;
+    isHighlighted?: boolean;  // connected to the selected node
+    isDimmed?: boolean;       // unrelated to the selected node
     tier?: "orchestrator" | "specialist";
     routerLabel?: string;
     model?: string;
@@ -50,12 +52,16 @@ export default function OrgNode({ data }: OrgNodeProps) {
 
   const borderColor = data.isSelected
     ? "#e85d27"
+    : data.isHighlighted
+    ? (isOrch ? "#7c3aed" : "#e85d2799")
     : isOrch
     ? "#7c3aed"
     : "#222";
 
   const shadowStyle = data.isSelected
     ? "0 0 0 2px #e85d2760, 0 4px 24px #00000088"
+    : data.isHighlighted
+    ? `0 0 0 1.5px ${isOrch ? "#7c3aed80" : "#e85d2740"}, 0 4px 20px #00000066`
     : isOrch
     ? "0 0 0 1px #7c3aed50, 0 4px 20px #00000066"
     : "0 2px 12px #00000055";
@@ -72,9 +78,10 @@ export default function OrgNode({ data }: OrgNodeProps) {
         alignItems: "center",
         gap: 14,
         boxShadow: shadowStyle,
-        transition: "border-color 0.15s, box-shadow 0.15s",
+        transition: "border-color 0.2s, box-shadow 0.2s, opacity 0.2s",
         cursor: "pointer",
         position: "relative",
+        opacity: data.isDimmed ? 0.2 : 1,
       }}
     >
       <Handle type="target" position={Position.Top}
