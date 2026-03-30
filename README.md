@@ -1,6 +1,6 @@
 # Mission Control for Agents
 
-A real-time dashboard to monitor, audit, and manage your AI agent fleet.
+A real-time dashboard to monitor, audit, and manage your AI agent fleet. 1
 
 ![Agent Canvas](media/canvas.png)
 
