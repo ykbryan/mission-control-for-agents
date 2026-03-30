@@ -67,7 +67,7 @@ function formatToolCall(msg: string): { name: string; summary: string } {
   // Strip leading emoji
   const clean = msg.replace(/^[🛠⚙️\s]+/, "").trim();
   // Extract tool name and JSON args
-  const m = clean.match(/^([\w.-]+)\s*\((.+)\)$/s);
+  const m = clean.match(/^([\w.-]+)\s*\(([\s\S]+)\)$/);
   if (!m) return { name: clean.slice(0, 30), summary: clean };
   const [, toolName, argsRaw] = m;
   try {
