@@ -1,5 +1,5 @@
 import { routerGet } from "@/lib/router-client";
-import type { RouterAgent } from "../route";
+import type { RouterAgent } from "./types";
 
 const FILES_TO_SCAN = ["IDENTITY.md", "AGENTS.md", "TOOLS.md", "USER.md", "MEMORY.md", "SOUL.md", "HEARTBEAT.md"];
 
