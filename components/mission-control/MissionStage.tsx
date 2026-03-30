@@ -739,7 +739,7 @@ export default function MissionStage({ agents, selectedAgentId, onSelectAgent, o
             <span style={{ color: "#555", fontSize: 14 }}>Analysing team structure…</span>
           </div>
         )}
-        <ReactFlowProvider>
+        <ReactFlowProvider key={viewMode === "org" ? `org-${teamData ? "loaded" : "loading"}` : "canvas"}>
           <ReactFlow
             nodes={nodes}
             edges={edges}
