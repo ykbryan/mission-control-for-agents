@@ -248,7 +248,7 @@ export default function StatusPage() {
           if (!models[c.agentId]) models[c.agentId] = c.model;
         }
       }
-      for (const [key, model] of Object.entries(liveModels.models ?? {} as Record<string, string>)) {
+      for (const [key, model] of Object.entries((liveModels.models ?? {}) as Record<string, string>)) {
         models[key] = model;
       }
       const sessions: Array<{ agentId: string; routerId: string; updatedAt: number }> = activitiesData.sessions ?? [];
