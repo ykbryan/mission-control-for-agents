@@ -231,14 +231,26 @@ export default function StatusPage() {
 
   const load = useCallback(async () => {
     try {
-      const [agentsData, liveModels, activitiesData] = await Promise.all([
+      const [agentsData, costTelemetry, liveModels, activitiesData] = await Promise.all([
         fetch("/api/agents").then(r => r.json()),
+        fetch("/api/telemetry/agent-costs").then(r => r.json()).catch(() => ({ costs: [] })),
         fetch("/api/agent-live-models").then(r => r.json()),
         fetch("/api/activities").then(r => r.json()),
       ]);
 
       const rawAgents: AgentEntry[] = (agentsData.agents ?? []);
-      const models: Record<string, string> = liveModels.models ?? {};
+
+      // Build model map: cost telemetry as baseline, live-models as override
+      const models: Record<string, string> = {};
+      for (const c of (costTelemetry.costs ?? []) as Array<{ agentId: string; model?: string; routerId?: string }>) {
+        if (c.model) {
+          if (c.routerId) models[`${c.routerId}--${c.agentId}`] = c.model;
+          if (!models[c.agentId]) models[c.agentId] = c.model;
+        }
+      }
+      for (const [key, model] of Object.entries((liveModels.models ?? {}) as Record<string, string>)) {
+        models[key] = model;
+      }
       const sessions: Array<{ agentId: string; routerId: string; updatedAt: number }> = activitiesData.sessions ?? [];
 
       // Build lastActiveAt per routerId--agentId
@@ -251,7 +263,7 @@ export default function StatusPage() {
 
       const enriched: AgentEntry[] = rawAgents.map(a => ({
         ...a,
-        model: models[`${a.routerId}--${a.id}`],
+        model: models[`${a.routerId}--${a.id}`] ?? models[a.id],
         lastActiveAt: lastActive.get(`${a.routerId}--${a.id}`) ?? a.lastActiveAt,
       }));
 

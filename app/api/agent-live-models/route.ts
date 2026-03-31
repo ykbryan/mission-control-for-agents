@@ -67,7 +67,7 @@ export async function GET(req: NextRequest) {
           Array.from(bestSession.entries()).map(async ([agentId, session]) => {
             try {
               const evData = await routerGet<{ key: string; events: ActivityEvent[] }>(
-                router.url, router.token, "/session", { agentId, sessionKey: session.key }
+                router.url, router.token, "/session", { agentId, key: session.key }  // router reads "key", not "sessionKey"
               );
               const model = parseCurrentModel(evData.events ?? []);
               if (model) {

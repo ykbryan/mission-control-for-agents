@@ -38,7 +38,9 @@ export function SessionRow({ s, onClick }: { s: ActivitySession; onClick: () => 
         <div className="flex items-center gap-3 mt-0.5">
           <span className="text-[10px] text-zinc-700">{fmtTs(s.updatedAt)}</span>
           {s.routerLabel && (
-            <span className="text-[10px] text-zinc-800">{s.routerLabel}</span>
+            <span className="text-[9px] font-medium px-1.5 py-px rounded" style={{ background: "#1a1a2a", color: "#5a5a8a" }}>
+              🛰️ {s.routerLabel}
+            </span>
           )}
         </div>
       </div>
